@@ -1,0 +1,26 @@
+{
+  "source_ideas": [
+    "I0018"
+  ],
+  "author": "sascha",
+  "date_entered": "2026-09-06T17:46:38.824387+00:00",
+  "created_by": "Codex",
+  "updated_at": "2026-09-06T17:46:38.824387+00:00",
+  "priority": "normal",
+  "name": "Add closure summaries and clarify briefing preflight, commits, and no-change handling",
+  "group": "Todo app",
+  "tags": [
+    "workflow",
+    "documentation",
+    "ui",
+    "storage"
+  ],
+  "description": "Scope: todo record schema/validation, storage/API, app editing and display, generated briefings, PROCESS.md, README, and applicable repository agent guidance. Add a dedicated completion-summary field so the worker closing a ticket leaves an understandable account of the outcome.\n\nChoose and document a field such as completion_summary. On new closures require a meaningful summary of what changed or was found, relevant verification, and material limitations/follow-up. Display the saved summary on the task and include it in relevant handoffs. Keep task requirements separate from completion reporting. Add backward-compatible handling for existing records and previously closed tickets: preserve existing description notes and original attribution, and do not fabricate summaries or make unrelated legacy edits impossible. Define summary behavior on reopening and later re-closing. Human closure should support the same field and validation as agent closure. Retain record-scoped revision checks, atomic recovery, and automatic local data commits.\n\nBriefings must clearly identify todo/PROCESS.md, todo/todos/<ID>.json for the authoritative task, and todo/data.json for original ideas, with enough workspace context to resolve them from another working directory or worktree. Require the worker to locate and read the process and task first, verify the intended ID/repository, and only then start work or change status. If required files cannot be found, report the missing location and stop dependent work instead of acting on a stale copied description.\n\nThe current PROCESS.md and root guidance already authorize and require local implementation commits. Audit and align every generated briefing and applicable instruction with that standing policy instead of introducing another conflicting rule: commit meaningful ticket-related work in its owning repository after verification, preserve unrelated changes, and do not push without explicit authorization. Automatic board-data history is separate from implementation commits; never invent an implementation hash or substitute a data-only commit. Preserve explicit planning-only/no-commit instructions and existing approval gates.\n\nAdd the explicit no-change exception: inspect whether implementation work is actually needed before creating a ticket branch. When nothing is created or changed for the implementation, report that outcome without an empty implementation commit or unnecessary branch. Board bookkeeping alone must not force an implementation branch. Define safe treatment of a newly created, unused branch if a no-change outcome is discovered later; never delete a pre-existing branch or one containing work. Update the current unconditional per-ticket branch instruction accordingly when implementing this ticket.\n\nAcceptance: fixtures cover normal closure with summary, missing-summary rejection, legacy closed records, reopening/re-closing, persistence and history; generated briefings identify correct locations, enforce the locate/read preflight, require local commits for real work, prohibit unauthorized pushes, and describe the no-change/no-branch case. Verify summaries in both UI and handoffs. Resolve exact field name, legacy migration/validation rules, and reopening semantics during design.\n\nCoordinate with T0013, which changes idea-processing prompts to reference all live unprocessed ideas, and T0014, which adds work categories. This task adds completion reporting and shared workflow requirements; do not duplicate or silently implement those separate features. The name change from I0016 should be respected if already applied.",
+  "status": "open",
+  "closed_by": "",
+  "date_closed": "",
+  "pr_url": "",
+  "commit_url": "",
+  "commit_hash": "",
+  "id": "T0018"
+}

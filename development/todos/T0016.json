@@ -1,0 +1,25 @@
+{
+  "source_ideas": [
+    "I0016"
+  ],
+  "author": "sascha",
+  "date_entered": "2026-09-06T17:46:38.824002+00:00",
+  "created_by": "Codex",
+  "updated_at": "2026-09-06T18:09:11.292417+00:00",
+  "priority": "normal",
+  "name": "Rename the todo app from Little by little to unfertig",
+  "group": "Todo app",
+  "tags": [
+    "branding",
+    "ui",
+    "documentation"
+  ],
+  "description": "Scope: the local todo tool currently in todo/. The user has chosen the name unfertig; implement that name consistently in the app, documentation, and active supporting text.\n\nInventory product-name occurrences, including page title, visible branding, accessible labels, server/startup messages, launchers, README, PROCESS.md, agent guidance, generated briefings, and tests. Replace references that identify this product with unfertig. Check persisted preference namespaces and other technical identifiers before changing them; retain compatibility or migrate existing preferences so the rename does not discard user settings or data. A product rename does not by itself require moving the todo/ directory or changing the board storage/API paths.\n\nPreserve original idea text, attribution, ticket IDs, committed history, and immutable migration backups. Keep former-name mentions only where needed to explain history or compatibility, and identify these exceptions in the final audit. Do not blindly replace ordinary prose that happens to use the same words.\n\nAcceptance: current app branding and operational documentation consistently use unfertig; old-name search results are reviewed and any remaining historical/compatibility references explained; creation, editing, briefings, launch, and local Git history still work. Use temporary board data for tests. Coordinate shared briefing/document edits with T0013 and the closure-summary follow-up from I0018.\n\nRelated: T0015 requested naming exploration and research. This explicit selection supersedes choosing a name; it does not establish trademark clearance or domain availability. No domain purchase, external registration, or GitHub rename is requested here. Resolve during the audit whether technical preference identifiers need migration or should remain compatibility keys.\n\n2026-09-06: Codex assigned; implementing the unfertig branding rename on agent/t0016-unfertig. Preserve the little-board. preference namespace for compatibility.\n\n2026-09-06 completed by Codex: renamed active page branding/accessibility title, setup/startup messages, server help/banner, README/PROCESS and agent guidance to unfertig; renamed test temporary-directory prefixes. Kept little-board. localStorage keys to retain identity and view preferences; README documents the former name and compatibility choice. Original ideas, task history and immutable migration backups were not rewritten. Generated briefings contained no product branding to replace; their workflow remains intact for T0013/T0018. Validation: 36 temporary-board tests passed (including creation/editing and local Git history), JavaScript and shell syntax checks and git diff --check passed. Browser smoke check verified unfertig title/home label, idea creation, identity after reload, and AI briefing generation; launcher printed unfertig. Windows launcher text reviewed but not run on this macOS host. Implementation committed at 8808a21941a1c2f7c19e7c6fc5bfb506dbb6ee15 on agent/t0016-unfertig, worktree /Users/slange/Code/procedural-game/.worktrees/t0016-unfertig. Worktree is clean. Not merged or pushed; the main checkout/live app retains its current version until integration.",
+  "status": "closed",
+  "closed_by": "Codex",
+  "date_closed": "2026-09-06T18:09:11.287039+00:00",
+  "pr_url": "",
+  "commit_url": "",
+  "commit_hash": "8808a21941a1c2f7c19e7c6fc5bfb506dbb6ee15",
+  "id": "T0016"
+}

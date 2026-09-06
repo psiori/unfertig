@@ -1,0 +1,5 @@
+.server.lock
+.transaction.json
+.history-pending.json
+.receipts/
+.board-*.tmp

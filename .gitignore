@@ -1,0 +1,12 @@
+__pycache__/
+.venv/
+.data-*.tmp
+
+.board-*.tmp
+.server.lock
+.transaction.json
+.history-pending.json
+.receipts/
+
+# Fresh-use boards are local; the development backlog is tracked separately.
+board/

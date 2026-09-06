@@ -1,0 +1,24 @@
+{
+  "source_ideas": [
+    "I0015"
+  ],
+  "author": "sascha",
+  "date_entered": "2026-09-06T14:36:57.324142+00:00",
+  "created_by": "Codex",
+  "updated_at": "2026-09-06T17:46:38.829979+00:00",
+  "priority": "normal",
+  "name": "Ideate and research a distinctive name for the todo app",
+  "group": "Todo app",
+  "tags": [
+    "research",
+    "branding"
+  ],
+  "description": "Scope: naming exploration and evidence-based shortlisting for the local, agent-integrated idea/todo app. Produce a recommendation; do not rename the app or purchase a domain in this task.\n\nUse the user's fondness for Little by little as a tone reference: approachable, cool, possibly funny, and suggestive of progress or a step beyond a conventional todo list. Explore names that fit human/agent collaboration without generic AI-todo wording. Treat the claim that Little by little is taken as input to investigate, not independently verified availability evidence.\n\nFirst develop candidates and explain their fit, pronunciation and memorability. Then research the strongest candidates for existing products/businesses, potentially conflicting trademarks and exact .com availability. Record dated source links, search scope and uncertainties, including relevant jurisdiction/product categories to resolve. Distinguish an available domain from a registered domain offered for resale, and distinguish a preliminary trademark search from legal clearance; do not guarantee that a name is trademark-free from an empty search result. Availability must be checked at research time, not assumed from this planning record.\n\nAcceptance: deliver a concise ranked shortlist with rationale, evidence for exact .com status, discovered conflicts and unresolved clearance questions, plus a recommended direction for the user to choose. Resolve intended markets/jurisdictions and willingness to consider premium/resale domains during research. No registration, purchase, external outreach or app rebranding is authorized by this naming task.\n\n2026-09-06 planning reconciliation by Codex: superseded by sascha choosing unfertig in I0016. The new rename task linked to I0016 replaces the naming-selection work. This closure records the user decision, not completed name research; no trademark clearance or domain availability is claimed. Original naming request retained for history.",
+  "status": "closed",
+  "closed_by": "Codex",
+  "date_closed": "2026-09-06T17:46:38.824405+00:00",
+  "pr_url": "",
+  "commit_url": "",
+  "commit_hash": "",
+  "id": "T0015"
+}
