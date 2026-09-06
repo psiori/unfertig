@@ -71,3 +71,9 @@ Tests use temporary boards/repositories. Use `--data /absolute/temp/data.json --
 A missing Git repository, invalid config, missing board, or wrong embedded owner is reported before normal service begins. Resolve paths instead of copying data into the app as a workaround. The HTTP service binds to localhost, validates its Host/Origin/session token, and only serves allowlisted UI assets and APIs.
 
 An interrupted transaction is rolled forward on restart. Preserve journals and receipts. Before manually recovering, copy the whole board directory. Split migration recovery, receipts and source snapshots belong to the host repository; never publish mixed-board backups in the app repo. See `split_board.py` and the host migration guide for the one-time extraction. Repository publication and pushes require explicit authorization.
+
+## Instance ports
+
+Setup asks for a port and saves it in the selected configuration. The default is **8765**; the suggested unfertig range is **8765–8799** (an application convention, not a reserved range). The prompt lists ports currently occupied on localhost, rejects occupied or invalid choices, and preserves the existing port when Enter is pressed. Ports outside the suggested range are accepted from 1–65535. Availability can change before startup.
+
+To change it later, stop the board server and run `sh start.sh --configure-port` (with `--config` or `--state-dir` when needed). This exits after saving; commit the config in its owning repository. Normal startup never prompts. `--port` overrides the saved port for that run only. Without a saved port, startup uses 8765. Each instance needs a distinct board directory and port.

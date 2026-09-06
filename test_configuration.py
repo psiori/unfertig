@@ -103,3 +103,28 @@ class ConfigurationTests(unittest.TestCase):
                 self.assertEqual(resolve(app)['path'],external/'data/data.json')
                 self.assertEqual(resolve(app,config=config)['config'],config)
             with self.assertRaises(OSError):resolve(app,state_dir=self.root/'missing')
+
+    def test_port_configuration_and_validation(self):
+        from configuration import configure_port, choose_port, DEFAULT_PORT
+        from io import StringIO
+        config=self.root/'unfertig.json'
+        config.write_text(json.dumps({'port':8799}))
+        self.assertEqual(resolve(self.root)['port'],8799)
+        for invalid in (0,65536,True,'8765'):
+            config.write_text(json.dumps({'port':invalid}))
+            with self.assertRaises(ValueError):resolve(self.root)
+        config.unlink()
+        with patch('configuration.port_occupied',return_value=False), patch('builtins.input',return_value=''), patch('sys.stdout',new_callable=StringIO):
+            configure_port(resolve(self.root),self.root)
+        self.assertEqual(json.loads(config.read_text()),{'port':DEFAULT_PORT})
+        self.assertTrue(resolve(self.root)['bootstrap'])
+        with patch('configuration.port_occupied',side_effect=lambda p:p==8765), patch('builtins.input',side_effect=['bad','0','8765','8799']), patch('sys.stdout',new_callable=StringIO) as output:
+            self.assertEqual(choose_port(),8799)
+            self.assertIn('8765',output.getvalue())
+            self.assertIn('8799',output.getvalue())
+    def test_port_probe_detects_bound_listener(self):
+        import socket
+        from configuration import port_occupied
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1',0));listener.listen()
+            self.assertTrue(port_occupied(listener.getsockname()[1]))

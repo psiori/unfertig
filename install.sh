@@ -29,5 +29,5 @@ else
 fi
 printf '\nPreparing Python 3.12…\n'
 "$BOARD_UV" python install 3.12
-"$BOARD_UV" run --no-project --python 3.12 --script "$BOARD_DIR/server.py" --check
+"$BOARD_UV" run --no-project --python 3.12 --script "$BOARD_DIR/server.py" --configure-port
 printf '\nReady! Open start.command on macOS, or run start.sh on Linux.\n'

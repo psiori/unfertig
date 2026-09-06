@@ -18,7 +18,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from storage import BoardStore, Conflict
-from configuration import resolve
+from configuration import resolve, configure_port, valid_port
 
 ROOT = Path(__file__).resolve().parent
 MAX_BYTES = 5_000_000
@@ -228,7 +228,8 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description="unfertig — local ideas and todos")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, help="Override configured port (default 8765)")
+    parser.add_argument("--configure-port", action="store_true", help="Ask for and save an instance port, then exit")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--data", type=Path, help="Board file; relative to config directory, or app root without config")
     parser.add_argument("--config", type=Path, help="Explicit configuration JSON")
@@ -242,6 +243,7 @@ def main():
     args = parser.parse_args()
     try:
         configuration = resolve(ROOT, args.config, args.data, args.no_git, args.state_dir)
+        port = valid_port(args.port) if args.port is not None else configuration["port"]
     except (OSError, ValueError) as error:
         parser.exit(1, f"Could not resolve board: {error}\n")
     store = BoardStore(configuration["path"], validate, git=not args.no_git)
@@ -250,9 +252,14 @@ def main():
                      "repository": str(configuration["repository"] or ""), "mode": configuration["mode"]}
     server = None
     try:
-        if not store.path.exists() and not (args.init or configuration["bootstrap"]) and not store.journal.exists():
+        if not store.path.exists() and not (args.configure_port or args.init or configuration["bootstrap"]) and not store.journal.exists():
             raise ValueError("Configured board is missing. Check its path or explicitly use --init.")
         store.acquire()
+        if args.configure_port:
+            configure_port(configuration, ROOT)
+            if not args.check:
+                store.close()
+                return
         if args.check:
             # Validation is read-only; do not migrate or retry history.
             if json.loads(store.path.read_bytes()).get('schema_version') == 1:
@@ -265,7 +272,7 @@ def main():
             store.close()
             return
         if not (args.apply or args.snapshot or args.retry_history):
-            server = Server(("127.0.0.1", args.port), store)
+            server = Server(("127.0.0.1", port), store)
         if not store.path.exists() and not store.journal.exists():
             store.create_starter()
         store.initialize()
@@ -277,7 +284,7 @@ def main():
             print(json.dumps(store.mutate(json.loads(args.apply.read_bytes())), ensure_ascii=False))
             store.close()
             return
-    except (OSError, ValueError, Conflict) as error:
+    except (OSError, ValueError, Conflict, EOFError) as error:
         store.close()
         if server:
             server.server_close()

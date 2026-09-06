@@ -1,5 +1,6 @@
 {
   "mode": "embedded",
   "data": "../data/data.json",
-  "repository": "../../.."
+  "repository": "../../..",
+  "port": 8765
 }

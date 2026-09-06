@@ -3,6 +3,54 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import socket
+import errno
+
+DEFAULT_PORT = 8765
+PORT_RANGE = range(8765, 8800)
+
+def valid_port(value):
+    if type(value) is not int or not 1 <= value <= 65535:
+        raise ValueError("Port must be an integer from 1 to 65535.")
+    return value
+
+def port_occupied(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError as error:
+            if error.errno == errno.EADDRINUSE:
+                return True
+            raise
+    return False
+
+def choose_port(current=DEFAULT_PORT):
+    occupied = [p for p in PORT_RANGE if port_occupied(p)]
+    print(f"Default port: {DEFAULT_PORT}; suggested unfertig range: {PORT_RANGE.start}–{PORT_RANGE.stop - 1}")
+    print("Currently occupied in this range: " + (", ".join(map(str, occupied)) or "none"))
+    print("Availability is checked now; another process can claim a port before startup.")
+    while True:
+        try:
+            value = input(f"Port [{current}]: ").strip()
+            port = valid_port(int(value) if value else current)
+            if port_occupied(port):
+                print(f"Port {port} is occupied. Choose another.")
+                continue
+            return port
+        except ValueError:
+            print("Enter an integer from 1 to 65535.")
+
+def configure_port(configuration, app_root):
+    # Called under the board writer lock; preserve all existing config fields.
+    path = configuration["config"] or Path(app_root) / "unfertig.json"
+    before = path.read_bytes() if path.exists() else None
+    settings = json.loads(before) if before is not None else {}
+    settings["port"] = choose_port(configuration["port"])
+    if (path.read_bytes() if path.exists() else None) != before:
+        raise ValueError("Configuration changed while choosing a port; rerun configuration.")
+    from storage import atomic, encode
+    atomic(path, encode(settings))
+    print(f"Saved port {settings["port"]} in {path}. Commit this configuration in its owning repository.")
 
 
 def git_root(path):
@@ -38,8 +86,8 @@ def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
         elif (app_root / 'unfertig.json').is_file():
             selected = app_root / 'unfertig.json'
     settings = json.loads(selected.read_text()) if selected else {}
-    if not isinstance(settings, dict) or set(settings) - {'data', 'mode', 'repository'}:
-        raise ValueError('Configuration supports only data, mode, and repository.')
+    if not isinstance(settings, dict) or set(settings) - {'data', 'mode', 'repository', 'port'}:
+        raise ValueError('Configuration supports only data, mode, repository, and port.')
     base = selected.parent if selected else app_root
     mode = settings.get('mode', 'standalone')
     if mode not in ('standalone', 'embedded'):
@@ -60,4 +108,6 @@ def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
     elif selected is None and data is None and owner and owner != git_root(app_root):
         raise ValueError('Default board belongs to an unexpected repository.')
     return dict(path=path, repository=owner, mode=mode, config=selected,
-                bootstrap=selected is None and data is None and mode == 'standalone')
+                port=valid_port(settings.get("port", DEFAULT_PORT)),
+                bootstrap=data is None and mode == 'standalone' and (selected is None or
+                    (selected == app_root / 'unfertig.json' and 'data' not in settings)))

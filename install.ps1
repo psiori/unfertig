@@ -13,7 +13,7 @@ try {
     }
     & $BoardUv python install 3.12
     if ($LASTEXITCODE -ne 0) { throw 'Python setup failed. Check your internet connection and retry.' }
-    & $BoardUv run --no-project --python 3.12 --script (Join-Path $PSScriptRoot 'server.py') --check
+    & $BoardUv run --no-project --python 3.12 --script (Join-Path $PSScriptRoot 'server.py') --configure-port
     if ($LASTEXITCODE -ne 0) { throw 'Board validation failed. See the message above.' }
     Write-Host "`nReady! Double-click start.bat to open your board."
 } catch {
