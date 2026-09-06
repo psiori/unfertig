@@ -8,7 +8,7 @@ function harness() {
   const badge = {dataset:{publicationKind:'todos', publicationId:'T0001'}};
   const context = {
     revision:'board-1', token:'token', busy:false, pendingRequest:null,
-    $: id => {if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id);},
+    $: id => {if (!nodes.has(id)) nodes.set(id, {classList:{toggle() {}}}); return nodes.get(id);},
     $$: () => [badge], escapeHTML: s => s,
     hasDraft: () => false, toast: message => context.message = message,
     window: {confirm: () => true}, fetch: async () => {throw Error('Unexpected network access');},

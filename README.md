@@ -116,7 +116,7 @@ resolution never changes data paths, Git ownership, bootstrap or operating mode.
 
 ## Publishing saved work
 
-The top **Remote publication** bar compares each idea/todo's saved content with
+Each idea/todo's publication label compares its saved content with
 its version in the configured upstream branch. **Local only** means that saved
 record differs from the last fetched upstream, including an edit to an existing
 record. **On upstream** means the saved content matches; it is not a claim about
@@ -124,8 +124,9 @@ unsaved browser drafts or a live remote check. **Not committed** identifies save
 content missing from local HEAD. **Remote unknown** means comparison is unavailable.
 Ideas are compared individually even though they share a file.
 
-Ordinary polling and saves do not contact the network. **Refresh** fetches
-only the configured upstream branch and shows the check time. An offline or
+Ordinary polling and saves do not contact the network. The subtle **Refresh**
+arrow immediately before **New todo** fetches only the configured upstream branch.
+Its tooltip shows the check time; routine publication details have no separate panel. An offline or
 authentication failure makes remote status unknown until a successful check.
 Configure a single upstream in the board-owning repository yourself. Detached
 HEAD, missing upstream, differing push/fetch destinations or multiple push URLs

@@ -15,10 +15,6 @@
     <a class="brand" href="/" aria-label="unfertig home"><span class="brand-mark" aria-hidden="true">✳</span> unfertig<span class="brand-dot">.</span><span id="project-name"></span></a>
     <div class="header-right"><span class="local-label"><span class="live-dot"></span> LOCAL & YOURS</span><label class="identity">Working as <input id="author" aria-label="Your name or agent identity" placeholder="Your name" maxlength="100"></label></div>
   </header>
-  <section class="publication-bar" aria-label="Remote publication">
-    <div><strong>Remote publication</strong><p id="publication-state" role="status">Checking local Git status…</p><p class="hint">Record labels compare saved content with the last fetched upstream. Unsaved drafts stay in this browser.</p></div>
-    <div class="publication-actions"><button id="publication-refresh" class="button" disabled>Refresh</button><button id="publication-push" class="button primary" hidden>Push all commits</button></div>
-  </section>
   <main>
     <section class="intro">
       <div><p class="eyebrow">A PLACE FOR WHAT’S NEXT</p><h1>Good things start<br>with a little idea<span>.</span></h1><p class="intro-copy">Catch a thought. Make a plan. Move it forward.</p></div>
@@ -32,7 +28,8 @@
       <ul id="ideas" class="ideas"></ul>
     </section>
     <section class="work" aria-labelledby="work-heading">
-      <div class="section-heading"><div><span class="section-index">02 / MAKE IT HAPPEN</span><h2 id="work-heading">One thing at a time <span id="todo-count" class="count">0</span></h2></div><div class="work-actions"><span id="save-state" role="status" aria-live="polite">Connecting…</span><button id="new-todo" class="button" disabled>+ New todo</button></div></div>
+      <div class="section-heading"><div><span class="section-index">02 / MAKE IT HAPPEN</span><h2 id="work-heading">One thing at a time <span id="todo-count" class="count">0</span></h2></div><div class="work-actions"><span id="save-state" role="status" aria-live="polite">Connecting…</span><button id="publication-push" class="button" hidden>Push all commits</button><button id="publication-refresh" class="refresh-button" type="button" aria-label="Refresh from remote" title="Refresh from remote" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.4 6M20 4v7h-7"/></svg></button><button id="new-todo" class="button" disabled>+ New todo</button></div></div>
+      <p id="publication-state" class="publication-feedback" role="alert" hidden></p>
       <div class="filters"><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Find a todo…" aria-label="Search todos"></label><label>Status<select id="status-filter"><option value="active">Open + started</option><option value="all">All statuses</option><option value="open">Open</option><option value="started">Started</option><option value="closed">Closed</option></select></label><label>Group<select id="group-filter"><option value="">All groups</option></select></label><label>Tag<select id="tag-filter"><option value="">All tags</option></select></label><label>Sort<select id="sort"><option value="priority">Priority ↓</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name A–Z</option></select></label></div>
       <div class="view-options"><span id="result-count">0 todos</span><div><label class="check"><input type="checkbox" id="group-by"> Group by module</label><button class="text-button" id="fold-all">Collapse all</button><button class="text-button" id="unfold-all">Expand all</button></div></div>
       <div id="todos"></div>

@@ -26,7 +26,7 @@ function historyState() {
   $('#history-retry').hidden = !history.pending;
   $('#history-state').textContent = history.pending ? 'Saved on disk · Git commit pending: ' + (history.error || 'Retry to finish local history.') : history.enabled ? 'Automatic local Git history · push only when requested' : 'Automatic Git history disabled';
 }
-let publication = null, publicationBusy = false, publicationOutcome = '';
+let publication = null, publicationBusy = false, publicationOutcome = '', publicationFailed = false;
 function publicationBadge(kind, id) {
   return `<span class="publication-label" data-publication-kind="${kind}" data-publication-id="${escapeHTML(id)}" data-state="unknown">Remote unknown</span>`;
 }
@@ -38,9 +38,12 @@ function publicationState() {
     el.dataset.state = state; el.textContent = labels[state] || labels.unknown;
     el.title = 'Saved record content compared with the last fetched upstream; excludes browser drafts.';
   }
-  $('#publication-state').textContent = publicationBusy ? 'Contacting remote… Board saves will wait.' :
-    (publicationOutcome ? publicationOutcome + ' ' : '') + (publication?.error || publication?.message || 'Remote status unavailable.') +
-    (publication?.checked_at ? ` Last checked: ${new Date(publication.checked_at).toLocaleString()}.` : '');
+  $('#publication-state').textContent = publicationFailed ? publicationOutcome : '';
+  $('#publication-state').hidden = !publicationFailed;
+  $('#publication-refresh').title = publicationBusy ? 'Refreshing…' : 'Refresh from remote' +
+    (publication?.checked_at ? ` · Last checked ${new Date(publication.checked_at).toLocaleString()}` : '');
+  $('#publication-refresh').classList.toggle('refreshing', publicationBusy);
+  $('#publication-push').title = publication?.error || publication?.message || 'Push all outgoing commits';
   $('#publication-refresh').disabled = !token || publicationBusy || busy;
   $('#publication-push').hidden = !current || !publication?.available || !(publication.ahead > 0);
   $('#publication-push').disabled = publicationBusy || busy || !current || !publication?.can_push;
@@ -60,7 +63,7 @@ async function publicationAction(push=false) {
   if (push && hasDraft()) { toast('Save or reset your drafts before pushing saved commits.'); return; }
   if (push && (!publication?.can_push || publication.board_revision !== revision)) return;
   if (push && !window.confirm(`Push all outgoing commits on ${publication.branch} to ${publication.remote}/${publication.target.slice(11)}?\n\nThis includes committed changes outside this board. Unsaved drafts and uncommitted files are not published.`)) return;
-  publicationBusy = true; busy = true; publicationOutcome = ''; publicationState();
+  publicationBusy = true; busy = true; publicationOutcome = ''; publicationFailed = false; publicationState();
   let outcome = '', receivedResponse = false;
   try {
     const response = await fetch('/api/publication/' + (push ? 'push' : 'refresh'), {
@@ -72,7 +75,7 @@ async function publicationAction(push=false) {
     if (!response.ok) throw new Error(result.error || 'Publication needs attention.');
     publication = push ? result.publication : result;
     outcome = push ? result.message : 'Remote status refreshed.';
-  } catch (error) { outcome = error.message + (push && !receivedResponse ? ' Refresh before retrying; the remote may already have accepted the push.' : ''); }
+  } catch (error) { publicationFailed = true; outcome = error.message + (push && !receivedResponse ? ' Refresh before retrying; the remote may already have accepted the push.' : ''); }
   finally { publicationOutcome = outcome; busy = false; publicationBusy = false; await load(); await refreshPublication(); }
 }
 const expanded = new Set(), collapsedGroups = new Set();

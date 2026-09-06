@@ -24,12 +24,16 @@
 /* Allow instance names to wrap without squeezing the brand mark. */
 .brand{min-width:0}.brand-mark{flex-shrink:0}#project-name{min-width:0;overflow-wrap:anywhere;white-space:pre-wrap;font-size:16px;letter-spacing:0}
 
-.publication-bar { margin: 0 auto 1rem; padding: 1rem; max-width: 1200px; display: flex; gap: 1rem; justify-content: space-between; align-items: center; background: #efeee7; border-radius: 10px; }
-.publication-bar p { margin: .35rem 0 0; font-size: .85rem; overflow-wrap: anywhere; }
-.publication-actions { display: flex; gap: .5rem; flex-shrink: 0; }
 .publication-label { font-size: .7rem; border: 1px solid currentColor; border-radius: 5px; padding: .1rem .35rem; white-space: nowrap; }
 .publication-label[data-state="local"], .publication-label[data-state="uncommitted"] { color: #825313; background: #fff4d6; }
 .publication-label[data-state="unknown"] { color: #665b56; }
 .publication-label[data-state="published"] { color: #367057; }
-@media (max-width: 700px) { .publication-bar { margin: 0 1rem 1rem; align-items: stretch; flex-direction: column; } .publication-actions { flex-wrap: wrap; } }
 #publication-push[hidden] { display: none; }
+
+.refresh-button { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 7px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; flex-shrink: 0; }
+.refresh-button:hover { color: var(--ink); background: #e8ebdf; }
+.refresh-button.refreshing svg { animation: refresh-turn 1s linear infinite; }
+@keyframes refresh-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .refresh-button.refreshing svg { animation: none; } }
+.publication-feedback { color: #835516; font-size: 12px; margin: 0 0 16px; overflow-wrap: anywhere; }
+.work-actions { flex-wrap: wrap; }
