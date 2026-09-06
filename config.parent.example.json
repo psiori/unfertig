@@ -1,5 +1,5 @@
 {
   "mode": "embedded",
-  "data": "boards/procedural-game/data.json",
-  "repository": "."
+  "data": "../data/data.json",
+  "repository": "../../.."
 }

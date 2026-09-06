@@ -1,5 +1,6 @@
 """Resolve one board and its owning repository independently of launch directory."""
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -18,14 +19,20 @@ def git_root(path):
     return Path(result.stdout.strip()).resolve()
 
 
-def resolve(app_root, config=None, data=None, no_git=False):
+def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
     app_root = Path(app_root).resolve()
+    # CLI selectors override environment selectors; config wins within each tier.
+    if config is None and state_dir is None:
+        config = os.environ.get("UNFERTIG_CONFIG")
+        state_dir = os.environ.get("UNFERTIG_STATE_DIR") if not config else None
     selected = Path(config).resolve() if config else None
+    if selected is None and state_dir is not None:
+        selected = Path(state_dir).resolve() / "config/config.json"
     if selected is None and data is None:
         result = subprocess.run(['git', '-C', str(app_root), 'rev-parse', '--show-superproject-working-tree'], capture_output=True, text=True)
         parent = result.stdout.strip() if result.returncode == 0 else ''
         if parent:
-            selected = Path(parent) / 'unfertig.json'
+            selected = Path(parent) / 'state/unfertig/config/config.json'
             if not selected.is_file():
                 raise ValueError(f'Embedded app requires {selected}; copy the parent configuration example.')
         elif (app_root / 'unfertig.json').is_file():

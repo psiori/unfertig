@@ -232,6 +232,7 @@ def main():
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--data", type=Path, help="Board file; relative to config directory, or app root without config")
     parser.add_argument("--config", type=Path, help="Explicit configuration JSON")
+    parser.add_argument("--state-dir", type=Path, help="External state directory containing config/config.json (or UNFERTIG_STATE_DIR)")
     parser.add_argument("--init", action="store_true", help="Initialize a missing board with one onboarding todo")
     parser.add_argument("--no-git", action="store_true", help="Disable automatic commits for temporary test data")
     parser.add_argument("--snapshot", action="store_true", help="Print an offline snapshot with record revisions")
@@ -240,11 +241,11 @@ def main():
     parser.add_argument("--check", action="store_true", help="Validate data and exit")
     args = parser.parse_args()
     try:
-        configuration = resolve(ROOT, args.config, args.data, args.no_git)
+        configuration = resolve(ROOT, args.config, args.data, args.no_git, args.state_dir)
     except (OSError, ValueError) as error:
         parser.exit(1, f"Could not resolve board: {error}\n")
     store = BoardStore(configuration["path"], validate, git=not args.no_git)
-    store.context = {"app_root": str(ROOT), "process": str(ROOT / "PROCESS.md"),
+    store.context = {"config": str(configuration["config"] or ""), "app_root": str(ROOT), "process": str(ROOT / "PROCESS.md"),
                      "data": str(store.path), "todos": str(store.root / "todos"),
                      "repository": str(configuration["repository"] or ""), "mode": configuration["mode"]}
     server = None

@@ -20,19 +20,19 @@ It lives in `development/`, preserving the migrated app tasks. The default start
 
 ## Embed as a submodule
 
-Add the app at any submodule path in your project. Put `unfertig.json` at the **project repository root**, following `config.parent.example.json`:
+Add the app at any submodule path in your project. Put `config.json` in **`state/unfertig/config/` under the project repository root**, following `config.parent.example.json`:
 
 ```json
 {
   "mode": "embedded",
-  "data": "boards/procedural-game/data.json",
-  "repository": "."
+  "data": "../data/data.json",
+  "repository": "../../.."
 }
 ```
 
 Run the app's start launcher. A registered submodule discovers this parent config automatically. Missing parent configuration is an error, rather than a fallback to the app's own board. Explicit `--config /absolute/path/config.json` also works.
 
-Paths in the config are relative to the config file. The optional `--data` overrides its data setting, using the same relative base; without a config the base is the app directory. Precedence: explicit config/CLI override, discovered superproject config, app-root `unfertig.json`, standalone default. Embedded data must be outside the app checkout and inside the configured owning repository. Explicit missing boards require `--init`; this avoids creating a new board due to a typo. No global search for arbitrary configs is performed.
+Paths in the config are relative to the config file. The optional `--data` overrides its data setting, using the same relative base; without a config the base is the app directory. Configuration precedence: `--config`, `--state-dir`, `UNFERTIG_CONFIG`, `UNFERTIG_STATE_DIR`, discovered superproject config, app-root `unfertig.json`, standalone default. A state directory contains `config/config.json` and `data/`; its config uses `../data/data.json`. Explicit selectors override environment selectors. Standalone or hosted installations can use an external state directory; normal saves still require a Git repository owning the data. Existing standalone defaults remain supported for compatibility. Embedded data must be outside the app checkout and inside the configured owning repository. Explicit missing boards require `--init`; this avoids creating a new board due to a typo. No global search for arbitrary configs is performed.
 
 The ideas JSON, individual todos, locks, journal, receipts, and pending-history state all follow the configured board directory. Git commits are made in the repository that owns **the data**, not the repository containing the server. A host edit never commits the submodule or another project's data. The API and UI expose the resolved locations, and copied briefings point to those same locations.
 

@@ -78,3 +78,28 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(BoardStore(self.root/'app-board/data.json',validate,git=False).read()[0],fixture())
         self.assertEqual(split(*args),result)
         self.assertEqual(json.loads((old/'data.json').read_text())['schema_version'],0)
+
+    def test_host_owned_discovery_and_external_overrides(self):
+        app=self.root/'tools/unfertig';app.mkdir(parents=True);self.git(app,'init')
+        self.git(app,'config','user.name','Test');self.git(app,'config','user.email','test@example.invalid')
+        (app/'README').write_text('app');self.git(app,'add','.');self.git(app,'commit','-m','app')
+        self.git(self.root,'submodule','add',str(app),'tools/unfertig')
+        self.git(self.root,'submodule','absorbgitdirs')
+        config=self.root/'state/unfertig/config/config.json';config.parent.mkdir(parents=True)
+        with patch.dict(os.environ,{},clear=True):
+            with self.assertRaisesRegex(ValueError,'state/unfertig/config/config.json'):resolve(app)
+            config.write_text(json.dumps({'mode':'embedded','data':'../data/data.json','repository':'../../..'}))
+            result=resolve(app)
+            self.assertEqual(result['path'],self.root/'state/unfertig/data/data.json')
+            self.assertEqual(result['repository'],self.root)
+            self.assertEqual(result['config'],config)
+            external=self.root/'external';(external/'config').mkdir(parents=True)
+            other=external/'config/config.json'
+            other.write_text(json.dumps({'data':'../data/data.json'}))
+            with patch.dict(os.environ,{'UNFERTIG_CONFIG':str(other)}):
+                self.assertEqual(resolve(app)['config'],other)
+                self.assertEqual(resolve(app,state_dir=config.parent.parent)['config'],config)
+            with patch.dict(os.environ,{'UNFERTIG_STATE_DIR':str(external)}):
+                self.assertEqual(resolve(app)['path'],external/'data/data.json')
+                self.assertEqual(resolve(app,config=config)['config'],config)
+            with self.assertRaises(OSError):resolve(app,state_dir=self.root/'missing')
