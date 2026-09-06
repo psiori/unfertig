@@ -141,7 +141,7 @@ Keep the exact request body and request_id until its outcome is known. An uncert
 
 ### Automatic local Git history
 
-The server commits every meaningful saved record change: idea/todo creation, text edits, priority/group/tags, status/closure, source links, and implementation references. It does not commit clicks, polling, drafts, identical saves, or changes to `updated_at` alone. It discovers the owning Git worktree from BOARD (the host repository in embedded mode), and uses that repository's configured Git identity and records the supplied actor and affected IDs in the commit message. It never pushes.
+The server commits every meaningful saved record change: idea/todo creation, text edits, priority/group/tags, status/closure, source links, and implementation references. It does not commit clicks, polling, drafts, identical saves, or changes to `updated_at` alone. It discovers the owning Git worktree from BOARD (the host repository in embedded mode), and uses that repository's configured Git identity and records the supplied actor and affected IDs in the commit message. Automatic history never pushes; the separate explicit publication action is described below.
 
 Only changed board data paths are staged and committed with `git commit --only -- <paths>`; unrelated staged work is excluded. Migration also commits the original recovery copy. No code files are included by this mechanism. Avoid concurrently staging the board data yourself; ordinary unrelated Git operations are coordinated by Git's index lock. Git hooks/signing settings still apply and may delay or reject a commit.
 
@@ -174,3 +174,36 @@ Historical receipt IDs become tombstones in both new boards without leaking orig
 Keep mixed-board backups, receipts and manifests outside the extracted app repository. The extracted repository starts fresh rather than copying the parent's Git history. After validation, remove the retired source data only when its exact recovery copy is secure. The initial destination data and migration manifest must be committed in their owning repositories before normal service resumes.
 
 Instance configuration may include an integer `port` (default 8765). Setup and `--configure-port` prompt with the suggested range 8765–8799 and occupied localhost ports. Stop the writer before reconfiguring; commit config changes in the config-owning repository. `--port` is a temporary launch override.
+
+## Explicit publication (separate from saving)
+
+GET `/api/publication` is a read-only comparison with the cached upstream. It
+returns per-record publication states, the compared board revision, ahead/behind
+counts, destination, last explicit check time, blockers and a confirmation digest.
+Do not infer a fresh remote check from polling. PUT `/api/publication/refresh`
+with `{}` and the session token explicitly fetches the configured upstream.
+PUT `/api/publication/push` with `{"confirmation":"<latest digest>"}` and the
+session token publishes all outgoing branch commits after destination/snapshot
+validation. Review outgoing non-board commits too. These endpoints do not grant
+agents permission to push; explicit user authorization is still required.
+
+The UI requires a user confirmation for Push. A stale confirmation is rejected;
+reload and review the new branch/destination/content rather than substituting a
+fresh digest into an old decision. Do not automatically retry uncertain pushes.
+Check the remote outcome first. This endpoint uses Git ancestry and retained
+candidate refs for recovery, not the record mutation request receipts.
+
+A clean board-owning checkout and completed local history are required. The
+server serializes publication with board saves, prepares a standard merge in a
+temporary worktree, and validates full records and provenance before pushing.
+It refuses textual and semantic conflicts rather than guessing which fields win.
+Failures before remote acceptance leave the live checkout unchanged. After remote
+acceptance the server fast-forwards locally; any failure there is reported as
+remote success requiring local recovery. Retained `refs/unfertig/publication/...`
+refs preserve candidates after interruption or uncertain delivery. Inspect both
+local and remote state before manual recovery; do not blindly reset, force-push,
+remove active locks or undo accepted concurrent edits. See README for limitations.
+
+Original idea processing and todo saves remain record-scoped and locally committed.
+No persisted record schema changes are introduced by publication status. Test this
+feature only with disposable local repositories/bare remotes, never real remotes.

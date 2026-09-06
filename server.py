@@ -18,6 +18,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from storage import BoardStore, Conflict
+from publication import Publication
 from configuration import resolve, configure_port, valid_port
 
 ROOT = Path(__file__).resolve().parent
@@ -142,6 +143,7 @@ class Server(ThreadingHTTPServer):
         super().__init__(address, Handler)
         self.store = store
         self.token = secrets.token_urlsafe(32)
+        self.publication = Publication(store) if isinstance(store, BoardStore) else None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -183,6 +185,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     data, revision = self.server.store.read()
                     self.reply(200, {"data": data, "revision": revision, "token": self.server.token})
+            elif path == "/api/publication" and self.server.publication:
+                self.reply(200, self.server.publication.status())
             elif path in ("/", "/index.html", "/app.js", "/style.css", "/favicon.svg"):
                 name = "index.html" if path == "/" else path[1:]
                 mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}[Path(name).suffix]
@@ -195,7 +199,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         if not self.local_request():
             return
-        if self.path not in ("/api/state", "/api/changes", "/api/history/retry"):
+        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push"):
             self.reply(404, {"error": "Not found."})
             return
         if not secrets.compare_digest(self.headers.get("X-Board-Token", ""), self.server.token):
@@ -207,6 +211,12 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             require(isinstance(body, dict), "Expected a JSON object.")
             if isinstance(self.server.store, BoardStore):
+                if self.path == "/api/publication/refresh":
+                    self.reply(200, self.server.publication.refresh())
+                    return
+                if self.path == "/api/publication/push":
+                    self.reply(200, self.server.publication.push(body.get("confirmation")))
+                    return
                 if self.path == "/api/state":
                     raise Conflict("This server uses record edits. Reload the app; whole-board PUT is no longer supported.")
                 if self.path == "/api/history/retry":

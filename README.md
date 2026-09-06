@@ -8,7 +8,7 @@ Renamed from Little by little on 2026-09-06. The `little-board.` browser prefere
 
 Install once with `install.command` on macOS, `install.bat` on Windows, or `sh install.sh` on Linux. Then use the corresponding `start` launcher. Keep its terminal open; stop with Ctrl+C. Launchers work from any directory.
 
-In a standalone checkout, the default board is `board/data.json` plus `board/todos/`. A missing default board initializes one onboarding todo, “Add your first idea”. Existing data is never replaced or reseeded. Git must be installed and the checkout must belong to a Git repository with a configured identity. Each meaningful save is committed locally; nothing is pushed.
+In a standalone checkout, the default board is `board/data.json` plus `board/todos/`. A missing default board initializes one onboarding todo, “Add your first idea”. Existing data is never replaced or reseeded. Git must be installed and the checkout must belong to a Git repository with a configured identity. Each meaningful save is committed locally; remote pushes require the explicit Push action.
 
 Unfertig's own development backlog belongs to **psiori/um-unfertig**, in
 `state/unfertig/data/`. In that wrapper, start the independently pinned tool:
@@ -113,3 +113,62 @@ configuration or metadata. Discovery uses the installation location, independent
 of the launch working directory, external board/config paths and board ownership.
 Use an explicit name when an external board represents another project. Title
 resolution never changes data paths, Git ownership, bootstrap or operating mode.
+
+## Publishing saved work
+
+The top **Remote publication** bar compares each idea/todo's saved content with
+its version in the configured upstream branch. **Local only** means that saved
+record differs from the last fetched upstream, including an edit to an existing
+record. **On upstream** means the saved content matches; it is not a claim about
+unsaved browser drafts or a live remote check. **Not committed** identifies saved
+content missing from local HEAD. **Remote unknown** means comparison is unavailable.
+Ideas are compared individually even though they share a file.
+
+Ordinary polling and saves do not contact the network. **Check remote** fetches
+only the configured upstream branch and shows the check time. An offline or
+authentication failure makes remote status unknown until a successful check.
+Configure a single upstream in the board-owning repository yourself. Detached
+HEAD, missing upstream, differing push/fetch destinations or multiple push URLs
+require manual configuration. Unfertig preserves that repository's SSH selection.
+
+**Push all commits** appears when there are outgoing commits. Review its branch
+and remote confirmation: it publishes every outgoing branch commit, including
+committed code/configuration changes outside this board. There is no per-record
+push, cherry-pick, force-push, implicit branch selection or automatic push on save.
+Pending local Git history, uncommitted/untracked files and ongoing Git operations
+block publication; finish them manually. Save or reset browser drafts first.
+
+The server holds the board lock, fetches, and attempts a standard merge in a
+detached temporary worktree. It validates records, immutable attribution, source
+links and three-way record contents before pushing. Same-record changes on both
+branches, ID collisions and duplicate concurrent idea processing need manual
+resolution even if Git could merge the JSON text. Text conflicts also leave the
+live branch, index and working tree untouched. Independent changes to separate
+records can merge automatically. No candidate app code is executed for validation.
+Git commands have 30-second timeouts; board reads/saves wait during publication.
+
+The candidate is pushed before the live checkout advances. A rejected push leaves
+local content untouched; remote races are reported without forced retries. A lost
+push response is checked against the remote. If accepted, the live checkout is
+fast-forwarded and records are reread; existing browser drafts retain their record
+revisions and cannot silently overwrite incoming work. If local synchronization
+fails after acceptance, the message explicitly says that the remote was updated.
+Do not try to roll back the remote. The candidate remains reachable through a
+`refs/unfertig/publication/...` recovery ref for manual reconciliation. The same
+ref preserves a candidate after an uncertain push or interrupted process. Inspect
+these refs and remote history before retrying; they are not pushed by this action.
+Remove a recovery ref manually only after its outcome and local recovery are known.
+
+This coordinates one managed board server. Avoid external Git commands during
+publication; detected changes abort publication or require manual synchronization.
+Git and filesystem operations across a remote and local checkout are not one
+atomic transaction. A process/machine failure during Git's final fast-forward can
+require normal Git recovery using the retained candidate. Never reset/clean away
+unrelated work, delete live locks, or restore only one file of a split board.
+
+Publication tests use disposable repositories and local bare remotes:
+
+```sh
+uv run --no-project --python 3.12 -m unittest test_publication -v
+node --test test_title.cjs test_publication.cjs
+```

@@ -15,6 +15,10 @@
     <a class="brand" href="/" aria-label="unfertig home"><span class="brand-mark" aria-hidden="true">✳</span> unfertig<span class="brand-dot">.</span><span id="project-name"></span></a>
     <div class="header-right"><span class="local-label"><span class="live-dot"></span> LOCAL & YOURS</span><label class="identity">Working as <input id="author" aria-label="Your name or agent identity" placeholder="Your name" maxlength="100"></label></div>
   </header>
+  <section class="publication-bar" aria-label="Remote publication">
+    <div><strong>Remote publication</strong><p id="publication-state" role="status">Checking local Git status…</p><p class="hint">Record labels compare saved content with the last fetched upstream. Unsaved drafts stay in this browser.</p></div>
+    <div class="publication-actions"><button id="publication-refresh" class="button" disabled>Check remote</button><button id="publication-push" class="button primary" hidden>Push all commits</button></div>
+  </section>
   <main>
     <section class="intro">
       <div><p class="eyebrow">A PLACE FOR WHAT’S NEXT</p><h1>Good things start<br>with a little idea<span>.</span></h1><p class="intro-copy">Catch a thought. Make a plan. Move it forward.</p></div>

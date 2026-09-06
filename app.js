@@ -24,7 +24,56 @@ const draftRevisions = new Map();
 let history = {pending:false, enabled:true};
 function historyState() {
   $('#history-retry').hidden = !history.pending;
-  $('#history-state').textContent = history.pending ? 'Saved on disk · Git commit pending: ' + (history.error || 'Retry to finish local history.') : history.enabled ? 'Local Git history enabled · never pushed' : 'Automatic Git history disabled';
+  $('#history-state').textContent = history.pending ? 'Saved on disk · Git commit pending: ' + (history.error || 'Retry to finish local history.') : history.enabled ? 'Automatic local Git history · push only when requested' : 'Automatic Git history disabled';
+}
+let publication = null, publicationBusy = false, publicationOutcome = '';
+function publicationBadge(kind, id) {
+  return `<span class="publication-label" data-publication-kind="${kind}" data-publication-id="${escapeHTML(id)}" data-state="unknown">Remote unknown</span>`;
+}
+function publicationState() {
+  const current = publication?.board_revision === revision;
+  const labels = {local:'Local only', published:'On upstream', uncommitted:'Not committed', unknown:'Remote unknown'};
+  for (const el of $$('[data-publication-id]')) {
+    const state = current ? publication.records?.[el.dataset.publicationKind]?.[el.dataset.publicationId] || 'unknown' : 'unknown';
+    el.dataset.state = state; el.textContent = labels[state] || labels.unknown;
+    el.title = 'Saved record content compared with the last fetched upstream; excludes browser drafts.';
+  }
+  $('#publication-state').textContent = publicationBusy ? 'Contacting remote… Board saves will wait.' :
+    (publicationOutcome ? publicationOutcome + ' ' : '') + (publication?.error || publication?.message || 'Remote status unavailable.') +
+    (publication?.checked_at ? ` Last checked: ${new Date(publication.checked_at).toLocaleString()}.` : '');
+  $('#publication-refresh').disabled = !token || publicationBusy || busy;
+  $('#publication-push').hidden = !publication?.ahead;
+  $('#publication-push').disabled = publicationBusy || busy || !current || !publication?.can_push;
+}
+async function refreshPublication() {
+  if (publicationBusy) return;
+  try {
+    const response = await fetch('/api/publication');
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not read publication status.');
+    publication = result;
+  } catch (error) { publication = {message:error.message, records:{}}; }
+  publicationState();
+}
+async function publicationAction(push=false) {
+  if (busy || publicationBusy || pendingRequest) return;
+  if (push && hasDraft()) { toast('Save or reset your drafts before pushing saved commits.'); return; }
+  if (push && (!publication?.can_push || publication.board_revision !== revision)) return;
+  if (push && !window.confirm(`Push all outgoing commits on ${publication.branch} to ${publication.remote}/${publication.target.slice(11)}?\n\nThis includes committed changes outside this board. Unsaved drafts and uncommitted files are not published.`)) return;
+  publicationBusy = true; busy = true; publicationOutcome = ''; publicationState();
+  let outcome = '', receivedResponse = false;
+  try {
+    const response = await fetch('/api/publication/' + (push ? 'push' : 'refresh'), {
+      method:'PUT', headers:{'Content-Type':'application/json', 'X-Board-Token':token},
+      body:JSON.stringify(push ? {confirmation:publication.confirmation} : {})
+    });
+    const result = await response.json();
+    receivedResponse = true;
+    if (!response.ok) throw new Error(result.error || 'Publication needs attention.');
+    publication = push ? result.publication : result;
+    outcome = push ? result.message : 'Remote status refreshed.';
+  } catch (error) { outcome = error.message + (push && !receivedResponse ? ' Check remote before retrying; the remote may already have accepted the push.' : ''); }
+  finally { publicationOutcome = outcome; busy = false; publicationBusy = false; await load(); await refreshPublication(); }
 }
 const expanded = new Set(), collapsedGroups = new Set();
 // Keep the former little-board. preference keys so unfertig retains existing user settings.
@@ -70,6 +119,7 @@ async function load(force=false) {
     }
     if (!stale) saveState(hasDraft() ? 'Unsaved draft' : 'All changes saved');
     $('#add-idea').disabled = false; $('#new-todo').disabled = false;
+    await refreshPublication();
   } catch (error) { saveState('Connection needs attention', true); notice(error.message + ' Check that the local server is running.'); }
 }
 async function save(next) {
@@ -105,7 +155,7 @@ async function save(next) {
     stale = false; $('#notice').hidden = true;
     saveState(history.pending ? 'Saved · Git commit pending' : 'All changes saved'); return true;
   } catch (error) { saveState('Not saved', true); toast(error.message); return false; }
-  finally { busy = false; frozen.forEach(el => el.disabled = false); }
+  finally { busy = false; frozen.forEach(el => el.disabled = false); void refreshPublication(); }
 }
 function options(values, selected) { return values.map(value => `<option value="${escapeHTML(value)}" ${value === selected ? 'selected' : ''}>${escapeHTML(value)}</option>`).join(''); }
 function updateChoices() {
@@ -124,6 +174,7 @@ function render() {
   $('#progress-fill').style.width = (data.todos.length ? done / data.todos.length * 100 : 0) + '%';
   $('#progress-note').textContent = data.todos.length ? `${done} of ${data.todos.length} complete. ${done === data.todos.length ? 'Look at you go.' : 'One step at a time.'}` : 'A fresh page. Plenty of possibility.';
   $('#todo-count').textContent = data.todos.length;
+  publicationState();
 }
 function renderIdeas() {
   const linked = id => data.todos.filter(todo => todo.source_ideas.includes(id));
@@ -134,12 +185,13 @@ function renderIdeas() {
   const visible = [...data.ideas].sort((a,b) => b.date_entered.localeCompare(a.date_entered)).filter(idea => $('#show-processed').checked || !linked(idea.id).length);
   $('#ideas').innerHTML = visible.length ? visible.map(idea => {
     const todos = linked(idea.id);
-    return `<li class="idea ${todos.length ? 'processed' : ''}"><span class="idea-dot" aria-hidden="true"></span><div class="idea-body"><p class="idea-text">${escapeHTML(idea.text)}</p><div class="meta"><span class="mono">${idea.id}</span><span>· ${escapeHTML(idea.author)} · ${escapeHTML(date(idea.date_entered))}</span>${todos.length ? `<span>· Processed →</span>${todos.map(todo => `<button class="text-button" data-jump="${todo.id}">${todo.id}</button>`).join(' ')}` : '<span>· Unprocessed</span>'}</div></div><div class="idea-actions"><button class="text-button" data-process="${idea.id}">Brief agent ↗</button><button class="text-button" data-make="${idea.id}">Make todo +</button></div></li>`;
+    return `<li class="idea ${todos.length ? 'processed' : ''}"><span class="idea-dot" aria-hidden="true"></span><div class="idea-body"><p class="idea-text">${escapeHTML(idea.text)}</p><div class="meta"><span class="mono">${idea.id}</span>${publicationBadge("ideas", idea.id)}<span>· ${escapeHTML(idea.author)} · ${escapeHTML(date(idea.date_entered))}</span>${todos.length ? `<span>· Processed →</span>${todos.map(todo => `<button class="text-button" data-jump="${todo.id}">${todo.id}</button>`).join(' ')}` : '<span>· Unprocessed</span>'}</div></div><div class="idea-actions"><button class="text-button" data-process="${idea.id}">Brief agent ↗</button><button class="text-button" data-make="${idea.id}">Make todo +</button></div></li>`;
   }).join('') : `<li class="empty-scratch"><span aria-hidden="true">✧</span>${data.ideas.length ? 'All caught up. Your processed ideas are a checkbox away.' : 'Nothing to remember yet. Drop your first thought above.'}</li>`;
+  publicationState();
 }
 function field(label, name, value, attrs='') { return `<label>${label}<input name="${name}" value="${escapeHTML(value)}" ${attrs}></label>`; }
 function todoCard(todo) {
-  return `<details class="todo ${todo.status}" id="todo-${todo.id}" data-id="${todo.id}" ${expanded.has(todo.id) ? 'open' : ''}><summary><span class="status-icon" aria-label="${todo.status}">${todo.status === 'closed' ? '✓' : todo.status === 'started' ? '•' : ''}</span><span class="todo-main"><span class="todo-title">${escapeHTML(todo.name)}</span><span class="todo-subtitle"><span class="mono">${todo.id}</span><span>· ${escapeHTML(todo.group || 'Ungrouped')}</span><span>· ${todo.status}</span>${todo.tags.map(tag => `<span class="tag">${escapeHTML(tag)}</span>`).join('')}</span></span><span class="badge priority-${todo.priority}">${todo.priority}</span><span class="summary-actions"><button type="button" class="button small" data-brief="${todo.id}" aria-label="AI briefing for ${todo.id}">✧ AI briefing</button><button type="button" class="button small" data-human-brief="${todo.id}" aria-label="Human briefing for ${todo.id}">Human briefing</button></span><span class="chevron" aria-hidden="true">›</span></summary>
+  return `<details class="todo ${todo.status}" id="todo-${todo.id}" data-id="${todo.id}" ${expanded.has(todo.id) ? 'open' : ''}><summary><span class="status-icon" aria-label="${todo.status}">${todo.status === 'closed' ? '✓' : todo.status === 'started' ? '•' : ''}</span><span class="todo-main"><span class="todo-title">${escapeHTML(todo.name)}</span><span class="todo-subtitle"><span class="mono">${todo.id}</span>${publicationBadge("todos", todo.id)}<span>· ${escapeHTML(todo.group || 'Ungrouped')}</span><span>· ${todo.status}</span>${todo.tags.map(tag => `<span class="tag">${escapeHTML(tag)}</span>`).join('')}</span></span><span class="badge priority-${todo.priority}">${todo.priority}</span><span class="summary-actions"><button type="button" class="button small" data-brief="${todo.id}" aria-label="AI briefing for ${todo.id}">✧ AI briefing</button><button type="button" class="button small" data-human-brief="${todo.id}" aria-label="Human briefing for ${todo.id}">Human briefing</button></span><span class="chevron" aria-hidden="true">›</span></summary>
   <form class="todo-editor" data-id="${todo.id}"><p class="provenance">Entered by ${escapeHTML(todo.author)} · ${escapeHTML(date(todo.date_entered))} · Structured by ${escapeHTML(todo.created_by)}${todo.source_ideas.length ? ' · From ' + todo.source_ideas.join(', ') : ''}${todo.status === 'closed' ? ' · Closed by ' + escapeHTML(todo.closed_by) + ' on ' + escapeHTML(date(todo.date_closed)) : ''}</p>
   ${field('Short name','name',todo.name,'required maxlength="300"')}
   <label>Detailed description <textarea name="description" rows="5" required>${escapeHTML(todo.description)}</textarea></label>
@@ -172,6 +224,7 @@ function renderTodos() {
     const groups = unique(todos.map(todo => todo.group)).sort((a,b) => a ? b ? a.localeCompare(b) : -1 : 1);
     $('#todos').innerHTML = groups.map(group => `<details class="module" data-group="${escapeHTML(group)}" ${collapsedGroups.has(group) ? '' : 'open'}><summary>${escapeHTML(group || 'Ungrouped')}<span class="count">${todos.filter(todo => todo.group === group).length}</span></summary>${todos.filter(todo => todo.group === group).map(todoCard).join('')}</details>`).join('');
   } else { $('#todos').innerHTML = todos.map(todoCard).join(''); }
+  publicationState();
 }
 function newTodo(idea=null) {
   if (!actor()) return;
@@ -302,5 +355,7 @@ $('#history-retry').addEventListener('click', async () => {
     toast(history.pending ? 'Git still needs attention; your data remains saved.' : 'Local Git history is up to date.');
   } catch (error) { toast(error.message); }
 });
+$('#publication-refresh').addEventListener('click', () => publicationAction(false));
+$('#publication-push').addEventListener('click', () => publicationAction(true));
 load();
 setInterval(() => { if (!document.hidden && !busy) load(); }, 4000);
