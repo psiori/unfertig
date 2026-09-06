@@ -1,53 +1,5 @@
 {
-  "schema_version": 2,
-  "ideas": [
-    {
-      "id": "I0007",
-      "author": "sascha",
-      "date_entered": "2026-09-06T13:04:12.004Z",
-      "text": "change the todo list app; it must support more concurrency. human adding ideas, multiple ai working on issues at the same time. Thus, spread the stored data better; ideas can stay in one json together.   todos in a subfolder, one file for each (we assume only one ai per todo). update code and process document. also think about how to avoid conflicts, how to detect them and how to brief ai accordingly. we don't want to loose data."
-    },
-    {
-      "id": "I0013",
-      "author": "sascha",
-      "date_entered": "2026-09-06T14:31:55.850Z",
-      "text": "we now have all ideas in git. therefore, in the briefing don't pass the text, only tell the ai to have a look and transform all that have not been transformed. we can assume it has access to what is in the text files. update code and procedure documents accordingly"
-    },
-    {
-      "id": "I0014",
-      "author": "sascha",
-      "date_entered": "2026-09-06T14:32:32.866Z",
-      "text": "create categories, implementation and textual descriptions for huamn and ai:   ideation, research, concept, design, implementation, debugging, refactoring"
-    },
-    {
-      "id": "I0015",
-      "author": "sascha",
-      "date_entered": "2026-09-06T14:33:51.064Z",
-      "text": "find a better name for the todo app. I love little by little. it is taken. ideate, then research, we need a name that is cool, not a trademark, domain (com) available. remember its ai integrated; perhaps we can bring that aspect to the name, ideally funny, or think one step ahead; so not \"ai-todo\"."
-    },
-    {
-      "id": "I0016",
-      "author": "sascha",
-      "date_entered": "2026-09-06T17:37:46.239Z",
-      "text": "rename the todo list tool to 'unfertig' .   replace little by little in app, in docs, in texts."
-    },
-    {
-      "id": "I0018",
-      "author": "sascha",
-      "date_entered": "2026-09-06T17:43:25.965Z",
-      "text": "let agents that worked on an item and close it, leave some summary in the ticket when closing it. add a corresponding field, adapt sources, documentation and procedures accordingly. also clearly refer to the place of the todos and the process document in the briefing to the ai. it should check it found it first, then start working.\n\nalso make sure your briefings allow committing, actually ai should, it just shouldn't push without explicit allowance. furthermore, when it notices, there is absolutely nothing to commit, nothing was created or changed, there should also not be a branch."
-    },
-    {
-      "id": "I0019",
-      "author": "sascha",
-      "date_entered": "2026-09-06T17:49:27.422Z",
-      "text": "in todo app, ability to change priorities in place, drop down list, not unfolding the full entry"
-    },
-    {
-      "id": "I0020",
-      "author": "sascha",
-      "date_entered": "2026-09-06T17:55:45.202Z",
-      "text": "prepare the todo app to be pushed to a separate repo. \n\nthe repo should work standalone--- providing one todo.  \n\nbut the standard use will be we include it as a submodule into a git project. in that use case, the place of the ideas and todos is OUTSIDE the todo app repo, somewhere in the parent. add a configuration accordingly, provide default paths (within todo app) and relative inside the parent. furthermore, the commit of ideas then must happen in the parent repo. (which makes sense, its todos in the parent).\n\nalso prepare the present Todos-- split them: the one regarding the todo app go to the new repo, the others are extracted and pushed to the good path inside the procedural-game repo."
-    }
-  ]
+  "schema_version": 0,
+  "retired": true,
+  "message": "Development records moved to psiori/um-unfertig: state/unfertig/data/. See development/README.md."
 }

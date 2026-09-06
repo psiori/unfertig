@@ -10,13 +10,24 @@ Install once with `install.command` on macOS, `install.bat` on Windows, or `sh i
 
 In a standalone checkout, the default board is `board/data.json` plus `board/todos/`. A missing default board initializes one onboarding todo, “Add your first idea”. Existing data is never replaced or reseeded. Git must be installed and the checkout must belong to a Git repository with a configured identity. Each meaningful save is committed locally; nothing is pushed.
 
-The unfertig development backlog is separate:
+Unfertig's own development backlog belongs to **psiori/um-unfertig**, in
+`state/unfertig/data/`. In that wrapper, start the independently pinned tool:
 
 ```sh
-sh start.sh --config /absolute/path/to/unfertig/unfertig-development.json
+cd /absolute/path/to/um-unfertig
+sh start_tools.sh
 ```
 
-It lives in `development/`, preserving the migrated app tasks. The default starter board is ignored until the user initializes it; data saves explicitly track only that active board's files.
+The wrapper runs `tools/unfertig/`; its separate `unfertig/` development checkout
+can switch branches without changing the board server. Configuration lives in
+`state/unfertig/config/config.json`. The former `development/` board was relocated
+with its IDs, attribution, and records preserved. Its remaining file is a retired
+marker, and historical branches are not the authoritative development backlog.
+The obsolete `unfertig-development.json` selector has been removed.
+
+Test feature branches against a separate temporary board and port using `--data`
+and `--no-git`. Keep the real development board on the wrapper's managed runtime.
+The default standalone starter board remains available for ordinary app users.
 
 ## Embed as a submodule
 
