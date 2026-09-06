@@ -67,6 +67,30 @@ def git_root(path):
     return Path(result.stdout.strip()).resolve()
 
 
+def discover_project_name(app_root):
+    """Inspect the installation's host, never the board or launch directory."""
+    app_root = Path(app_root).resolve()
+    result = subprocess.run(['git', '-C', str(app_root), 'rev-parse',
+                             '--show-superproject-working-tree'], capture_output=True, text=True)
+    superproject = result.stdout.strip() if result.returncode == 0 else ''
+    host = Path(superproject).resolve() if superproject else None
+    # Stop at the nearest enclosing repository; unrelated outer wrappers do not
+    # identify an installation nested inside a different project.
+    for parent in app_root.parents:
+        metadata = parent / 'node.json'
+        if metadata.is_file():
+            try:
+                node = json.loads(metadata.read_text())
+            except (OSError, ValueError):
+                node = {}
+            if isinstance(node, dict) and node.get('kind') == 'project-wrapper':
+                name = node.get('name')
+                return name.strip() if isinstance(name, str) else ''
+        if parent == host or (parent / '.git').exists():
+            break
+    return host.name if host else ''
+
+
 def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
     app_root = Path(app_root).resolve()
     # CLI selectors override environment selectors; config wins within each tier.
@@ -86,8 +110,11 @@ def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
         elif (app_root / 'unfertig.json').is_file():
             selected = app_root / 'unfertig.json'
     settings = json.loads(selected.read_text()) if selected else {}
-    if not isinstance(settings, dict) or set(settings) - {'data', 'mode', 'repository', 'port'}:
-        raise ValueError('Configuration supports only data, mode, repository, and port.')
+    if not isinstance(settings, dict) or set(settings) - {'data', 'mode', 'repository', 'port', 'project_name'}:
+        raise ValueError('Configuration supports only data, mode, repository, port, and project_name.')
+    if 'project_name' in settings and not isinstance(settings['project_name'], str):
+        raise ValueError('project_name must be a string (empty suppresses the project title).')
+    project_name = settings['project_name'].strip() if 'project_name' in settings else discover_project_name(app_root)
     base = selected.parent if selected else app_root
     mode = settings.get('mode', 'standalone')
     if mode not in ('standalone', 'embedded'):
@@ -107,7 +134,7 @@ def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
             raise ValueError(f'Board owner {owner} does not match configured parent {expected}.')
     elif selected is None and data is None and owner and owner != git_root(app_root):
         raise ValueError('Default board belongs to an unexpected repository.')
-    return dict(path=path, repository=owner, mode=mode, config=selected,
+    return dict(path=path, repository=owner, mode=mode, config=selected, project_name=project_name,
                 port=valid_port(settings.get("port", DEFAULT_PORT)),
                 bootstrap=data is None and mode == 'standalone' and (selected is None or
                     (selected == app_root / 'unfertig.json' and 'data' not in settings)))

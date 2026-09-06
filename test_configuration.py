@@ -128,3 +128,75 @@ class ConfigurationTests(unittest.TestCase):
         with socket.socket() as listener:
             listener.bind(('127.0.0.1',0));listener.listen()
             self.assertTrue(port_occupied(listener.getsockname()[1]))
+
+class ProjectNameTests(unittest.TestCase):
+    setUp = ConfigurationTests.setUp
+    git = ConfigurationTests.git
+    def test_explicit_name_skips_discovery(self):
+        config=self.root/'instance.json'
+        for name in ('Customer <A> & "B"', '', '   '):
+            config.write_text(json.dumps({'project_name':name,'data':'external/data.json'}))
+            with patch('configuration.discover_project_name',side_effect=AssertionError('discovery called')):
+                result=resolve(self.root,config)
+            self.assertEqual(result['project_name'],name.strip())
+            self.assertEqual(result['path'],self.root/'external/data.json')
+            self.assertEqual(result['repository'],self.root)
+            self.assertEqual(result['mode'],'standalone')
+        for name in (None,42,False,[]):
+            config.write_text(json.dumps({'project_name':name}))
+            with self.assertRaisesRegex(ValueError,'project_name'):resolve(self.root,config)
+
+    def test_wrapper_cwd_and_boundary(self):
+        from configuration import discover_project_name
+        (self.root/'node.json').write_text(json.dumps({'kind':'project-wrapper','name':'um-example','project':{'path':'different'}}))
+        app=self.root/'tools/unfertig';app.mkdir(parents=True)
+        self.assertEqual(discover_project_name(app),'um-example')
+        before=Path.cwd()
+        try:
+            os.chdir('/tmp')
+            self.assertEqual(resolve(app,data='/tmp/title-fixture.json',no_git=True)['project_name'],'um-example')
+        finally:os.chdir(before)
+        self.git(self.root/'tools','init')
+        self.assertEqual(discover_project_name(app),'')
+
+    def test_superproject_and_standalone(self):
+        from configuration import discover_project_name
+        self.assertEqual(discover_project_name(self.root),'')
+        app=self.root/'tools/unfertig';app.mkdir(parents=True);self.git(app,'init')
+        self.git(app,'config','user.name','Test');self.git(app,'config','user.email','test@example.invalid')
+        (app/'README').write_text('app');self.git(app,'add','.');self.git(app,'commit','-m','app')
+        self.git(self.root,'submodule','add',str(app),'tools/unfertig')
+        self.git(self.root,'submodule','absorbgitdirs')
+        self.assertEqual(discover_project_name(app),self.root.name)
+        (self.root/'node.json').write_text(json.dumps({'kind':'project-wrapper','name':'Wrapper'}))
+        self.assertEqual(discover_project_name(app),'Wrapper')
+        (self.root/'node.json').write_text('{broken')
+        self.assertEqual(discover_project_name(app),self.root.name)
+
+    def test_server_exposes_startup_name_without_changing_board(self):
+        import sys, socket, time
+        from urllib.request import urlopen
+        board=self.root/'data.json';board.write_text(json.dumps(fixture()))
+        config=self.root/'instance.json'
+        config.write_text(json.dumps({'data':str(board),'project_name':'<Project> & ü'}))
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
+        process=subprocess.Popen([sys.executable,str(Path(__file__).with_name('server.py')),
+            '--config',str(config),'--no-git','--no-browser','--port',str(port)],
+            cwd='/tmp',stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+        try:
+            for _ in range(100):
+                if process.poll() is not None:self.fail(process.stderr.read().decode())
+                try:
+                    with urlopen(f'http://127.0.0.1:{port}/api/state') as response:snapshot=json.load(response)
+                    break
+                except OSError:time.sleep(.05)
+            else:self.fail('server did not start')
+            self.assertEqual(snapshot['context']['project_name'],'<Project> & ü')
+            self.assertEqual(snapshot['data'],fixture())
+            config.write_text(json.dumps({'data':str(board),'project_name':'Changed'}))
+            with urlopen(f'http://127.0.0.1:{port}/api/state') as response:again=json.load(response)
+            self.assertEqual(again['context']['project_name'],'<Project> & ü')
+            self.assertEqual(again['data'],snapshot['data'])
+        finally:
+            process.terminate();process.wait(timeout=5);process.stderr.close()

@@ -249,7 +249,8 @@ def main():
     store = BoardStore(configuration["path"], validate, git=not args.no_git)
     store.context = {"config": str(configuration["config"] or ""), "app_root": str(ROOT), "process": str(ROOT / "PROCESS.md"),
                      "data": str(store.path), "todos": str(store.root / "todos"),
-                     "repository": str(configuration["repository"] or ""), "mode": configuration["mode"]}
+                     "repository": str(configuration["repository"] or ""), "mode": configuration["mode"],
+                     "project_name": configuration["project_name"]}
     server = None
     try:
         if not store.path.exists() and not (args.configure_port or args.init or configuration["bootstrap"]) and not store.journal.exists():

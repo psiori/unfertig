@@ -9,6 +9,12 @@ const date = value => new Intl.DateTimeFormat(undefined, {month:'short',day:'num
 let data = null, revision = '', token = '', busy = false, stale = false, sourceIdea = null;
 let toastTimer;
 let boardContext = null;
+function updateTitle(context) {
+  const name = context?.project_name || '';
+  $('#project-name').textContent = name ? ` · ${name}` : '';
+  document.title = name ? `unfertig · ${name} · Ideas & todos` : 'unfertig · Ideas & todos';
+  $('.brand').setAttribute('aria-label', name ? `unfertig · ${name} home` : 'unfertig home');
+}
 function boardLocations() {
   if (!boardContext?.process || !boardContext?.data || !boardContext?.todos) throw new Error('Board locations unavailable. Reload before copying a briefing.');
   return `First locate and read ${boardContext.process}. The active ideas file is ${boardContext.data}; task records are in ${boardContext.todos}/<ID>.json. The owning project is ${boardContext.repository}. Verify these locations and the intended task before starting; report missing files instead of acting on a stale snapshot.`;
@@ -54,7 +60,7 @@ async function load(force=false) {
   try {
     const result = await requestState();
     if (busy || revision !== requestedRevision) return;
-    token = result.token; boardContext = result.context; $('#board-location').textContent = boardContext?.data || 'Board location unavailable'; history = result.history; historyState();
+    token = result.token; boardContext = result.context; updateTitle(boardContext); $('#board-location').textContent = boardContext?.data || 'Board location unavailable'; history = result.history; historyState();
     if (result.revision !== revision || !data) {
       if (data && hasDraft() && !force) {
         stale = true; notice('Other records changed. Your drafts are preserved; saving checks only the record you edit.'); return;

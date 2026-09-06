@@ -88,3 +88,28 @@ An interrupted transaction is rolled forward on restart. Preserve journals and r
 Setup asks for a port and saves it in the selected configuration. The default is **8765**; the suggested unfertig range is **8765–8799** (an application convention, not a reserved range). The prompt lists ports currently occupied on localhost, rejects occupied or invalid choices, and preserves the existing port when Enter is pressed. Ports outside the suggested range are accepted from 1–65535. Availability can change before startup.
 
 To change it later, stop the board server and run `sh start.sh --configure-port` (with `--config` or `--state-dir` when needed). This exits after saving; commit the config in its owning repository. Normal startup never prompts. `--port` overrides the saved port for that run only. Without a saved port, startup uses 8765. Each instance needs a distinct board directory and port.
+
+## Project title
+
+Set `"project_name": "My project"` in the instance configuration to show
+`unfertig · My project` in the masthead and browser tab (which also retains
+`Ideas & todos`). The value must be a string; surrounding whitespace is trimmed.
+An explicit empty or whitespace-only string suppresses the project suffix.
+Explicit values skip title discovery entirely.
+
+Otherwise startup inspects ancestors of the resolved installation directory,
+stopping at the nearest enclosing Git repository or Git superproject. The
+nearest `node.json` with `kind: "project-wrapper"` supplies its top-level `name`
+(the wrapper name, not `project.path` or a repository identifier). A qualifying
+wrapper without a usable name supplies no suffix. Unreadable/malformed metadata
+is ignored. If no wrapper qualifies, a registered Git superproject supplies its
+directory basename. An ordinary enclosing repository alone does not qualify.
+No host means no project suffix; the app's own repository name is never used.
+Nested repository boundaries prevent discovery of unrelated outer wrappers.
+
+The name is resolved once at startup, exposed as `context.project_name`, and
+rendered as text, including characters such as `<` and `&`. Restart after changing
+configuration or metadata. Discovery uses the installation location, independent
+of the launch working directory, external board/config paths and board ownership.
+Use an explicit name when an external board represents another project. Title
+resolution never changes data paths, Git ownership, bootstrap or operating mode.
