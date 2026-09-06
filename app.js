@@ -42,7 +42,7 @@ function publicationState() {
     (publicationOutcome ? publicationOutcome + ' ' : '') + (publication?.error || publication?.message || 'Remote status unavailable.') +
     (publication?.checked_at ? ` Last checked: ${new Date(publication.checked_at).toLocaleString()}.` : '');
   $('#publication-refresh').disabled = !token || publicationBusy || busy;
-  $('#publication-push').hidden = !publication?.ahead;
+  $('#publication-push').hidden = !current || !publication?.available || !(publication.ahead > 0);
   $('#publication-push').disabled = publicationBusy || busy || !current || !publication?.can_push;
 }
 async function refreshPublication() {
@@ -72,7 +72,7 @@ async function publicationAction(push=false) {
     if (!response.ok) throw new Error(result.error || 'Publication needs attention.');
     publication = push ? result.publication : result;
     outcome = push ? result.message : 'Remote status refreshed.';
-  } catch (error) { outcome = error.message + (push && !receivedResponse ? ' Check remote before retrying; the remote may already have accepted the push.' : ''); }
+  } catch (error) { outcome = error.message + (push && !receivedResponse ? ' Refresh before retrying; the remote may already have accepted the push.' : ''); }
   finally { publicationOutcome = outcome; busy = false; publicationBusy = false; await load(); await refreshPublication(); }
 }
 const expanded = new Set(), collapsedGroups = new Set();

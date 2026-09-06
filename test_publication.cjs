@@ -16,7 +16,7 @@ function harness() {
   };
   vm.createContext(context);
   vm.runInContext(source.slice(source.indexOf('let publication ='), source.indexOf('const expanded =')), context);
-  vm.runInContext(`publication = {board_revision:'board-1', ahead:1, can_push:true, records:{todos:{T0001:'local'}}, message:'Ready', confirmation:'reviewed', branch:'main', remote:'origin', target:'refs/heads/main'};`, context);
+  vm.runInContext(`publication = {available:true, board_revision:'board-1', ahead:1, can_push:true, records:{todos:{T0001:'local'}}, message:'Ready', confirmation:'reviewed', branch:'main', remote:'origin', target:'refs/heads/main'};`, context);
   return {context, nodes, badge};
 }
 test('badges reflect saved revision and stale status disables Push', () => {
@@ -24,9 +24,15 @@ test('badges reflect saved revision and stale status disables Push', () => {
   context.publicationState();
   assert.equal(badge.textContent, 'Local only');
   assert.equal(nodes.get('#publication-push').disabled, false);
+  assert.equal(nodes.get('#publication-push').hidden, false);
+  vm.runInContext('publication.ahead = 0;', context); context.publicationState();
+  assert.equal(nodes.get('#publication-push').hidden, true);
+  assert.equal(nodes.get('#publication-refresh').disabled, false);
+  vm.runInContext('publication.ahead = 1;', context);
   context.revision = 'new-board'; context.publicationState();
   assert.equal(badge.textContent, 'Remote unknown');
   assert.equal(nodes.get('#publication-push').disabled, true);
+  assert.equal(nodes.get('#publication-push').hidden, true);
 });
 test('drafts and cancelled confirmation prevent a push request', async () => {
   const {context} = harness();

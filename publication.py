@@ -139,7 +139,7 @@ class Publication:
                 if self.store.pending.exists():
                     result['message'] += ' Finish pending local Git history first.'
                 if not self.checked_at:
-                    result['message'] += ' Compared with locally cached upstream; use Check remote to refresh.'
+                    result['message'] += ' Compared with locally cached upstream; use Refresh to refresh.'
             except (GitError, OSError, ValueError, KeyError) as error:
                 result['message'] = 'Publication unavailable. Configure an upstream and verify the board repository. ' + str(error)
             return result
@@ -207,7 +207,7 @@ class Publication:
             with self.store.lock:
                 current = self.status()
                 if not confirmation or confirmation != current.get('confirmation'):
-                    raise Conflict('Board, branch or destination changed. Check remote and review Push again.')
+                    raise Conflict('Board, branch or destination changed. Refresh and review Push again.')
                 if not current['can_push']:
                     raise Conflict(current['message'] + ' ' + current.get('error', ''))
                 destination = self.destination()

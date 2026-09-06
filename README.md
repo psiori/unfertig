@@ -124,7 +124,7 @@ unsaved browser drafts or a live remote check. **Not committed** identifies save
 content missing from local HEAD. **Remote unknown** means comparison is unavailable.
 Ideas are compared individually even though they share a file.
 
-Ordinary polling and saves do not contact the network. **Check remote** fetches
+Ordinary polling and saves do not contact the network. **Refresh** fetches
 only the configured upstream branch and shows the check time. An offline or
 authentication failure makes remote status unknown until a successful check.
 Configure a single upstream in the board-owning repository yourself. Detached
