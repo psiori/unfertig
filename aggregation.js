@@ -54,7 +54,7 @@ updateChoices = function() {
 renderIdeas = function() {
   if (!aggregating()) return localRenderIdeas();
   const pending = data.ideas.filter(i => i.routing?.status !== 'routed');
-  $('#pending-count').textContent = pending.length; $('#process').disabled = !pending.length;
+  $('#pending-count').textContent = data.ideas.length; $('#process').disabled = !pending.length;
   $('#scratch-summary').textContent = `${pending.length} pending in this inbox · child ideas are shown for reference below`;
   $('#ideas').innerHTML = data.ideas.filter(i => $('#show-processed').checked || i.routing?.status !== 'routed').slice().reverse().map(idea => {
     const route = idea.routing || {}, source = aggregateSources.find(s => s.project_id === route.project_id);
