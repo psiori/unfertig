@@ -1,0 +1,78 @@
+"""Persisted JSON and API compatibility. See VERSIONING.md before any change."""
+import copy
+import re
+
+FORMAT_VERSION = '1.1.0'
+PROTOCOL_VERSION = '2.0.0'
+
+
+class VersionError(ValueError):
+    pass
+
+
+def parse(value):
+    if not isinstance(value, str) or not re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', value):
+        raise VersionError('Version must be a major.minor.build string, for example 1.1.0.')
+    return tuple(map(int, value.split('.')))
+
+
+def inspect(value, label='data', supported=FORMAT_VERSION, field='format_version'):
+    if not isinstance(value, dict):
+        raise VersionError(f'{label} must be a JSON object.')
+    version = value.get(field, '0.0.0')
+    found, current = parse(version), parse(supported)
+    if found[0] > current[0]:
+        raise VersionError(f'{label} uses {field} {version}; supported {supported}. Update Unfertig before opening or changing this data.')
+    if found > current:
+        level = 'read_only' if found[:2] > current[:2] else 'compatible'
+        return level, f'{label} uses newer {field} {version} (supported {supported}). ' + ('Read-only until Unfertig is updated.' if level == 'read_only' else 'Compatible build; version and unknown fields are preserved.')
+    if found < current and field == 'format_version' and version not in ('0.0.0', '1.0.0'):
+        raise VersionError(f'No migration registered for {label} version {version}. Update Unfertig; data was not changed.')
+    return ('legacy' if found < current else 'current'), ''
+
+
+def introduce_version(value, kind):
+    value['format_version'] = '1.0.0'
+    return value
+
+
+def useful_defaults(value, kind):
+    if kind == 'todo':
+        defaults = dict(group='', tags=[], source_ideas=[], priority='normal', status='open',
+                        closed_by='', date_closed='', pr_url='', commit_url='', commit_hash='')
+        if 'date_entered' in value:
+            defaults['updated_at'] = value['date_entered']
+        for field, default in defaults.items():
+            value.setdefault(field, default)
+    elif kind == 'config':
+        value.setdefault('port', 8765)
+    value['format_version'] = '1.1.0'
+    return value
+
+
+# Every supported step has one deterministic successor. Never jump over a step.
+MIGRATIONS = {'0.0.0': introduce_version, '1.0.0': useful_defaults}
+
+
+def migrate(value, kind, label='data'):
+    inspect(value, label)
+    result = copy.deepcopy(value)
+    while parse(result.get('format_version', '0.0.0')) < parse(FORMAT_VERSION):
+        previous = result.get('format_version', '0.0.0')
+        step = MIGRATIONS.get(previous)
+        if step is None:
+            raise VersionError(f'No migration from {previous} for {label}.')
+        result = step(result, kind)
+        if parse(result['format_version']) <= parse(previous):
+            raise VersionError('Migration did not advance its version.')
+    return result
+
+
+def semantic(value):
+    """Only strip format metadata, never user extensions, for migration audits."""
+    result = copy.deepcopy(value)
+    result.pop('format_version', None)
+    if isinstance(result.get('todos'), list) and isinstance(result.get('ideas'), list):
+        for todo in result['todos']:
+            todo.pop('format_version', None)
+    return result

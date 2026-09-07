@@ -9,3 +9,7 @@ For Unfertig development itself, the authoritative backlog is in the
 `tools/unfertig/` runtime with the wrapper's `start_tools.sh`. Keep feature
 previews on disposable boards. The app's former `development/` data is retired;
 old branches containing those records do not change the authoritative location.
+
+Read [VERSIONING.md](VERSIONING.md) while processing persistence ideas and before
+changing stored JSON or API contracts. Every format change requires its version,
+sequential migration, safe defaults, compatibility behavior, and recovery tests.

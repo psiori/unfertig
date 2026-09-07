@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import uuid
 
 from storage import Conflict, digest
+from versions import inspect, migrate
 
 
 class GitError(ValueError):
@@ -88,6 +89,9 @@ class Publication:
                 raise GitError('Remote board is incomplete; missing ideas file.')
             return {'schema_version': 1, 'ideas': [], 'todos': []}
         data = json.loads(self.out(root, 'show', f'{commit}:{header_path}'))
+        if inspect(data, 'Git board')[0] == 'read_only':
+            raise GitError('Newer minor remote data format; update Unfertig before publishing.')
+        data = migrate(data, 'board', 'Git board')
         if data.get('schema_version') != 2 or 'todos' in data:
             raise GitError('Unsupported remote storage schema. Update/migrate manually before publication.')
         data['schema_version'] = 1
@@ -96,6 +100,9 @@ class Publication:
         for path in listing:
             if path.startswith(folder) and '/' not in path[len(folder):] and path.endswith('.json'):
                 item = json.loads(self.out(root, 'show', f'{commit}:{path}'))
+                if inspect(item, path)[0] == 'read_only':
+                    raise GitError('Newer minor remote todo format; update Unfertig before publishing.')
+                item = migrate(item, 'todo', path)
                 if Path(path).stem != item.get('id'):
                     raise GitError('Remote todo ID does not match its filename.')
                 data['todos'].append(item)
@@ -122,7 +129,7 @@ class Publication:
                 result.update(available=True, branch=branch[11:], remote=remote, target=target,
                               ahead=ahead, behind=behind, dirty=dirty,
                               confirmation=digest([str(root), branch, remote, target, url, head, tip, revision]),
-                              can_push=bool(ahead and not dirty and not self.store.pending.exists() and not self.remote_error))
+                              can_push=bool(ahead and not dirty and not self.store.pending.exists() and not self.remote_error and not self.store.read_only))
                 for kind in ('ideas', 'todos'):
                     saved = {r['id']: r for r in committed[kind]}
                     upstream_records = {r['id']: r for r in published[kind]}
@@ -205,6 +212,7 @@ class Publication:
             raise Conflict('A publication operation is already running; check status before retrying.')
         try:
             with self.store.lock:
+                self.store.require_writable()
                 current = self.status()
                 if not confirmation or confirmation != current.get('confirmation'):
                     raise Conflict('Board, branch or destination changed. Refresh and review Push again.')
@@ -255,7 +263,7 @@ class Publication:
                                 raise GitError('Local repository changed during push.')
                             self.protect_local_files(root, head, candidate)
                             self.git(root, 'merge', '--ff-only', '--no-autostash', '--no-edit', '--no-stat', candidate)
-                            self.store.read()  # Re-read promoted records; never serve a cached board.
+                            self.store.initialize()  # Migrate supported incoming legacy formats under the same lock.
                         except (GitError, ValueError, Conflict) as error:
                             raise GitError(f'Remote accepted the push. Local synchronization needs manual attention; do not undo remote history. Candidate: {recovery}. {error}') from None
                         self.git(root, 'update-ref', '-d', recovery, candidate)

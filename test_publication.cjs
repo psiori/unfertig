@@ -7,7 +7,7 @@ function harness() {
   const nodes = new Map();
   const badge = {dataset:{publicationKind:'todos', publicationId:'T0001'}};
   const context = {
-    revision:'board-1', token:'token', busy:false, pendingRequest:null,
+    revision:'board-1', token:'token', busy:false, pendingRequest:null, compatibility:{read_only:false},
     $: id => {if (!nodes.has(id)) nodes.set(id, {classList:{toggle() {}}}); return nodes.get(id);},
     $$: () => [badge], escapeHTML: s => s,
     hasDraft: () => false, toast: message => context.message = message,

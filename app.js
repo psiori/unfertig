@@ -9,6 +9,16 @@ const date = value => new Intl.DateTimeFormat(undefined, {month:'short',day:'num
 let data = null, revision = '', token = '', busy = false, stale = false, sourceIdea = null;
 let toastTimer;
 let boardContext = null;
+let compatibility = {read_only:false, warnings:[]};
+function compatibilityState() {
+  const warnings = compatibility.warnings || [];
+  $('#compatibility-state').hidden = !warnings.length && !compatibility.read_only;
+  $('#compatibility-state').textContent = compatibility.read_only ? 'Read-only: update Unfertig to use this newer data format.' : warnings.length ? 'Newer compatible data detected. Unknown fields and versions will be preserved.' : '';
+  $('#compatibility-state').title = warnings.join('\n');
+  for (const element of $$('.todo-editor input, .todo-editor textarea, .todo-editor select, .todo-editor button, #idea-text, #add-idea, #new-todo, #history-retry')) {
+    element.disabled = compatibility.read_only || busy;
+  }
+}
 function updateTitle(context) {
   const name = context?.project_name || '';
   $('#project-name').textContent = name ? ` · ${name}` : '';
@@ -60,6 +70,7 @@ async function refreshPublication() {
 }
 async function publicationAction(push=false) {
   if (busy || publicationBusy || pendingRequest) return;
+  if (push && compatibility.read_only) { toast('Update Unfertig before publishing this newer data format.'); return; }
   if (push && hasDraft()) { toast('Save or reset your drafts before pushing saved commits.'); return; }
   if (push && (!publication?.can_push || publication.board_revision !== revision)) return;
   if (push && !window.confirm(`Push all outgoing commits on ${publication.branch} to ${publication.remote}/${publication.target.slice(11)}?\n\nThis includes committed changes outside this board. Unsaved drafts and uncommitted files are not published.`)) return;
@@ -104,6 +115,13 @@ async function requestState() {
   const response = await fetch('/api/state'); const result = await response.json();
   if (!response.ok) throw new Error(result.error || 'Could not load the board.');
   if (result.api_version !== 2) throw new Error('Restart the board server to finish the storage upgrade.');
+  if (result.protocol_version) {
+    if (!/^\d+\.\d+\.\d+$/.test(result.protocol_version)) throw new Error('Invalid server protocol version. Update Unfertig.');
+    const [major, minor, build] = result.protocol_version.split('.').map(Number);
+    if (major !== 2) throw new Error('Unsupported server protocol. Update Unfertig before using this board.');
+    if (minor > 0) result.compatibility = {read_only:true, warnings:['Newer server protocol ' + result.protocol_version]};
+    else if (build > 0) result.compatibility = {...result.compatibility, warnings:[...(result.compatibility?.warnings || []), 'Newer compatible server protocol ' + result.protocol_version]};
+  }
   return result;
 }
 async function load(force=false) {
@@ -112,6 +130,7 @@ async function load(force=false) {
   try {
     const result = await requestState();
     if (busy || revision !== requestedRevision) return;
+    compatibility = result.compatibility || {read_only:false, warnings:[]}; compatibilityState();
     token = result.token; boardContext = result.context; updateTitle(boardContext); $('#board-location').textContent = boardContext?.data || 'Board location unavailable'; history = result.history; historyState();
     if (result.revision !== revision || !data) {
       if (data && hasDraft() && !force) {
@@ -121,11 +140,12 @@ async function load(force=false) {
       $('#notice').hidden = true; render();
     }
     if (!stale) saveState(hasDraft() ? 'Unsaved draft' : 'All changes saved');
-    $('#add-idea').disabled = false; $('#new-todo').disabled = false;
+    $('#add-idea').disabled = compatibility.read_only; $('#new-todo').disabled = compatibility.read_only;
     await refreshPublication();
   } catch (error) { saveState('Connection needs attention', true); notice(error.message + ' Check that the local server is running.'); }
 }
 async function save(next) {
+  if (compatibility.read_only) { toast('Read-only data: update Unfertig before saving.'); return false; }
   if (busy) { toast('A save is in progress. Please try again in a moment.'); return false; }
   busy = true; saveState('Saving…');
   const frozen = $$('form input:not(:disabled), form textarea:not(:disabled), form select:not(:disabled), button[type="submit"]:not(:disabled)');
@@ -142,7 +162,7 @@ async function save(next) {
     }
     const intended = JSON.stringify({changes, actor:$('#author').value.trim()}, (key, value) => ['updated_at', 'date_entered', 'date_closed'].includes(key) ? undefined : value);
     if (pendingRequest && pendingRequest.intended !== intended) throw new Error('An earlier save has an uncertain result. Restore that draft and Save again to resolve it before making a different edit. Keep a copy of your new text.');
-    if (!pendingRequest) pendingRequest = {intended, body:{changes, actor:$('#author').value.trim(), request_id:crypto.randomUUID()}};
+    if (!pendingRequest) pendingRequest = {intended, body:{protocol_version:'2.0.0', changes, actor:$('#author').value.trim(), request_id:crypto.randomUUID()}};
     const response = await fetch('/api/changes', {method:'PUT',headers:{'Content-Type':'application/json','X-Board-Token':token},body:JSON.stringify(pendingRequest.body)});
     const result = await response.json();
     if (!response.ok) {
@@ -158,7 +178,7 @@ async function save(next) {
     stale = false; $('#notice').hidden = true;
     saveState(history.pending ? 'Saved · Git commit pending' : 'All changes saved'); return true;
   } catch (error) { saveState('Not saved', true); toast(error.message); return false; }
-  finally { busy = false; frozen.forEach(el => el.disabled = false); void refreshPublication(); }
+  finally { busy = false; frozen.forEach(el => el.disabled = compatibility.read_only); void refreshPublication(); }
 }
 function options(values, selected) { return values.map(value => `<option value="${escapeHTML(value)}" ${value === selected ? 'selected' : ''}>${escapeHTML(value)}</option>`).join(''); }
 function updateChoices() {
@@ -177,6 +197,7 @@ function render() {
   $('#progress-fill').style.width = (data.todos.length ? done / data.todos.length * 100 : 0) + '%';
   $('#progress-note').textContent = data.todos.length ? `${done} of ${data.todos.length} complete. ${done === data.todos.length ? 'Look at you go.' : 'One step at a time.'}` : 'A fresh page. Plenty of possibility.';
   $('#todo-count').textContent = data.todos.length;
+  compatibilityState();
   publicationState();
 }
 function renderIdeas() {
@@ -228,8 +249,10 @@ function renderTodos() {
     $('#todos').innerHTML = groups.map(group => `<details class="module" data-group="${escapeHTML(group)}" ${collapsedGroups.has(group) ? '' : 'open'}><summary>${escapeHTML(group || 'Ungrouped')}<span class="count">${todos.filter(todo => todo.group === group).length}</span></summary>${todos.filter(todo => todo.group === group).map(todoCard).join('')}</details>`).join('');
   } else { $('#todos').innerHTML = todos.map(todoCard).join(''); }
   publicationState();
+  compatibilityState();
 }
 function newTodo(idea=null) {
+  if (compatibility.read_only) { toast('Read-only data: update Unfertig before creating todos.'); return; }
   if (!actor()) return;
   sourceIdea = idea; $('#create-form').reset();
   $('#create-source').textContent = idea ? `From ${idea.id} · ${idea.author}. Original text is preserved in the scratchpad.` : 'A standalone todo. You can also create one from a scratchpad idea.';

@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import threading
 from datetime import datetime, timezone
+from versions import FORMAT_VERSION, PROTOCOL_VERSION, inspect, migrate, parse, VersionError
 
 
 class Conflict(Exception):
@@ -44,7 +45,7 @@ def atomic(path, raw):
 
 
 class BoardStore:
-    def __init__(self, path, validator, git=True):
+    def __init__(self, path, validator, git=True, config=None):
         self.path = Path(path).resolve()
         self.root = self.path.parent
         self.validator = validator
@@ -56,6 +57,107 @@ class BoardStore:
         self.lease = None
         self.history_error = ''
         self.context = {}
+        self.config = Path(config).resolve() if config else None
+        if self.git and self.config:
+            from configuration import git_root
+            if git_root(self.config) != git_root(self.root):
+                raise ValueError('Configuration and board must have the same Git owner.')
+        self.read_only = False
+        self.version_warnings = []
+
+    def document(self, path):
+        raw = path.read_bytes()
+        if len(raw) > 5_000_000:
+            raise ValueError(f'Data file exceeds 5 MB: {path}')
+        value = json.loads(raw)
+        inspect(value, str(path))
+        return value
+
+    def target(self, relative):
+        if relative == '@config' and self.config:
+            return self.config
+        if relative == self.path.name or relative == 'data.v1-backup.json' or re.fullmatch(r'todos/T\d{4,}\.json|\.receipts/[a-zA-Z0-9_-]{16,100}\.json', relative):
+            path = self.root / relative
+            if path.is_symlink() or not path.resolve().is_relative_to(self.root):
+                raise ValueError('Data paths cannot be symbolic links.')
+            return path
+        raise ValueError('Invalid transaction path.')
+
+    def preflight(self):
+        """Inspect every active format before any migration, recovery or Git write."""
+        self.read_only = False
+        self.version_warnings = []
+        paths = [self.path, *sorted((self.root / 'todos').glob('*.json')),
+                 self.journal, self.pending, *sorted(self.receipts.glob('*.json'))]
+        if self.config:
+            paths.append(self.config)
+        for path in paths:
+            if not path.exists():
+                continue
+            if path.is_symlink():
+                raise ValueError(f'Data paths cannot be symbolic links: {path}')
+            value = self.document(path)
+            values = [(value, str(path))]
+            if path == self.path and isinstance(value.get('todos'), list):
+                values.extend((todo, f"{path}: {todo.get('id', 'todo')}") for todo in value['todos'])
+            if path == self.journal:
+                for relative, record in value['files'].items():
+                    self.target(relative)
+                    values.append((record, relative))
+                if value.get('receipt'):
+                    self.target('.receipts/' + value['receipt']['request_id'] + '.json')
+                    values.append((value['receipt'], 'transaction receipt'))
+            if path in (self.journal, self.pending):
+                for relative in value['paths']:
+                    self.target(relative)
+            for record, label in values:
+                state, warning = inspect(record, label)
+                self.read_only |= state == 'read_only'
+                if warning:
+                    self.version_warnings.append(warning)
+        return not self.read_only
+
+    def validate_recovery(self, journal):
+        files = journal['files']
+        header = files.get(self.path.name)
+        if header is None:
+            header = self.document(self.path)
+        if header.get('schema_version') != 2 or 'todos' in header:
+            raise ValueError('Recovery needs a complete schema-2 board header.')
+        data = migrate(header, 'board')
+        data['schema_version'] = 1
+        records = {f'todos/{p.name}': self.document(p) for p in (self.root / 'todos').glob('*.json')}
+        records.update({k: v for k, v in files.items() if k.startswith('todos/')})
+        data['todos'] = []
+        for key, record in records.items():
+            if Path(key).stem != record.get('id'):
+                raise ValueError('Recovery todo ID and filename disagree.')
+            data['todos'].append(migrate(record, 'todo'))
+        self.validator(data)
+        if len(encode(data)) > 5_000_000:
+            raise ValueError('Recovered board exceeds 5 MB.')
+
+    def require_writable(self):
+        self.preflight()
+        if self.read_only:
+            raise Conflict('Newer minor data format: read-only until Unfertig is updated. ' + ' '.join(self.version_warnings))
+
+    def migrate_active(self):
+        files = {}
+        for path, kind, key in [(self.path, 'board', self.path.name),
+                                *[(p, 'todo', f'todos/{p.name}') for p in sorted((self.root / 'todos').glob('*.json'))],
+                                *[(p, 'receipt', f'.receipts/{p.name}') for p in sorted(self.receipts.glob('*.json'))],
+                                *([(self.config, 'config', '@config')] if self.config else [])]:
+            if not path.exists():
+                continue
+            old = self.document(path)
+            new = migrate(old, kind, str(path))
+            if old != new:
+                files[key] = new
+        if files:
+            # Validate the fully normalized board before journaling any write.
+            self.read()
+            self.transaction(files, f'Migrate active JSON formats to {FORMAT_VERSION}')
 
     def acquire(self):
         """Held for the server/offline command lifetime, including migration."""
@@ -95,11 +197,21 @@ class BoardStore:
 
     def initialize(self):
         with self.lock:
+            self.preflight()
+            if self.read_only:
+                if self.journal.exists() or self.pending.exists():
+                    raise VersionError('Newer minor format with pending recovery/history. Update Unfertig before recovery; files were not changed.')
+                self.read()
+                return
             self.recover()
+            if self.pending.exists() and not self.commit_pending():
+                raise Conflict('Finish pending Git history before data-format migration.')
             raw = self.path.read_bytes()
             data = json.loads(raw)
             if data.get('schema_version') == 1:
-                self.validator(data)
+                normalized = copy.deepcopy(data)
+                normalized['todos'] = [migrate(t, 'todo') for t in data['todos']]
+                self.validator(normalized)
                 backup = self.root / 'data.v1-backup.json'
                 if backup.exists() and backup.read_bytes() != raw:
                     raise ValueError('Migration backup differs; preserve and reconcile it before migration.')
@@ -119,22 +231,24 @@ class BoardStore:
                 header['schema_version'] = 2
                 files[self.path.name] = header
                 self.transaction(files, 'Migrate board to per-todo files', extra_paths=['data.v1-backup.json'])
+            self.migrate_active()
             self.read()
             if self.pending.exists():
                 self.commit_pending()
 
     def read(self):
         with self.lock:
+            self.preflight()
             if self.journal.exists():
                 self.recover()
-            header = json.loads(self.path.read_bytes())
+            header = migrate(self.document(self.path), 'board', str(self.path))
             if header.get('schema_version') != 2 or 'todos' in header:
                 raise ValueError('Expected migrated schema 2 ideas file. Restart the new server to migrate.')
             data = copy.deepcopy(header)
             data['schema_version'] = 1  # Reuse the record schema; storage layout is version 2.
             data['todos'] = []
             for path in sorted((self.root / 'todos').glob('*.json'), key=lambda p: (len(p.stem), p.stem)):
-                todo = json.loads(path.read_bytes())
+                todo = migrate(self.document(path), 'todo', str(path))
                 if path.stem != todo.get('id'):
                     raise ValueError(f'ID and filename disagree: {path.name}')
                 data['todos'].append(todo)
@@ -147,13 +261,24 @@ class BoardStore:
         with self.lock:
             data, revision = self.read()
             return dict(api_version=2, data=data, revision=revision, context=self.context,
+                        protocol_version=PROTOCOL_VERSION,
+                        compatibility={'format_version': FORMAT_VERSION, 'read_only': self.read_only,
+                                       'warnings': self.version_warnings},
                         revisions={kind: {r['id']: digest(r) for r in data[kind]} for kind in ('ideas', 'todos')},
                         history={'pending': self.pending.exists(), 'error': self.history_error, 'enabled': self.git})
 
     def transaction(self, files, message, receipt=None, extra_paths=()):
+        self.require_writable()
         if self.pending.exists() and not self.commit_pending():
             raise Conflict('Previous edit is saved but its Git commit is pending. Retry history before another edit.')
-        journal = dict(files=files, message=message, receipt=receipt, paths=list(files) + list(extra_paths))
+        files = {key: migrate(value, 'config' if key == '@config' else 'todo' if key.startswith('todos/') else 'receipt' if key.startswith('.receipts/') else 'board', key) for key, value in files.items()}
+        for key, value in files.items():
+            self.target(key)
+            if inspect(value, key)[0] == 'read_only':
+                raise VersionError('Cannot write a newer minor data format.')
+        receipt = migrate(receipt, 'receipt') if receipt else None
+        journal = dict(format_version=FORMAT_VERSION, files=files, message=message, receipt=receipt,
+                       paths=[key for key in files if not key.startswith('.receipts/')] + list(extra_paths))
         atomic(self.journal, encode(journal))
         self.recover()
         self.commit_pending()
@@ -161,30 +286,34 @@ class BoardStore:
     def recover(self):
         if not self.journal.exists():
             return
-        journal = json.loads(self.journal.read_bytes())
+        self.require_writable()
+        journal = migrate(self.document(self.journal), 'journal')
+        self.validate_recovery(journal)
         # Only server-generated, local transaction files are accepted.
         for relative, value in journal['files'].items():
-            if relative != self.path.name and not re.fullmatch(r'todos/T\d{4,}\.json', relative):
-                raise ValueError('Invalid transaction path.')
-            atomic(self.root / relative, encode(value))
-        if self.git:
-            atomic(self.pending, encode({'paths': journal['paths'], 'message': journal['message']}))
+            target = self.target(relative)
+            atomic(target, encode(value))
+        if self.git and journal['paths']:
+            atomic(self.pending, encode(dict(format_version=FORMAT_VERSION, paths=journal['paths'], message=journal['message'])))
         if journal['receipt']:
             receipt = journal['receipt']
-            atomic(self.receipts / (receipt['request_id'] + '.json'), encode(receipt))
+            atomic(self.target('.receipts/' + receipt['request_id'] + '.json'), encode(migrate(receipt, 'receipt')))
         self.journal.unlink()
 
     def commit_pending(self):
         if not self.pending.exists():
             return True
+        self.require_writable()
         try:
-            entry = json.loads(self.pending.read_bytes())
+            entry = migrate(self.document(self.pending), 'history')
             def git(*args):
                 return subprocess.run(['git', '-C', str(self.root), *args], check=True,
                                       capture_output=True, text=True, timeout=30).stdout.strip()
             root = Path(git('rev-parse', '--show-toplevel')).resolve()
             prefix = self.root.relative_to(root)
-            paths = [str(root / prefix / p) for p in entry['paths']]
+            paths = [str(self.target(p)) for p in entry['paths']]
+            if any(not Path(p).is_relative_to(root) for p in paths):
+                raise ValueError('Configuration and board must have the same Git owner for automatic migration.')
             # Never take unrelated staged changes into this commit. Git's index lock
             # coordinates with other Git commands; failures stay pending and visible.
             git('add', '-f', '--', *paths)
@@ -201,6 +330,13 @@ class BoardStore:
 
     def mutate(self, body):
         with self.lock:
+            self.require_writable()
+            if 'protocol_version' in body:
+                if parse(body['protocol_version'])[0] != parse(PROTOCOL_VERSION)[0]:
+                    raise VersionError('Unsupported request protocol major. Update the client and Unfertig.')
+                state, _ = inspect(body, 'request', PROTOCOL_VERSION, 'protocol_version')
+                if state == 'read_only':
+                    raise VersionError('Newer request protocol; update Unfertig before writing.')
             request_id = body.get('request_id', '')
             if not isinstance(request_id, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{16,100}', request_id):
                 raise ValueError('Supply a stable unique request_id (16–100 letters/digits/_/-); reuse it on uncertain retries.')
@@ -231,6 +367,8 @@ class BoardStore:
                     raise ValueError('record must be an object.')
                 ident = change.get('id')
                 if ident is None:
+                    if kind == 'todos':
+                        record = migrate(record, 'todo')
                     prefix = 'I' if kind == 'ideas' else 'T'
                     ident = prefix + str(max((int(r['id'][1:]) for r in data[kind]), default=0) + 1).zfill(4)
                     record['id'] = ident
@@ -246,6 +384,14 @@ class BoardStore:
                         raise Conflict(f'{ident} changed. Keep your draft, reload this record, compare, and reconcile only intended fields.')
                     if record.get('id') != ident:
                         raise ValueError('Record ID cannot change.')
+                    # Older clients may omit extensions; omission never deletes them.
+                    record = {**copy.deepcopy(old), **record}
+                    if kind == 'todos':
+                        if parse(record.get('format_version', FORMAT_VERSION)) < parse(old.get('format_version', FORMAT_VERSION)):
+                            raise VersionError('Cannot downgrade a record format_version.')
+                        record = migrate(record, 'todo')
+                        if inspect(record)[0] == 'read_only':
+                            raise VersionError('Cannot write a newer minor data format.')
                     # A Save that only refreshes bookkeeping is not a meaningful edit.
                     meaningful = lambda r: {k: v for k, v in r.items() if k != 'updated_at'}
                     if meaningful(record) == meaningful(old):
@@ -269,7 +415,7 @@ class BoardStore:
             for todo in data['todos']:
                 if old_todos.get(todo['id']) != todo:
                     files[f"todos/{todo['id']}.json"] = todo
-            receipt = dict(request_id=request_id, fingerprint=fingerprint, assigned=assigned)
+            receipt = dict(format_version=FORMAT_VERSION, request_id=request_id, fingerprint=fingerprint, assigned=assigned)
             actor = body.get('actor', 'editor')
             if not isinstance(actor, str) or len(actor) > 200:
                 raise ValueError('Invalid actor.')

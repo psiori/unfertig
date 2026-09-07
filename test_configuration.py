@@ -1,3 +1,4 @@
+from versions import semantic, FORMAT_VERSION
 import json
 import os
 from pathlib import Path
@@ -75,7 +76,7 @@ class ConfigurationTests(unittest.TestCase):
         with patch('split_board.atomic',side_effect=interrupt):
             with self.assertRaises(OSError):split(*args)
         result=split(*args);self.assertTrue(result['complete'])
-        self.assertEqual(BoardStore(self.root/'app-board/data.json',validate,git=False).read()[0],fixture())
+        self.assertEqual(semantic(BoardStore(self.root/'app-board/data.json',validate,git=False).read()[0]),fixture())
         self.assertEqual(split(*args),result)
         self.assertEqual(json.loads((old/'data.json').read_text())['schema_version'],0)
 
@@ -116,7 +117,7 @@ class ConfigurationTests(unittest.TestCase):
         config.unlink()
         with patch('configuration.port_occupied',return_value=False), patch('builtins.input',return_value=''), patch('sys.stdout',new_callable=StringIO):
             configure_port(resolve(self.root),self.root)
-        self.assertEqual(json.loads(config.read_text()),{'port':DEFAULT_PORT})
+        self.assertEqual(json.loads(config.read_text()),{'format_version':FORMAT_VERSION,'port':DEFAULT_PORT})
         self.assertTrue(resolve(self.root)['bootstrap'])
         with patch('configuration.port_occupied',side_effect=lambda p:p==8765), patch('builtins.input',side_effect=['bad','0','8765','8799']), patch('sys.stdout',new_callable=StringIO) as output:
             self.assertEqual(choose_port(),8799)
@@ -193,7 +194,7 @@ class ProjectNameTests(unittest.TestCase):
                 except OSError:time.sleep(.05)
             else:self.fail('server did not start')
             self.assertEqual(snapshot['context']['project_name'],'<Project> & ü')
-            self.assertEqual(snapshot['data'],fixture())
+            self.assertEqual(semantic(snapshot['data']),fixture())
             config.write_text(json.dumps({'data':str(board),'project_name':'Changed'}))
             with urlopen(f'http://127.0.0.1:{port}/api/state') as response:again=json.load(response)
             self.assertEqual(again['context']['project_name'],'<Project> & ü')

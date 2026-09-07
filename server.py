@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from storage import BoardStore, Conflict
 from publication import Publication
+from versions import inspect, migrate, parse, PROTOCOL_VERSION
 from configuration import resolve, configure_port, valid_port
 
 ROOT = Path(__file__).resolve().parent
@@ -50,6 +51,7 @@ def timestamp(value, name):
 
 def validate(data, previous=None):
     require(isinstance(data, dict), "Data must be a JSON object.")
+    inspect(data, 'board')
     require(data.get("schema_version") == 1, "Unsupported schema_version.")
     for collection in ("ideas", "todos"):
         require(isinstance(data.get(collection), list), f"{collection} must be a list.")
@@ -66,6 +68,7 @@ def validate(data, previous=None):
             if collection == "ideas":
                 string(item.get("text"), "Idea text", True)
                 continue
+            inspect(item, f'todo {ident}')
             for field in ("name", "description", "created_by"):
                 string(item.get(field), field, True)
             for field in ("group", "closed_by", "date_closed", "pr_url", "commit_url", "commit_hash"):
@@ -193,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, (ROOT / name).read_bytes(), mime + "; charset=utf-8")
             else:
                 self.reply(404, {"error": "Not found."})
-        except (OSError, ValueError, TypeError, KeyError) as error:
+        except (OSError, ValueError, TypeError, KeyError, Conflict) as error:
             self.reply(500, {"error": f"Could not read data: {error}. Your file has not been changed."})
 
     def do_PUT(self):
@@ -210,6 +213,10 @@ class Handler(BaseHTTPRequestHandler):
             require(0 < length <= MAX_BYTES, "Request must be between 1 byte and 5 MB.")
             body = json.loads(self.rfile.read(length))
             require(isinstance(body, dict), "Expected a JSON object.")
+            if 'protocol_version' in body:
+                require(parse(body['protocol_version'])[0] == parse(PROTOCOL_VERSION)[0], 'Unsupported request protocol major. Update the client and Unfertig.')
+                protocol_state, _ = inspect(body, 'request', PROTOCOL_VERSION, 'protocol_version')
+                require(protocol_state != 'read_only', 'Newer minor request protocol: update Unfertig before writing.')
             if isinstance(self.server.store, BoardStore):
                 if self.path == "/api/publication/refresh":
                     self.reply(200, self.server.publication.refresh())
@@ -256,7 +263,7 @@ def main():
         port = valid_port(args.port) if args.port is not None else configuration["port"]
     except (OSError, ValueError) as error:
         parser.exit(1, f"Could not resolve board: {error}\n")
-    store = BoardStore(configuration["path"], validate, git=not args.no_git)
+    store = BoardStore(configuration["path"], validate, git=not args.no_git, config=configuration["config"])
     store.context = {"config": str(configuration["config"] or ""), "app_root": str(ROOT), "process": str(ROOT / "PROCESS.md"),
                      "data": str(store.path), "todos": str(store.root / "todos"),
                      "repository": str(configuration["repository"] or ""), "mode": configuration["mode"],
@@ -267,14 +274,19 @@ def main():
             raise ValueError("Configured board is missing. Check its path or explicitly use --init.")
         store.acquire()
         if args.configure_port:
+            store.preflight()
+            store.require_writable()
             configure_port(configuration, ROOT)
             if not args.check:
                 store.close()
                 return
         if args.check:
             # Validation is read-only; do not migrate or retry history.
+            store.preflight()
             if json.loads(store.path.read_bytes()).get('schema_version') == 1:
-                Store(store.path).read()
+                legacy = store.document(store.path)
+                legacy['todos'] = [migrate(t, 'todo') for t in legacy['todos']]
+                validate(legacy)
             else:
                 if store.journal.exists():
                     raise ValueError('Interrupted transaction: start the server to recover first.')

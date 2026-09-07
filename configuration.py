@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import socket
 import errno
+from versions import inspect, migrate, VersionError
 
 DEFAULT_PORT = 8765
 PORT_RANGE = range(8765, 8800)
@@ -45,6 +46,9 @@ def configure_port(configuration, app_root):
     path = configuration["config"] or Path(app_root) / "unfertig.json"
     before = path.read_bytes() if path.exists() else None
     settings = json.loads(before) if before is not None else {}
+    if inspect(settings, str(path))[0] == 'read_only':
+        raise VersionError('Newer config version is read-only; update Unfertig before configuring.')
+    settings = migrate(settings, 'config', str(path))
     settings["port"] = choose_port(configuration["port"])
     if (path.read_bytes() if path.exists() else None) != before:
         raise ValueError("Configuration changed while choosing a port; rerun configuration.")
@@ -110,8 +114,9 @@ def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
         elif (app_root / 'unfertig.json').is_file():
             selected = app_root / 'unfertig.json'
     settings = json.loads(selected.read_text()) if selected else {}
-    if not isinstance(settings, dict) or set(settings) - {'data', 'mode', 'repository', 'port', 'project_name'}:
-        raise ValueError('Configuration supports only data, mode, repository, port, and project_name.')
+    inspect(settings, str(selected or 'configuration'))
+    # Unrecognized extension fields survive configuration edits and migrations.
+    settings = migrate(settings, 'config', str(selected or 'configuration'))
     if 'project_name' in settings and not isinstance(settings['project_name'], str):
         raise ValueError('project_name must be a string (empty suppresses the project title).')
     project_name = settings['project_name'].strip() if 'project_name' in settings else discover_project_name(app_root)
@@ -126,6 +131,8 @@ def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
     if path.suffix != '.json' or path.is_dir():
         raise ValueError('data must name a JSON file.')
     owner = git_root(path) if not no_git else None
+    if selected and owner and git_root(selected) != owner:
+        raise ValueError('Configuration and board must belong to the same repository.')
     if mode == 'embedded':
         if path.is_relative_to(app_root):
             raise ValueError('Embedded board data must be outside the app checkout.')

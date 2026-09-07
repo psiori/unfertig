@@ -207,3 +207,14 @@ remove active locks or undo accepted concurrent edits. See README for limitation
 Original idea processing and todo saves remain record-scoped and locally committed.
 No persisted record schema changes are introduced by publication status. Test this
 feature only with disposable local repositories/bare remotes, never real remotes.
+
+## Data and API versions
+
+[VERSIONING.md](VERSIONING.md) governs both idea processing and implementation.
+Persisted JSON uses `format_version` (currently `1.1.0`), independently of integer
+layout schema_version. Snapshots declare protocol_version `2.0.0`. Preserve these
+fields and unknown extensions in edits. Newer major versions require updating;
+newer minor versions allow inspection only; compatible builds preserve their
+original version. Do not bypass read-only guards through offline edits. Use
+`--check` for non-mutating validation; startup/`--snapshot` perform supported
+sequential migrations under the writer lock and commit meaningful changes locally.
