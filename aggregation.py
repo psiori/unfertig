@@ -27,6 +27,12 @@ class Unreachable(ValueError):
     """Only connection establishment or lost-response failures allow fallback."""
 
 
+class SourceRejected(ValueError):
+    def __init__(self, status, message):
+        self.status = status
+        super().__init__(message)
+
+
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         raise ValueError('Source redirects are not allowed.')
@@ -64,7 +70,7 @@ def exchange(source, path='/api/state', body=None, token=None):
                 raise ValueError('Source response exceeds 5 MB.')
             return json.loads(raw)
     except HTTPError as error:
-        raise ValueError(f'Source rejected HTTP request ({error.code}); filesystem fallback is forbidden.') from error
+        raise SourceRejected(error.code, f'Source rejected HTTP request ({error.code}); filesystem fallback is forbidden. {error.read(4096).decode(errors="replace")}') from error
     except (TimeoutError, ConnectionError, RemoteDisconnected, IncompleteRead) as error:
         raise Unreachable(f'HTTP connection unavailable or response lost: {error}') from error
     except URLError as error:
@@ -83,6 +89,7 @@ class Aggregation:
         self.view_lock = threading.Lock()
         self.inflight = set()
         self.next_check = {}
+        self.generations = {}
         self.entries = {s['project_id']: dict(project_id=s['project_id'],
                         name=source_repository_name(s), url=s.get('url', ''), data=None,
                         checked_at=None, status='checking', error='', transport=None, fallback_reason='') for s in self.sources}
@@ -101,8 +108,66 @@ class Aggregation:
                 reason = str(error)
         try:
             return dict(filesystem(source, self.store.validator, body, expected), transport='filesystem', fallback_reason=reason)
-        except (OSError, Conflict, ValueError) as error:
+        except Conflict as error:
+            raise SourceRejected(409, str(error)) from error
+        except OSError as error:
+            raise SourceRejected(503, f'Filesystem operation interrupted; retain the request: {error}') from error
+        except ValueError as error:
             raise ValueError(f'Filesystem blocked: {error}' + (f' (fallback: {reason})' if reason else '')) from error
+
+    def source_record(self, body):
+        source = next((s for s in self.sources if s['project_id'] == body.get('project_id')), None)
+        if source is None:
+            raise ValueError('Unknown source project.')
+        snapshot = self.inspect_source(source)
+        todo = next((t for t in snapshot['data']['todos'] if t['id'] == body.get('todo_id')), None)
+        if todo is None:
+            raise ValueError('Source todo is unavailable.')
+        preflight = preflight_context(snapshot['context'])
+        return dict(project_id=source['project_id'], todo=todo, ideas=snapshot['data']['ideas'],
+                    revision=snapshot['revisions']['todos'][todo['id']], context=snapshot['context'],
+                    compatibility=snapshot['compatibility'], history=snapshot['history'], preflight=preflight,
+                    transport=snapshot['transport'], fallback_reason=snapshot['fallback_reason'])
+
+    def source_priority(self, body):
+        """Freeze a standard child mutation; receipt retries never rebuild it."""
+        source = next((s for s in self.sources if s['project_id'] == body.get('project_id')), None)
+        if source is None:
+            raise ValueError('Unknown source project.')
+        original = body.get('original')
+        if not isinstance(original, dict) or original.get('id') != body.get('todo_id') or digest(original) != body.get('revision'):
+            raise ValueError('Supply the exact saved original and its record revision.')
+        if body.get('priority') not in ('low', 'normal', 'high', 'urgent'):
+            raise ValueError('Invalid priority.')
+        if not isinstance(body.get('actor'), str) or not body['actor'].strip():
+            raise ValueError('Supply the actual editor name.')
+        snapshot = self.inspect_source(source)
+        expected = preflight_context(snapshot['context'])
+        if expected != body.get('preflight'):
+            raise ValueError('Source context changed; retain the draft and verify its owner.')
+        if snapshot['compatibility'].get('read_only'):
+            raise SourceRejected(409, 'Source is read-only; update it before editing.')
+        if snapshot['history']['pending']:
+            raise SourceRejected(409, 'Source history is pending; finish its local commit before retrying.')
+        record = dict(original, priority=body['priority'])
+        request = dict(request_id=body.get('request_id'), actor=body['actor'],
+                       changes=[dict(collection='todos', id=original['id'], revision=body['revision'], record=record)])
+        result = self.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
+        key = source['project_id']
+        with self.view_lock:
+            self.generations[key] = self.generations.get(key, 0) + 1
+            entry = dict(self.entries[key], data=result['data'], revision=result['revision'],
+                         revisions=result['revisions'], history=result['history'],
+                         compatibility=snapshot['compatibility'], context=snapshot['context'],
+                         name=snapshot['context'].get('project_name') or source_repository_name(source),
+                         transport=result['transport'], fallback_reason=result['fallback_reason'],
+                         checked_at=datetime.now(timezone.utc).isoformat(), status='reachable', error='')
+            self.entries[key] = entry
+            self.cache[key] = entry
+            self.next_check[key] = 0
+        saved = next(t for t in result['data']['todos'] if t['id'] == original['id'])
+        return dict(todo=saved, revision=result['revisions']['todos'][original['id']], history=result['history'],
+                    project_id=source['project_id'], transport=result['transport'], fallback_reason=result['fallback_reason'])
 
     def inspect_source(self, source):
         snapshot = self.transfer(source)
@@ -130,17 +195,24 @@ class Aggregation:
 
     def refresh_source(self, source):
         key = source['project_id']
+        with self.view_lock:
+            generation = self.generations.get(key, 0)
         try:
             snapshot = self.inspect_source(source)
             entry = dict(project_id=key, name=snapshot['context'].get('project_name') or source_repository_name(source),
                          url=source.get('url', ''), data=snapshot['data'], revision=snapshot['revision'],
                          transport=snapshot['transport'], fallback_reason=snapshot['fallback_reason'],
+                         revisions=snapshot['revisions'], compatibility=snapshot['compatibility'], history=snapshot['history'],
                          context=snapshot['context'], checked_at=datetime.now(timezone.utc).isoformat(),
                          status='reachable', error='')
         except (ValueError, KeyError, TypeError, OSError) as error:
             with self.view_lock:
                 entry = dict(self.entries[key], status='stale' if key in self.cache else 'unavailable', error=str(error), transport=None, fallback_reason='')
         with self.view_lock:
+            if self.generations.get(key, 0) != generation:
+                self.inflight.discard(key)
+                self.next_check[key] = 0
+                return
             if entry['status'] == 'reachable':
                 self.cache[key] = entry
             self.entries[key] = entry
