@@ -26,11 +26,18 @@
     </section>
     <div id="notice" class="notice" role="alert" hidden><span id="notice-text"></span><button id="reload" class="button small">Load latest</button></div>
     <section class="scratchpad panel" aria-labelledby="scratch-heading">
-      <div class="section-heading"><div><span class="section-index">01 / CAPTURE</span><h2 id="scratch-heading">The scratchpad <span id="pending-count" class="count">0</span></h2></div><button id="process" class="button subtle" disabled><span aria-hidden="true">✧</span> Copy processing briefing</button></div>
-      <div class="processing-controls"><button id="process-run" class="button primary" type="button" disabled>Process ideas with Codex</button><span id="processing-state" role="status" aria-live="polite"></span><details><summary>Processing details</summary><pre id="processing-details"></pre></details></div>
-      <form id="idea-form"><label for="idea-text" class="sr-only">New idea</label><textarea id="idea-text" rows="2" placeholder="What’s on your mind? Rough ideas welcome." required maxlength="100000"></textarea><div class="composer-footer"><span><kbd id="shortcut">⌘</kbd> <kbd>Enter</kbd> to capture · original words kept</span><label id="idea-project-label" hidden>Project <select id="idea-project"><option value="">Infer from text</option></select></label><button id="add-idea" class="button primary" type="submit" disabled>Add idea <span aria-hidden="true">↗</span></button></div></form>
-      <div class="scratch-toolbar"><span id="scratch-summary">Your ideas, before they become a plan.</span><label class="check"><input type="checkbox" id="show-processed"> Show processed</label></div>
-      <ul id="ideas" class="ideas"></ul>
+      <div class="section-heading"><div><span class="section-index">01 / CAPTURE</span><h2 id="scratch-heading">The scratchpad</h2></div></div>
+      <form id="idea-form">
+        <label for="idea-text" class="sr-only">New idea</label>
+        <textarea id="idea-text" rows="2" placeholder="What’s on your mind? Rough ideas welcome." required maxlength="100000"></textarea>
+        <div class="composer-footer"><span><kbd id="shortcut">⌘</kbd> <kbd>Enter</kbd> to capture</span><div class="composer-actions"><label id="idea-project-label" hidden>Project <select id="idea-project"><option value="">Infer from text</option></select></label><button id="add-idea" class="button primary" type="submit" disabled>Add idea <span aria-hidden="true">↗</span></button></div></div>
+      </form>
+      <div class="scratch-toolbar"><div><h3 id="saved-ideas-heading">Saved ideas <span id="pending-count" class="count" title="Ideas waiting for todos">0</span></h3><p id="scratch-summary">Your ideas, before they become a plan.</p></div><label class="check"><input type="checkbox" id="show-processed"> Show processed</label></div>
+      <ul id="ideas" class="ideas" aria-labelledby="saved-ideas-heading"></ul>
+      <div class="processing-controls" aria-labelledby="processing-heading">
+        <div class="processing-main"><div class="processing-copy"><h3 id="processing-heading">Turn ideas into todos</h3><p id="processing-state" role="status" aria-live="polite">Checking processing status…</p></div><div class="processing-actions"><button id="process-run" class="button processing-button" type="button" disabled>Create todos with Codex</button><button id="process" class="text-button" type="button" title="Copy a briefing for all pending ideas" aria-label="Copy briefing for all pending ideas" disabled>Copy briefing</button></div></div>
+        <details class="processing-disclosure"><summary id="processing-summary">Automation &amp; run details</summary><p id="processing-automation"></p><pre id="processing-details"></pre></details>
+      </div>
     </section>
     <section class="work" aria-labelledby="work-heading">
       <div class="section-heading"><div><span class="section-index">02 / MAKE IT HAPPEN</span><h2 id="work-heading">One thing at a time <span id="todo-count" class="count">0</span></h2></div><div class="work-actions"><span id="save-state" role="status" aria-live="polite">Connecting…</span><button id="publication-push" class="button" hidden>Push all commits</button><button id="publication-refresh" class="refresh-button" type="button" aria-label="Refresh from remote" title="Refresh from remote" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.4 6M20 4v7h-7"/></svg></button><button id="new-todo" class="button" disabled>+ New todo</button></div></div>

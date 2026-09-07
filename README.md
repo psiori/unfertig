@@ -288,7 +288,7 @@ node --test test_*.cjs
 
 ### Process ideas with Codex
 
-**Process ideas with Codex** starts a planning-only local Codex CLI job in the
+**Create todos with Codex** starts a planning-only local Codex CLI job in the
 resolved project directory. It reads repository instructions, current design,
 saved context and the selected developer's rules, then re-reads the authoritative
 board. It creates/refines open todos through the board API, whose normal history
@@ -341,3 +341,10 @@ another machine. Manual processing can select all pending ideas. Unsupported
 system identity disables automatic selection rather than guessing. A running
 job excludes another launch on the same board. Other manual agents must still
 follow the existing source-link/revision conflict and routing-receipt rules.
+
+The scratchpad groups capture first, saved ideas and their filter second, and
+processing last. The processing area keeps the Codex action, bulk briefing and
+run status together. Expand its automatic/manual summary for timing, system scope,
+working directory and the latest result. Individual idea rows offer a briefing
+or manual todo creation. Unsaved drafts and an empty queue disable the Codex
+action immediately; activity remains batched into the existing heartbeats.
