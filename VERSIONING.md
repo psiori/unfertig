@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.3.0`.
+`format_version` is a major.minor.build string. Current storage is `1.5.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -91,3 +91,15 @@ it does not invent origins for old ideas. Earlier writers become read-only.
 Both HTTP and filesystem creations use BoardStore's same system attribution and
 immutability checks. Processing status/presence are ephemeral service controls,
 not a second record writer or persistent job format. API protocol remains 2.0.0.
+
+Format **1.5.0** adds optional backend-managed todo workflow claims and config
+workflow with automatic:false. The sequential 1.4 → 1.5 migration invents no
+claims and changes no originals. Active storage uses existing migration,
+transaction and receipt recovery. Ordinary HTTP and filesystem mutations preserve
+but cannot forge/change claims; owner-local actions use BoardStore transactions.
+Claims retain system, run ID, scope digest, repository, worktree, branch, base,
+phase and message; completed stages add commit, tested_commit and preview URL.
+Foreign claims cannot be taken over automatically. Interrupted stages require
+explicit retry. Versioned deployment receipts beside retained worktrees are local
+runtime evidence keyed by run and exact commit; newer-minor receipts cannot
+complete an older writer's job. Preview data and logs remain local there.

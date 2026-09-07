@@ -90,3 +90,9 @@
   .processing-controls { padding:14px; }
   .scratchpad .scratch-toolbar { align-items:flex-start; }
 }
+
+.workflow-panel { margin: 0 20px 16px; padding: 14px; border: 1px solid var(--border, #ddd); border-radius: 10px; }
+.workflow-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.workflow-panel p { margin: 9px 0; font-size: 13px; }
+.workflow-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; font-size: 12px; }
+.workflow-panel details > summary { cursor: pointer; font-size: 13px; }

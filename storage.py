@@ -397,7 +397,7 @@ class BoardStore:
             self.history_error = (getattr(error, 'stderr', '') or str(error)).strip()
             return False
 
-    def mutate(self, body, *, routing=False):
+    def mutate(self, body, *, routing=False, workflow=False):
         with self.lock:
             self.require_writable()
             if 'protocol_version' in body:
@@ -437,6 +437,9 @@ class BoardStore:
                 if not isinstance(record, dict):
                     raise ValueError('record must be an object.')
                 ident = change.get('id')
+                old_workflow = next((r.get('workflow') for r in data[kind] if r['id'] == ident), None)
+                if not workflow and record.get('workflow', old_workflow) != old_workflow:
+                    raise ValueError('Workflow state is managed by /api/workflow/action.')
                 if not routing and ('routing' in record or (ident and any(r['id'] == ident and 'routing' in r for r in data[kind]))):
                     old_route = next((r.get('routing') for r in data[kind] if r['id'] == ident), None)
                     if record.get('routing', old_route) != old_route:
