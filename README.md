@@ -196,6 +196,20 @@ Choose `--configure-mode` during stopped setup, or configure an empty inbox:
 Set the corresponding `project_id` in each source config and restart it first;
 verify source IDs and exact data paths with `/api/state`. Configuration paths are
 relative to the config file. Up to 20 explicit JSON locations are supported.
+
+An explicit `project_id` always takes precedence. If omitted, the ID is the first
+32 hexadecimal characters of SHA-256 of the resolved board data path relative to
+the enclosing Kermit workspace, using POSIX separators and UTF-8. The workspace
+is identified by its `node.json` application ID `salange/kermit` and runtime root
+`state/node.json`, regardless of its directory name or location. Without that
+workspace, the nearest enclosing Git repository is the root; without Git, the
+configuration directory (or application directory without a config) is the root.
+This matches Kermit's source launcher. Moving the whole workspace preserves IDs;
+moving a board within it changes a fallback ID. For existing boards, explicitly
+save the old ID before upgrading to preserve aggregation and provenance links.
+Use explicit distinct IDs for independent copies with identical relative layouts.
+No stored format or record migration is introduced by this resolver change.
+
 Canonical duplicate paths are deduplicated; conflicting aliases/identities and
 self references are rejected. No arbitrary recursion or nested aggregation is
 supported. HTTP-only sources need a separately started service. Filesystem sources

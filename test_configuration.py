@@ -15,6 +15,15 @@ from test_server import fixture
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_portable_identity_fallback_and_explicit_override(self):
+        import hashlib
+        config = self.root / 'unfertig.json'
+        config.write_text(json.dumps({'data': 'boards/project/data.json'}))
+        expected = hashlib.sha256(b'boards/project/data.json').hexdigest()[:32]
+        self.assertEqual(resolve(self.root, config)['project_id'], expected)
+        config.write_text(json.dumps({'data': 'boards/project/data.json', 'project_id': 'stable-board'}))
+        self.assertEqual(resolve(self.root, config)['project_id'], 'stable-board')
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name).resolve()
