@@ -115,8 +115,12 @@ an already accepted creation. If HTTP returns after a filesystem inspection but
 the client lacks its session token, that write blocks on 403; retrying gets a
 fresh token without changing the durable request.
 
-Each next operation probes HTTP again: no sticky failover, retry timer or durable
-cache. Visible pages refresh every four seconds, with one refresh in flight.
+Each next transport operation probes HTTP again: no sticky failover or durable
+cache. Visible pages poll the cached view every four seconds. Source checks run
+independently in the background with one check per source in flight. Healthy
+sources become eligible after four seconds; failed sources after 20 seconds.
+The view never waits for HTTP or filesystem I/O. Routing remains an explicit
+operation and is not delayed by the view's retry schedule.
 Successful refresh replaces the source view; a failure retains last successful
 records marked stale, or unavailable with no cached records. Transport and
 fallback reason are visible; inaccessible never means an empty authoritative

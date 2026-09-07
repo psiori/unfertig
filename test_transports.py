@@ -19,6 +19,8 @@ import test_aggregation as fixtures
 
 class Conformance:
     request = fixtures.AggregationTests.request
+    refreshed = fixtures.AggregationTests.refreshed
+    test_nonblocking_refresh_and_twenty_second_backoff = fixtures.AggregationTests.test_slow_source_is_nonblocking_and_retries_after_twenty_seconds
 
     def setUp(self):
         fixtures.AggregationTests.setUp(self)
@@ -71,7 +73,7 @@ class Conformance:
             self.assertEqual(snapshot['data'], board.snapshot()['data'])
             self.assertEqual(snapshot['revisions'], board.snapshot()['revisions'])
             self.assertEqual(snapshot['context'], board.context)
-        view = self.router.view()['sources']
+        view = self.refreshed(self.router)['sources']
         self.assertEqual([s['data']['todos'][0]['id'] for s in view], ['T0001', 'T0001'])
 
     def test_pending_destination_history_blocks_then_recovers(self):
@@ -173,10 +175,10 @@ class DualConformance(Conformance, unittest.TestCase):
         source.pop('url')
         self.router.sources = [source]
         with patch('aggregation.exchange', side_effect=AssertionError('HTTP must not run')):
-            self.assertEqual(self.router.view()['sources'][0]['transport'], 'filesystem')
+            self.assertEqual(self.refreshed(self.router)['sources'][0]['transport'], 'filesystem')
             self.assertEqual(self.router.route(self.request())['idea']['routing']['status'], 'routed')
         self.router.sources = [dict(source, data=str(self.root / 'missing.json'))]
-        result = self.router.view()['sources'][0]
+        result = self.refreshed(self.router)['sources'][0]
         self.assertEqual(result['status'], 'stale')
         fresh = Aggregation(self.inbox); fresh.sources = self.router.sources
         self.assertIsNone(fresh.view()['sources'][0]['data'])
