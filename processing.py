@@ -14,6 +14,7 @@ import time
 import uuid
 from functools import lru_cache
 from storage import Conflict
+from codex_runtime import resolve_executable
 
 
 @lru_cache(maxsize=1)
@@ -70,6 +71,7 @@ def settings(value, base, app_root, repository):
         directory = directory or anchor
         result['directory_source'] = 'auto (owner + at most 2 parents)'
     result['working_directory'] = str(directory)
+    result['executable'] = resolve_executable(result['executable']) or result['executable']
     return result
 
 
@@ -98,7 +100,7 @@ class Processor:
 
     def status(self):
         with self.lock:
-            executable = shutil.which(self.options['executable'])
+            executable = resolve_executable(self.options['executable'])
             return dict(self.state, enabled=self.options['enabled'], automatic=self.options['automatic'],
                         available=bool(executable), working_directory=self.options['working_directory'],
                         directory_source=self.options['directory_source'], idle_seconds=self.options['idle_seconds'],
@@ -133,7 +135,7 @@ class Processor:
                 return self.status()
             if not self.options['enabled']:
                 raise ValueError('Idea processing is disabled in configuration.')
-            executable = shutil.which(self.options['executable'])
+            executable = resolve_executable(self.options['executable'])
             if not executable:
                 raise ValueError('Codex executable not found. Configure processing.executable and sign in with codex login.')
             snapshot = self.store.snapshot()
