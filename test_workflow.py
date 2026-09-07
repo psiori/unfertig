@@ -153,6 +153,9 @@ class WorkflowTests(unittest.TestCase):
         todo = self.run_stage('merge')
         self.assertEqual(todo['workflow']['phase'], 'merge_failed')
         self.assertFalse((self.repo/'result').exists())
+        self.assertIn(str(self.repo), todo['workflow']['message'])
+        self.assertIn('Implementation is committed', todo['workflow']['message'])
+        self.assertIn('retry Merge & restart', todo['workflow']['message'])
         self.assertNotIn('tested_commit', todo['workflow'])
 
     def test_interrupted_claim_survives_restart_without_automatic_retry(self):

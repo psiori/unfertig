@@ -425,11 +425,14 @@ own commands. Managed Unfertig retains its normal update gate: a future storage
 migration requires an explicit stopped migration. Unmanaged artifact processes
 are not killed; configure their owning supervisor when necessary.
 
-The Unfertig restart recipe waits up to 900 seconds for managed startup, including
+The Unfertig restart recipe polls supervisor status for up to 900 seconds, including
 candidate tests and storage validation. Set `--startup-timeout SECONDS` (1–3600)
 on the recipe for a different budget, keeping the outer workflow timeout larger
-than the startup budget plus shutdown time. A supervisor client timeout does not
-stop the updater; it can finish deploying after the recipe reports failure.
+than the startup budget plus shutdown time. A short supervisor client timeout does not end the deployment: the helper keeps
+polling until that same session reports the Unfertig service running, then
+verifies the installed commit. A real failure or changed session is rejected.
+If the overall budget expires, the message explicitly reports pending startup;
+inspect supervisor status before retrying.
 
 Automatic implementation defaults **off**, separately from idea processing.
 When enabled, it selects open, unclaimed todos entered on/after automatic_since

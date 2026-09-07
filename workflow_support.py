@@ -24,6 +24,45 @@ def run(args, cwd):
     subprocess.run(list(map(str,args)), cwd=cwd, check=True)
 
 
+
+def start_managed(context, timeout):
+    """Wait for the supervisor, whose startup work outlives a client wait."""
+    deadline = time.monotonic() + timeout
+    env = {k: v for k, v in os.environ.items()
+           if k not in ('VIRTUAL_ENV', 'UV_PROJECT_ENVIRONMENT', 'UV_PROJECT')}
+    command = ['sh', str(context/'start_tools.sh'), '--timeout', str(min(5, timeout)), '--json']
+    result = subprocess.run(command, cwd=context, env=env, capture_output=True, text=True, timeout=30)
+    session = None
+    while True:
+        try:
+            state = json.loads(result.stdout)
+        except (ValueError, TypeError):
+            state = None
+        if state is not None:
+            if not isinstance(state, dict):
+                raise ValueError('Invalid managed supervisor status.')
+            current = state.get('run_id')
+            if session and current != session:
+                raise ValueError('Managed startup session changed; inspect its status before retrying.')
+            session = current or session
+            phase = state.get('phase')
+            if phase == 'running' and result.returncode == 0:
+                if not any(t.get('name') == 'unfertig' and t.get('state') == 'running'
+                           for t in state.get('tools', [])):
+                    raise ValueError('Managed supervisor is running without the Unfertig service.')
+                return
+            if phase != 'starting':
+                raise ValueError('Managed startup failed: ' + str(state.get('error') or phase))
+        elif '--status' in command:
+            raise ValueError('Cannot read managed startup status: ' + (result.stderr or result.stdout)[-2000:])
+        if time.monotonic() >= deadline:
+            raise ValueError('Managed startup is still pending after the wait budget; the supervisor may continue. '
+                             'Inspect start_tools.sh --status before retrying.')
+        time.sleep(min(2, max(0, deadline - time.monotonic())))
+        command = ['sh', str(context/'start_tools.sh'), '--status', '--json']
+        result = subprocess.run(command, cwd=context, env=env, capture_output=True, text=True, timeout=30)
+
+
 def spawn_artifact(argv, repository, marker, url=''):
     marker.parent.mkdir(parents=True, exist_ok=True)
     if marker.is_file():
@@ -122,7 +161,7 @@ def main():
         run(['sh',str(context/'stop_tools.sh'),'--timeout','60'],context)
         # Startup includes candidate tests and storage validation, not just the
         # server launch. A client timeout leaves that work running in background.
-        run(['sh',str(context/'start_tools.sh'),'--timeout',str(args.startup_timeout)],context)
+        start_managed(context, args.startup_timeout)
         # The standard updater is the authority: it may refuse a storage migration.
         runtime=context/'tools/unfertig'
         expected=subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()

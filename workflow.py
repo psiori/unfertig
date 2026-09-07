@@ -324,7 +324,9 @@ Use uv for Python. Commit the finished implementation. End your final response w
                 # A failed push is recoverable: no force push and no repeated merge required.
                 branch = self.options['base_branch']
                 if self.git('branch', '--show-current') != branch or self.git('status', '--porcelain'):
-                    raise ValueError('The target checkout must be clean and on '+branch+'. Preserve other work before merging.')
+                    raise ValueError('Implementation is committed, but merge is blocked: target ' + self.options['repository'] +
+                                     ' must be clean and on ' + branch + '. Preserve uncommitted files on a separate branch/worktree, '
+                                     'then retry Merge & restart. No merge or deployment was performed.')
                 self.git('fetch', 'origin', branch)
                 remote = self.git('rev-parse', 'refs/remotes/origin/'+branch)
                 head = self.git('rev-parse', 'HEAD')
