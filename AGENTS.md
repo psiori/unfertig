@@ -13,3 +13,10 @@ old branches containing those records do not change the authoritative location.
 Read [VERSIONING.md](VERSIONING.md) while processing persistence ideas and before
 changing stored JSON or API contracts. Every format change requires its version,
 sequential migration, safe defaults, compatibility behavior, and recovery tests.
+
+HTTP and filesystem aggregation are one maintained contract. Every relevant
+schema, API, storage, migration, routing, or view change must update both adapters
+and run `test_transports` plus the full suite. Put record semantics in BoardStore
+and common validation/context helpers; never implement a weaker filesystem writer.
+Add recovery and transport-switch scenarios to the shared conformance suite.
+See TRANSPORTS.md for configuration, coordination, and compatibility boundaries.

@@ -94,8 +94,10 @@ class AggregationTests(unittest.TestCase):
             self.boards.append(store)
         self.inbox, self.alpha, self.beta = self.boards
         self.sources=[]
+        self.servers=[]
         for board in self.boards[1:]:
             server=Server(('127.0.0.1',0),board)
+            self.servers.append(server)
             thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
             self.addCleanup(server.server_close);self.addCleanup(server.shutdown)
             self.sources.append(dict(project_id=board.context['project_id'],data=str(board.path),url=f'http://127.0.0.1:{server.server_port}'))
