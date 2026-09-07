@@ -41,3 +41,32 @@ test('collapsed row follows workflow stages and respects execution guards',async
   result.runs.T0001={phase:'done'}; await poll(); assert.equal(slot.hidden,true);
   result.runs={}; result.enabled=false; await poll(); assert.equal(slot.hidden,true); assert.equal(slot.innerHTML,'');
 });
+
+test('both entry points offer optional preview and confirmed direct merge with truthful status',async()=>{
+  const events={};let poll,confirmation='',approved=false,submitted;
+  const commit='a'.repeat(40),todo={id:'T0001',status:'started',name:'Task',description:'Scope'};
+  const slot={dataset:{workflowNext:todo.id}},panel={dataset:{workflow:todo.id},querySelector:()=>null};
+  let result={enabled:true,configured:true,runs:{T0001:{phase:'ready',commit,branch:'codex/task'}}};
+  const context={document:{querySelectorAll:s=>s==='[data-workflow-next]'?[slot]:[panel],addEventListener:(n,f)=>events[n]=f},
+    token:'token',data:{todos:[todo]},compatibility:{read_only:false},history:{pending:false},hasDraft:()=>false,
+    escapeHTML:s=>s,setInterval:f=>poll=f,setTimeout:()=>{},load:async()=>{},alert:assert.fail,
+    confirm:s=>{confirmation=s;return approved;},fetch:async(url,options)=>{
+      if(url==='/api/state')return {ok:true,json:async()=>({data:{todos:[todo]},token:'fresh',revisions:{todos:{T0001:'revision'}}})};
+      if(options)submitted=JSON.parse(options.body);
+      return {ok:true,json:async()=>result};
+    }};
+  vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
+  for(const phase of ['ready','test_failed','tested','merge_failed','push_failed','restart_failed']){
+    result.runs.T0001.phase=phase;await poll();
+    for(const surface of [slot,panel]){
+      assert.match(surface.innerHTML,/data-workflow-action="merge"[^>]* >Merge & restart/);
+      assert.match(surface.innerHTML,/has not passed Test branch/);
+    }
+  }
+  const click=()=>events.click({target:{closest:()=>({dataset:{todo:todo.id,workflowAction:'merge'}})},preventDefault(){},stopPropagation(){}});
+  await click();assert.equal(submitted,undefined);assert.ok(confirmation.includes(commit));assert.match(confirmation,/has not passed/);
+  approved=true;await click();assert.equal(submitted.commit,commit);assert.equal(submitted.revision,'revision');
+  result.runs.T0001.tested_commit=commit;await poll();
+  for(const surface of [slot,panel])assert.match(surface.innerHTML,/This commit passed Test branch/);
+  result.runs.T0001.tested_commit='b'.repeat(40);await poll();assert.match(panel.innerHTML,/has not passed/);
+});

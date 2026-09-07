@@ -64,6 +64,26 @@ class Conformance:
             self.router.transfer(source, '/api/changes', request, snapshot.get('token'), preflight_context(snapshot['context']))
         self.assertNotIn('workflow', self.alpha.read()[0]['todos'][0])
 
+    def test_untested_merge_claim_survives_transport_switch_and_retry(self):
+        source = self.sources[0]
+        snapshot = self.alpha.snapshot()
+        old = snapshot['data']['todos'][0]
+        claim = dict(phase='merging', commit='a'*40, run_id='b'*32, system='c'*64,
+                     repository=str(self.alpha.root), worktree=str(self.alpha.root/'preview'),
+                     branch=f"codex/{old['id'].lower()}-bbbbbbbb", base='d'*40, message='Merging reviewed commit')
+        self.alpha.mutate(dict(actor='Codex', request_id=uuid.uuid4().hex, changes=[dict(
+            collection='todos', id=old['id'], revision=digest(old), record=dict(old, workflow=claim))]), workflow=True)
+        snapshot = self.router.inspect_source(source)
+        old = snapshot['data']['todos'][0]
+        request = dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
+            collection='todos', id=old['id'], revision=digest(old), record=dict(old, priority='high'))])
+        expected = preflight_context(snapshot['context'])
+        self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
+        switched = dict(source, transports=dict(http=False, filesystem=True))
+        retry = self.router.transfer(switched, '/api/changes', request, None, expected)
+        self.assertEqual(retry['data']['todos'][0]['workflow'], claim)
+        self.assertEqual(self.router.inspect_source(switched)['data']['todos'][0]['workflow'], claim)
+
     def test_same_and_different_record_revisions(self):
         source = self.sources[0]
         snapshot = self.router.inspect_source(source)

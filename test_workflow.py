@@ -79,14 +79,59 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.git('ls-remote','origin','refs/heads/main').split()[0],todo['commit_hash'])
         self.assertEqual((self.repo/'result').read_text(),'implemented')
 
-    def test_stale_revision_duplicate_claim_and_unverified_merge_blocked(self):
+    def test_stale_revision_duplicate_claim_and_forgery_blocked(self):
         with self.assertRaises(Conflict): self.workflow.start(dict(id='T0001',action='implement',revision='stale'))
         self.run_stage('implement')
         with self.assertRaises(ValueError):self.run_stage('implement')
-        with self.assertRaises(ValueError):self.run_stage('merge')
         snap=self.store.snapshot();todo=snap['data']['todos'][0]
         record=copy.deepcopy(todo);record['workflow']['phase']='done'
         with self.assertRaises(ValueError):self.store.mutate(dict(actor='Test',request_id=uuid.uuid4().hex,changes=[dict(collection='todos',id=todo['id'],revision=snap['revisions']['todos'][todo['id']],record=record)]))
+
+    def test_direct_merge_preserves_absent_test_evidence_after_reload(self):
+        todo = self.run_stage('implement')
+        self.assertNotIn('tested_commit', todo['workflow'])
+        todo = self.run_stage('merge')
+        self.assertEqual(todo['workflow']['phase'], 'restarting', todo)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            self.workflow.reconcile()
+            todo = self.store.snapshot()['data']['todos'][0]
+            if todo['status'] == 'closed':
+                break
+            time.sleep(.1)
+        self.assertEqual(todo['status'], 'closed', todo)
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], todo['workflow']['commit'])
+        resumed = Workflow(self.store, self.workflow.url, self.options, self.processing)
+        self.addCleanup(resumed.close)
+        self.assertNotIn('tested_commit', resumed.status()['runs']['T0001'])
+
+    def test_failed_optional_preview_can_merge_without_fabricating_success(self):
+        self.run_stage('implement')
+        self.workflow.options['test'] = [sys.executable, '-c', 'raise SystemExit(1)']
+        todo = self.run_stage('test')
+        self.assertEqual(todo['workflow']['phase'], 'test_failed')
+        todo = self.run_stage('merge')
+        self.assertEqual(todo['workflow']['phase'], 'restarting', todo)
+        self.assertNotIn('tested_commit', todo['workflow'])
+
+    def test_direct_merge_rejects_stale_commit_dirty_worktree_and_incomplete_run(self):
+        todo = self.run_stage('implement')
+        run = todo['workflow']
+        snap = self.store.snapshot()
+        with self.assertRaises(Conflict):
+            self.workflow.start(dict(id=todo['id'], action='merge', revision=snap['revisions']['todos'][todo['id']], commit='0'*40))
+        dirty = Path(run['worktree'])/'dirty'
+        dirty.write_text('unsaved')
+        with self.assertRaises(ValueError):
+            self.run_stage('merge')
+        dirty.unlink()
+        self.workflow.save(todo['id'], dict(run, phase='implementation_failed'))
+        with self.assertRaises(ValueError):
+            self.run_stage('merge')
+        self.workflow.save(todo['id'], run)
+        subprocess.run(['git', '-C', run['worktree'], 'commit', '--allow-empty', '-qm', 'Changed branch'], check=True)
+        with self.assertRaises(Conflict):
+            self.run_stage('merge')
 
     def test_local_main_ahead_of_remote_is_included_in_tested_branch(self):
         (self.repo/'local-context').write_text('Existing local main commit')
@@ -96,11 +141,19 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(todo['workflow']['phase'],'restarting',todo)
         self.assertEqual(self.git('ls-remote','origin','refs/heads/main').split()[0],todo['workflow']['commit'])
 
-    def test_changed_main_blocks_and_failed_test_never_merges(self):
-        self.run_stage('implement');self.run_stage('test')
+    def test_changed_main_blocks_merge(self):
+        self.run_stage('implement')
         (self.repo/'other').write_text('concurrent');self.git('add','.');self.git('commit','-qm','Other work')
         todo=self.run_stage('merge');self.assertEqual(todo['workflow']['phase'],'merge_failed')
         self.assertFalse((self.repo/'result').exists())
+
+    def test_dirty_target_blocks_direct_merge(self):
+        self.run_stage('implement')
+        (self.repo/'unsaved').write_text('Preserve this work')
+        todo = self.run_stage('merge')
+        self.assertEqual(todo['workflow']['phase'], 'merge_failed')
+        self.assertFalse((self.repo/'result').exists())
+        self.assertNotIn('tested_commit', todo['workflow'])
 
     def test_interrupted_claim_survives_restart_without_automatic_retry(self):
         with patch.object(self.workflow,'run'):

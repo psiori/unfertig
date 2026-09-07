@@ -371,19 +371,21 @@ action immediately; activity remains batched into the existing heartbeats.
 
 ## Implementation workflow
 
-Expand a saved todo to use **Implement with Codex → Test branch → Merge & restart**.
+Use **Implement with Codex → optional Test branch → Merge & restart**.
+Both collapsed rows and expanded controls offer direct merge after implementation.
 Implementation runs in a `codex/…` branch in a locally excluded
 `.worktrees/unfertig/` checkout. It receives the host's instructions, design,
 developer rules, saved context and original ideas. It uses the configured Codex
 executable with `--approve-for-me`. Progress & branch details shows live output.
 A finished agent report, new commit, clean worktree and configured checks are
-required before preview. The task stays started until deployment succeeds.
+required before preview or merge. The task stays started until deployment succeeds.
 
-Test reruns checks and launches an isolated preview, opening web previews in a
-new tab or launching a native window. Data and logs live beside the worktree,
+The optional Test branch step reruns checks and launches an isolated preview,
+opening web previews in a new tab or launching a native window. Data and logs live beside the worktree,
 never in the live board. Stopping the board stops previews. Merge confirms the
-exact tested commit, fast-forwards a clean checkout on the configured base,
-pushes without force, then runs the configured artifact restart. Concurrent main
+exact selected commit and shows whether it passed Test branch / Preview. It
+fast-forwards a clean checkout on the configured base, pushes without force,
+then runs the configured artifact restart. Concurrent main
 changes require reconciliation and retesting. A detached supervisor retains
 restart results even when Unfertig itself restarts. Failed pushes/restarts and
 interrupted stages remain visible for explicit retries. Worktrees are retained.

@@ -180,15 +180,15 @@ class Workflow:
                     raise ValueError('Repository configuration changed. Recover this run in its original repository.')
                 head = self.git('rev-parse', run['branch'])
                 if action != 'retry' and (body.get('commit') != head or run.get('commit') != head):
-                    raise Conflict('Branch changed; review and test its current commit before merging.')
+                    raise Conflict('Branch changed; review its current commit before merging.')
                 if action != 'retry' and self.git('status', '--porcelain', cwd=run['worktree']):
                     raise ValueError('Branch worktree has uncommitted changes.')
                 if action == 'retry' and run['phase'] not in ('implementation_failed', 'implementing'):
                     raise ValueError('Only an interrupted or failed implementation can resume.')
                 if action == 'test' and run['phase'] not in ('ready', 'tested', 'test_failed', 'testing'):
                     raise ValueError('Implementation must complete before preview testing.')
-                if action == 'merge' and (run.get('tested_commit') != head or run['phase'] not in ('tested', 'merge_failed', 'push_failed', 'restart_failed', 'merging')):
-                    raise ValueError('Test this exact commit before merging.')
+                if action == 'merge' and run['phase'] not in ('ready', 'tested', 'test_failed', 'merge_failed', 'push_failed', 'restart_failed', 'merging'):
+                    raise ValueError('Implementation must complete before merging.')
                 run.update(phase='implementing' if action == 'retry' else 'testing' if action == 'test' else 'merging', message='Running '+action+'…')
                 self.save(ident, run)
             self.live[ident] = dict(message=run['message'])
@@ -278,7 +278,7 @@ Use uv for Python. Commit the finished implementation. End your final response w
                 self.command(self.argv('test', run), run['worktree'], ident)
                 if self.git('rev-parse', 'HEAD', cwd=run['worktree']) != commit or self.git('status', '--porcelain', cwd=run['worktree']):
                     raise ValueError('Verification changed the reviewed worktree.')
-                run.update(phase='ready', message='Implementation committed and checks passed. Test the branch preview next.')
+                run.update(phase='ready', message='Implementation committed and checks passed. Preview the branch or choose Merge & restart.')
             elif action == 'test':
                 self.stop_preview(ident)
                 self.command(self.argv('test', run), run['worktree'], ident)

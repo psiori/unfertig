@@ -111,3 +111,9 @@ preferences, existing claims and unknown fields. Automatic behavior also require
 the feature gate. Older writers become read-only, preventing them from ignoring
 the disabled feature. Migration and receipt recovery retain the shared storage
 contract; no task records are altered except version metadata.
+
+Direct merge after completed implementation does not change the stored format:
+`tested_commit` remains optional evidence of a successful separate test/preview
+step, and is never populated by merge. Existing phases, claims, receipts and
+recovery retain their meanings. Older writers preserve these claims but may
+require preview before accepting a merge retry. No migration is required.

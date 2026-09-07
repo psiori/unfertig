@@ -382,3 +382,9 @@ Workflow actions require workflow.enabled:true (default false). Disabled owner
 instances reject all implementation, retry, preview and merge requests, including
 requests from stale tabs. This is independent of workflow.automatic. Aggregators
 keep the whole workflow disabled. Restart after changing configuration.
+
+After implementation and its required checks complete, the user may explicitly
+choose Merge & restart directly or first run the optional Test branch / Preview
+step. Both collapsed and expanded controls retain that choice. Merge confirms
+the exact selected commit and displays its separate test/preview status; merging
+never supplies `tested_commit`. All other eligibility and recovery guards remain.
