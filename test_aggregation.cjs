@@ -7,10 +7,15 @@ function setup() {
   const $ = id => { if (!elements.has(id)) elements.set(id,{value:'',innerHTML:'',checked:false,addEventListener(){},style:{}}); return elements.get(id); };
   $('#status-filter').value='all'; $('#sort').value='priority';
   const context = {$, renderIdeas(){},renderTodos(){},updateChoices(){},preference(){return '';},remember(){},setInterval(){},setTimeout(){},
+    expanded:new Set(), options:(values,selected)=>values.map(v=>`<option ${v===selected?'selected':''}>${v}</option>`).join(''),
     boardContext:{mode:'aggregation',sources:[{project_id:'a'},{project_id:'b'}]},
     data:{ideas:[],todos:[]},compatibility:{read_only:false},unique:values=>[...new Set(values)],date:v=>v,
     escapeHTML:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),boardLocations:()=> 'Read PROCESS.md'};
-  vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/aggregation.js','utf8'),context);
+  vm.createContext(context);
+  const app=fs.readFileSync(__dirname+'/app.js','utf8');
+  vm.runInContext(app.slice(app.indexOf('function todoSummary('),app.indexOf('function todoCard(')),context);
+  vm.runInContext(fs.readFileSync(__dirname+'/priority.js','utf8'),context);
+  vm.runInContext(fs.readFileSync(__dirname+'/aggregation.js','utf8'),context);
   vm.runInContext(`aggregateSources=['a','b'].map(project_id=>({project_id,name:project_id,url:'http://127.0.0.1:8766',status:'reachable',data:{ideas:[],todos:[{id:'T0001',name:project_id+' task',description:'<script>literal</script>',tags:['same'],group:'same',status:'open',priority:'normal',date_entered:'2026-01-01',author:'Human',created_by:'Agent'}]}}));`,context);
   return {context,$};
 }
