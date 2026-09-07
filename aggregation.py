@@ -265,7 +265,7 @@ class Aggregation:
                     todo = copy.deepcopy(body.get('todo'))
                     if not isinstance(todo, dict):
                         raise ValueError('Supply the refined todo record.')
-                    original = {k: idea[k] for k in ('id', 'text', 'author', 'date_entered')}
+                    original = {k: idea[k] for k in ('id', 'text', 'author', 'date_entered', 'captured_system') if k in idea}
                     todo.update(author=idea['author'], created_by=actor, source_ideas=[],
                                 source_refs=[dict(project_id=self.store.context['project_id'], idea=original)])
                     todo.pop('id', None)

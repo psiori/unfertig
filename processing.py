@@ -13,6 +13,7 @@ import threading
 import time
 import uuid
 from functools import lru_cache
+from storage import Conflict
 
 
 @lru_cache(maxsize=1)
@@ -176,7 +177,7 @@ Use uv for Python. Finish with created/updated todo IDs, local commit outcome, a
                     with self.lock:
                         if self.stopping:
                             return
-                        self.child = subprocess.Popen([executable, 'exec', '--sandbox', 'workspace-write', '--approve-for-me',
+                        self.child = subprocess.Popen([executable, 'exec', '--approve-for-me',
                             '-C', self.options['working_directory'], '-o', str(final), '-'],
                             cwd=self.options['working_directory'], stdin=subprocess.PIPE, stdout=log,
                             stderr=log, text=True, start_new_session=os.name != 'nt')
@@ -188,7 +189,9 @@ Use uv for Python. Finish with created/updated todo IDs, local commit outcome, a
                         raise ValueError('Processing timed out. Review saved todos before retrying.')
                     message = final.read_text()[-16000:] if final.exists() else ''
                     if child.returncode:
-                        raise ValueError(message or 'Codex failed. Check CLI authentication and project permissions, then retry manually.')
+                        log.flush(); log.seek(0, 2); size = log.tell(); log.seek(max(0, size - 4000))
+                        diagnostic = log.read()
+                        raise ValueError(message or diagnostic or 'Codex failed. Check CLI authentication and project permissions, then retry manually.')
                     snapshot = self.store.snapshot()
                     remaining = {i['id'] for i in pending(snapshot)} & set(self.state['idea_ids'])
                     if snapshot['history']['pending']:
@@ -196,7 +199,7 @@ Use uv for Python. Finish with created/updated todo IDs, local commit outcome, a
                     with self.lock:
                         self.state.update(status='needs_attention' if remaining else 'completed',
                             message=message or ('Some ideas remain pending; review their ambiguities.' if remaining else 'Todos saved and committed locally.'))
-        except (OSError, ValueError, subprocess.SubprocessError) as error:
+        except (OSError, ValueError, Conflict, subprocess.SubprocessError) as error:
             with self.lock:
                 self.state.update(status='failed', message=str(error))
         finally:
@@ -245,6 +248,6 @@ Use uv for Python. Finish with created/updated todo IDs, local commit outcome, a
                 return
         try:
             self.start(automatic=True)
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, Conflict) as error:
             with self.lock:
                 self.state.update(status='failed', message=str(error))

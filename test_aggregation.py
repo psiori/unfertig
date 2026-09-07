@@ -167,7 +167,7 @@ class AggregationTests(unittest.TestCase):
         todo=self.alpha.read()[0]['todos'][-1]
         self.assertEqual(todo['id'],'CX_T0002');self.assertEqual(todo['author'],'Sascha');self.assertEqual(todo['created_by'],'Codex')
         self.assertEqual(todo['source_ideas'],[])
-        self.assertEqual(todo['source_refs'],[dict(project_id='inbox',idea={k:self.idea[k] for k in ('id','text','author','date_entered')})])
+        self.assertEqual(todo['source_refs'],[dict(project_id='inbox',idea={k:self.idea[k] for k in ('id','text','author','date_entered','captured_system') if k in self.idea})])
         self.assertEqual(self.inbox.read()[0]['todos'],[])
         self.router.route(body)
         self.assertEqual(len(self.alpha.read()[0]['todos']),2)

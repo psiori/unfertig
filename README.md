@@ -297,8 +297,8 @@ use the existing verified routing workflow and configured source projects.
 Conversation history from an existing Codex task is not inherited.
 
 Install and sign in to Codex CLI first (`codex login`). The launcher uses
-`codex exec --sandbox workspace-write --approve-for-me -C <directory>`; approval
-requests go through Codex's automatic review. CLI user settings and authentication
+`codex exec --approve-for-me -C <directory>`; approval
+requests go through Codex's automatic review using its workspace-write sandbox. CLI user settings and authentication
 remain in effect. No shell command interpolation or credentials in board config.
 Processing details show the resolved directory, completion summary, questions or
 failure. A failed/ambiguous idea is not retried automatically during that server
