@@ -88,6 +88,14 @@ class WorkflowTests(unittest.TestCase):
         record=copy.deepcopy(todo);record['workflow']['phase']='done'
         with self.assertRaises(ValueError):self.store.mutate(dict(actor='Test',request_id=uuid.uuid4().hex,changes=[dict(collection='todos',id=todo['id'],revision=snap['revisions']['todos'][todo['id']],record=record)]))
 
+    def test_local_main_ahead_of_remote_is_included_in_tested_branch(self):
+        (self.repo/'local-context').write_text('Existing local main commit')
+        self.git('add','.');self.git('commit','-qm','Local context')
+        self.run_stage('implement');self.run_stage('test')
+        todo=self.run_stage('merge')
+        self.assertEqual(todo['workflow']['phase'],'restarting',todo)
+        self.assertEqual(self.git('ls-remote','origin','refs/heads/main').split()[0],todo['workflow']['commit'])
+
     def test_changed_main_blocks_and_failed_test_never_merges(self):
         self.run_stage('implement');self.run_stage('test')
         (self.repo/'other').write_text('concurrent');self.git('add','.');self.git('commit','-qm','Other work')

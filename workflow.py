@@ -340,7 +340,8 @@ Use uv for Python. Commit the finished implementation. End your final response w
                         self.git('merge', '--no-edit', '--no-ff', run['commit'])
                         run['merge_commit'] = self.git('rev-parse', 'HEAD')
                 else:
-                    if head not in (run['base'], run['commit']) or remote not in (run['base'], run['commit']):
+                    self.git('merge-base', '--is-ancestor', remote, run['commit'])
+                    if head not in (run['base'], run['commit']):
                         raise ValueError('Main advanced. Reconcile and retest the branch; this run will not guess a merge.')
                     if head != run['commit']:
                         self.git('merge', '--ff-only', run['commit'])
