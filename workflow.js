@@ -1,8 +1,28 @@
 'use strict';
 (() => {
   let latest = null, sending = false, previewWindow = null, previewId = null;
+  function nextStep(todo, run) {
+    if (!run) return todo.status !== 'closed' ? ['implement','Implement',todo.status === 'open'] : null;
+    if (run.resume_action) return [run.resume_action, {retry:'Retry implementation',test:'Preview',merge:'Merge & restart'}[run.resume_action],true];
+    if (run.phase === 'implementation_failed') return ['retry','Retry implementation',true];
+    if (['ready','test_failed'].includes(run.phase)) return ['test','Preview',true];
+    if (['tested','merge_failed','push_failed','restart_failed'].includes(run.phase)) return ['merge','Merge & restart',true];
+    if (['implementing','testing','merging','restarting'].includes(run.phase)) return ['',{implementing:'Implementing…',testing:'Preparing preview…',merging:'Merging…',restarting:'Restarting…'}[run.phase],false];
+    return null;
+  }
   function render() {
     if (!latest) return;
+    document.querySelectorAll('[data-workflow-next]').forEach(slot => {
+      const todo = data.todos.find(t => t.id === slot.dataset.workflowNext);
+      const run = latest.runs[todo?.id];
+      const next = todo && nextStep(todo, run);
+      slot.hidden = latest.enabled !== true || !next;
+      if (slot.hidden) { slot.innerHTML = ''; return; }
+      const [action,label,allowed] = next;
+      const disabled = sending || latest.busy || !allowed || !latest.configured || compatibility.read_only || history.pending || hasDraft() || run?.foreign;
+      const html = `<button type="button" class="button small next-step" data-workflow-action="${action}" data-todo="${todo.id}" ${disabled ? 'disabled' : ''}>${label}${allowed ? ' ↗' : ''}</button>`;
+      if (slot.innerHTML !== html) slot.innerHTML = html;
+    });
     document.querySelectorAll('[data-workflow]').forEach(panel => {
       panel.hidden = latest.enabled !== true;
       if (panel.hidden) { panel.innerHTML = ''; delete panel.dataset.rendered; return; }
@@ -35,6 +55,8 @@
     } catch (_) { /* retain visible last progress during restart */ }
   }
   document.addEventListener('unfertig:todos-rendered', render);
+  document.addEventListener('input', render);
+  document.addEventListener('change', render);
   document.addEventListener('click', async event => {
     const button = event.target.closest('[data-workflow-action]');
     if (!button) return;
