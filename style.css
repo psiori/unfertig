@@ -192,11 +192,11 @@ main { padding-top:18px; }
 .header-right { margin-left:auto; }
 .welcome { display:flex; align-items:center; justify-content:space-between; gap:32px; padding:4px 0 24px; }
 .welcome h1 { font-size:30px; line-height:1.2; letter-spacing:-1px; margin:0; max-width:620px; }
-.welcome h1 span { color:var(--rust); }
+.welcome h1 span { color:var(--orange); }
 .welcome > div > p { margin:10px 0 0; color:var(--muted); font-size:13px; }
-.welcome .progress-card { flex:0 0 210px; width:210px; padding:15px 18px; transform:rotate(1deg); }
+.welcome .progress-card { flex:0 0 270px; width:270px; padding:22px; transform:rotate(1deg); }
 .welcome .progress-number { margin:0 0 8px; }
-.welcome .progress-number strong { font-size:29px; }
+.welcome .progress-number strong { font-size:44px; }
 .welcome .progress-card p { font-size:10px; margin:8px 0 0; }
 .scratchpad.panel { padding:22px 24px 16px; }
 .scratchpad h2 { font-size:23px; margin:0; letter-spacing:-.7px; }
@@ -216,8 +216,8 @@ main { padding-top:18px; }
   .scratchpad .ideas { max-height:110px; }
 }
 .scratchpad .idea-actions { flex-basis:100%; }
-.welcome .progress-number strong { font-size:26px; }
-.welcome .progress-card { padding:12px 16px; }
+.welcome .progress-number strong { font-size:44px; }
+.welcome .progress-card { padding:22px; }
 .welcome .progress-card p { line-height:1.4; }
 .welcome { padding-bottom:20px; }
 .scratchpad .ideas { max-height:110px; }
