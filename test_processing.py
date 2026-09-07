@@ -128,6 +128,7 @@ class LauncherIntegrationTests(unittest.TestCase):
 import json, os, pathlib, sys, urllib.request
 assert os.getcwd() == {str(root)!r}
 assert '--approve-for-me' in sys.argv
+assert '--sandbox' not in sys.argv
 prompt = sys.stdin.read()
 assert {ident!r} in prompt and 'Planning only' in prompt
 base = {url!r}
