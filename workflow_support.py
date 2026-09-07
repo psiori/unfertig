@@ -80,7 +80,11 @@ def main():
     parser.add_argument('--context',type=Path,required=True)
     parser.add_argument('--data',type=Path)
     parser.add_argument('--port',type=int,default=0)
+    parser.add_argument('--startup-timeout',type=int,default=900,
+                        help='Seconds to wait for managed validation and startup (default: 900).')
     args=parser.parse_args();repo=args.repository.resolve();context=args.context.resolve()
+    if not 0 < args.startup_timeout <= 3600:
+        parser.error('--startup-timeout must be between 1 and 3600 seconds.')
     uv=shutil.which('uv') or str(Path.home()/'.local/bin/uv')
     if args.stage=='test':
         run(['git','diff','--check'],repo)
@@ -116,7 +120,9 @@ def main():
         os.chdir(repo);os.execvp(argv[0],argv)
     elif args.kind=='unfertig':
         run(['sh',str(context/'stop_tools.sh'),'--timeout','60'],context)
-        run(['sh',str(context/'start_tools.sh'),'--timeout','60'],context)
+        # Startup includes candidate tests and storage validation, not just the
+        # server launch. A client timeout leaves that work running in background.
+        run(['sh',str(context/'start_tools.sh'),'--timeout',str(args.startup_timeout)],context)
         # The standard updater is the authority: it may refuse a storage migration.
         runtime=context/'tools/unfertig'
         expected=subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
