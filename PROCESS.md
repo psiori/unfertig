@@ -323,7 +323,19 @@ not resolve that policy's scope/precedence question.
 
 ## Identity and metadata (format 1.2)
 
-The UI separates **Initials** from **Author**. Mutation bodies may supply `initials`
+The UI uses **Initials** as its single top-level human identity input. Browser
+saves require 1–12 ASCII letters/digits starting with a letter, trim whitespace
+and normalize letters to uppercase. New human attribution and action history use
+these initials. Existing authors/provenance never change; derived/routed todos
+retain the original requester. Human briefings refer to Initials. Saved initials
+are reused; legacy Author preferences are retained but ignored, with no inferred
+mapping. Missing/invalid initials block browser saves and preserve drafts.
+Initials can collide and are less descriptive than full names, not authentication.
+Agent API/CLI requests must still use actual agent identity for actor,
+created_by and closed_by; do not substitute human initials for the agent or
+processor initials for the requester. No stored-format change is needed.
+
+Mutation bodies may supply `initials`
 (empty, or 1–12 uppercase ASCII letters/digits starting with a letter). New IDs
 are `SL_I0001` / `SL_T0001` when set, and legacy `I0001` / `T0001` when empty.
 Numbering is one monotonically increasing sequence per collection across every

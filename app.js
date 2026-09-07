@@ -93,8 +93,12 @@ const expanded = new Set(), collapsedGroups = new Set();
 // Keep the former little-board. preference keys so unfertig retains existing user settings.
 function preference(key, fallback='') { try { return localStorage.getItem('little-board.' + key) ?? fallback; } catch { return fallback; } }
 function remember(key, value) { try { localStorage.setItem('little-board.' + key, value); } catch { /* Preferences are optional; actual content is saved to disk. */ } }
-$('#author').value = preference('author');
-$('#author').addEventListener('change', () => remember('author', $('#author').value.trim()));
+// Do not infer initials from, overwrite, or silently use the legacy Author preference.
+$('#initials').value = preference('initials').trim().toUpperCase();
+$('#initials').addEventListener('change', () => {
+  $('#initials').value = $('#initials').value.trim().toUpperCase();
+  remember('initials', $('#initials').value);
+});
 $('#shortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
 for (const id of ['status-filter','sort','group-by','show-processed']) {
   const el = $('#' + id), saved = preference(id);
@@ -102,9 +106,13 @@ for (const id of ['status-filter','sort','group-by','show-processed']) {
   el.addEventListener('change', () => remember(id, el.type === 'checkbox' ? el.checked : el.value));
 }
 function actor() {
-  const name = $('#author').value.trim();
-  if (!name) { toast('Add your name in “Author” first.'); $('#author').focus(); return null; }
-  remember('author', name); return name;
+  const name = $('#initials').value.trim().toUpperCase();
+  if (!/^[A-Z][A-Z0-9]{0,11}$/.test(name)) {
+    toast('Enter initials first: 1–12 letters or digits, starting with a letter.');
+    $('#initials').focus(); return null;
+  }
+  $('#initials').value = name;
+  remember('initials', name); return name;
 }
 function nextId(collection, prefix) { return prefix + String(Math.max(0, ...data[collection].map(item => Number(item.id.match(/\d+$/)[0]))) + 1).padStart(4, '0'); }
 function toast(message) { clearTimeout(toastTimer); $('#toast').textContent = message; $('#toast').hidden = false; toastTimer = setTimeout(() => $('#toast').hidden = true, 4500); }
@@ -147,6 +155,7 @@ async function load(force=false) {
 async function save(next) {
   if (compatibility.read_only) { toast('Read-only data: update Unfertig before saving.'); return false; }
   if (busy) { toast('A save is in progress. Please try again in a moment.'); return false; }
+  const actorName = actor(); if (!actorName) return false;
   busy = true; saveState('Saving…');
   const frozen = $$('form input:not(:disabled), form textarea:not(:disabled), form select:not(:disabled), button[type="submit"]:not(:disabled)');
   frozen.forEach(el => el.disabled = true);
@@ -160,9 +169,9 @@ async function save(next) {
           revision:old ? (collection === 'todos' && draftRevisions.get(record.id) || revisions[collection][record.id]) : null, record});
       }
     }
-    const intended = JSON.stringify({changes, actor:$('#author').value.trim()}, (key, value) => ['updated_at', 'date_entered', 'date_closed'].includes(key) ? undefined : value);
+    const intended = JSON.stringify({changes, actor:actorName}, (key, value) => ['updated_at', 'date_entered', 'date_closed'].includes(key) ? undefined : value);
     if (pendingRequest && pendingRequest.intended !== intended) throw new Error('An earlier save has an uncertain result. Restore that draft and Save again to resolve it before making a different edit. Keep a copy of your new text.');
-    if (!pendingRequest) pendingRequest = {intended, body:{protocol_version:'2.0.0', initials:$('#initials').value.trim().toUpperCase(), changes, actor:$('#author').value.trim(), request_id:crypto.randomUUID()}};
+    if (!pendingRequest) pendingRequest = {intended, body:{protocol_version:'2.0.0', initials:actorName, changes, actor:actorName, request_id:crypto.randomUUID()}};
     const response = await fetch('/api/changes', {method:'PUT',headers:{'Content-Type':'application/json','X-Board-Token':token},body:JSON.stringify(pendingRequest.body)});
     const result = await response.json();
     if (!response.ok) {
@@ -284,7 +293,7 @@ function implementationBrief(todo, sourceData = data, context = boardContext) {
 function humanBrief(todo, sourceData = data, context = boardContext) {
   const originals = [...sourceData.ideas.filter(idea => todo.source_ideas.includes(idea.id)), ...(todo.source_refs || []).map(ref => ({...ref.idea, id:ref.project_id + ':' + ref.idea.id}))];
   const references = [todo.pr_url && `Pull request: ${todo.pr_url}`, todo.commit_url && `Implementation commit: ${todo.commit_url}`, todo.commit_hash && `Commit hash: ${todo.commit_hash}`].filter(Boolean);
-  return `${todo.id} — ${todo.name}\n\nRequested by: ${todo.author}\nEntered: ${date(todo.date_entered)}\nPriority: ${todo.priority}\nGroup: ${todo.group || 'Ungrouped'}\nTags: ${todo.tags.join(', ') || 'None'}\nCurrent status: ${todo.status}${todo.status === 'closed' ? `\nClosed by: ${todo.closed_by} on ${date(todo.date_closed)}` : ''}\n\nTHE TASK\n${todo.description}\n\n${originals.length ? 'ORIGINAL CONTEXT\n' + originals.map(idea => `${idea.id} · ${idea.author}\n${idea.text}`).join('\n\n') + '\n\n' : ''}${references.length ? 'EXISTING WORK\n' + references.join('\n') + '\n\n' : ''}WORKING ON THIS\n- ${boardLocations(context)} Check ${context.todos}/${todo.id}.json for updates; this handoff is a snapshot.\n- Follow the scope, acceptance conditions, and approval requirements above. Resolve essential open questions before proceeding. Planning work does not authorize implementation when approval is still pending.\n- Coordinate one worker per todo, record assignment in a progress note, and resolve an existing assignment before starting. Use record-scoped saves; keep your draft and compare the latest record on conflict. The server commits meaningful saves locally, never pushes. Maintain HTTP/filesystem parity for relevant changes and run the shared transport conformance suite (TRANSPORTS.md). Set Author to your name and mark the todo started when you begin. If already closed, confirm that follow-up work is wanted before reopening it.\n- Verify the result against the task’s completion criteria. If unfinished or blocked, leave it started and add a short progress note.\n- Use a separate agent/<ticket-id>-<short-name> branch in the repository owning the code. Local implementation commits are already authorized and required before handing back the work; preserve unrelated changes. Use the workspace's locally excluded .worktrees/ directory when isolation is useful. If blocked, commit coherent progress and leave the ticket started. Explicit planning-only or no-commit instructions override this default.\n- When implemented, verified, and committed locally, mark closed under your name and record the commit hash and any available PR links. Preserve the original requester and source ideas.\n- Copying this briefing does not change status or grant additional approval to publish, merge, or deploy.\n`;
+  return `${todo.id} — ${todo.name}\n\nRequested by: ${todo.author}\nEntered: ${date(todo.date_entered)}\nPriority: ${todo.priority}\nGroup: ${todo.group || 'Ungrouped'}\nTags: ${todo.tags.join(', ') || 'None'}\nCurrent status: ${todo.status}${todo.status === 'closed' ? `\nClosed by: ${todo.closed_by} on ${date(todo.date_closed)}` : ''}\n\nTHE TASK\n${todo.description}\n\n${originals.length ? 'ORIGINAL CONTEXT\n' + originals.map(idea => `${idea.id} · ${idea.author}\n${idea.text}`).join('\n\n') + '\n\n' : ''}${references.length ? 'EXISTING WORK\n' + references.join('\n') + '\n\n' : ''}WORKING ON THIS\n- ${boardLocations(context)} Check ${context.todos}/${todo.id}.json for updates; this handoff is a snapshot.\n- Follow the scope, acceptance conditions, and approval requirements above. Resolve essential open questions before proceeding. Planning work does not authorize implementation when approval is still pending.\n- Coordinate one worker per todo, record assignment in a progress note, and resolve an existing assignment before starting. Use record-scoped saves; keep your draft and compare the latest record on conflict. The server commits meaningful saves locally, never pushes. Maintain HTTP/filesystem parity for relevant changes and run the shared transport conformance suite (TRANSPORTS.md). Set Initials to your initials and mark the todo started when you begin. If already closed, confirm that follow-up work is wanted before reopening it.\n- Verify the result against the task’s completion criteria. If unfinished or blocked, leave it started and add a short progress note.\n- Use a separate agent/<ticket-id>-<short-name> branch in the repository owning the code. Local implementation commits are already authorized and required before handing back the work; preserve unrelated changes. Use the workspace's locally excluded .worktrees/ directory when isolation is useful. If blocked, commit coherent progress and leave the ticket started. Explicit planning-only or no-commit instructions override this default.\n- When implemented, verified, and committed locally, mark closed under your initials and record the commit hash and any available PR links. Preserve the original requester and source ideas.\n- Copying this briefing does not change status or grant additional approval to publish, merge, or deploy.\n`;
 }
 $('#idea-form').addEventListener('submit', async event => {
   event.preventDefault(); if (!data) return;

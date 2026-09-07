@@ -227,9 +227,21 @@ routing; unclear ideas remain red and pending. See PROCESS.md for exact routing,
 provenance, retry, preflight and local-commit semantics. Routing requires source
 format 1.2, and never pushes or resolves conflicts automatically.
 
-**Initials** optionally prefix newly allocated IDs. **Author** remains a separate
-required capture/acting identity; agent requests independently set created_by.
-Empty initials retain legacy IDs; changing initials never renumbers records.
+**Initials** is the only top-level identity input. Browser saves require 1–12
+ASCII letters/digits starting with a letter; whitespace is trimmed and letters
+are uppercased. These initials identify new human records/actions and prefix new
+IDs. They are not unique or authentication, and give less descriptive attribution
+than a full name. Changing initials affects future actions only.
+
+Saved initials are reused. A legacy saved Author preference is retained but
+ignored, never guessed into initials: enter initials once if none were saved.
+Empty or invalid initials block browser saves with a prompt, without losing drafts.
+Existing authors, IDs and provenance remain unchanged. Todos made from existing
+ideas retain the original requester; human creation/closure uses the acting
+initials. Agents still supply their actual identity in actor/created_by/closed_by
+and preserve original requester attribution, including routing. The API continues
+to accept separate actor identity and optional initials (empty means legacy IDs).
+No stored-format migration is needed.
 
 Format 1.3 is a storage migration. For managed existing instances follow
 VERSIONING.md's stopped-service backup, disposable rehearsal, explicit migration
