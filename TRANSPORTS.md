@@ -1,5 +1,31 @@
 # Aggregation transport contract
 
+## Source todo controls
+
+Normal and aggregate todos share their collapsed-row renderer, priority selector,
+and AI/Human briefing builders. Aggregate identities include the source project;
+expanded source details are read-only except for the shared priority control.
+Briefings require a fresh compatible source snapshot, complete local history,
+linked originals and verified child context. Cached/offline data is never copied
+as a current handoff. Both local source ideas and foreign source_refs are included.
+
+Token-protected PUT `/api/source-record` accepts `project_id` and `todo_id` and
+returns the saved todo, original ideas, record revision, child context, preflight,
+compatibility and history. PUT `/api/source-priority` additionally accepts the
+exact saved `original`, `revision`, desired `priority`, `actor`, `request_id` and
+that `preflight`. It changes only priority through the standard child mutation.
+Both operations use the configured HTTP/filesystem adapters and their guards.
+HTTP rejections retain their status; uncertain outcomes retain the exact request.
+No stored-format change is introduced (format 1.3, protocol 2.0).
+
+Priority drafts remain in sessionStorage for this board/tab across reloads.
+Retry after an uncertain response uses the original mutation and receipt ID;
+known conflicts require reviewing the latest record before making a new request.
+Pending Git history remains visible and must be completed at its owner. A dirty
+expanded editor for the same record blocks quick priority until saved or reset;
+other expanded drafts survive the save and reordering. Native keyboard selection
+and briefing buttons do not expand rows or change status.
+
 HTTP and filesystem are adapters to the same authoritative BoardStore. All
 relevant schema, API, storage, migration, routing and view changes must update
 both in one change. `test_transports.py` runs common conformance scenarios for

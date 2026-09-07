@@ -208,7 +208,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, self.server.aggregation.view())
             elif path == "/api/publication" and self.server.publication:
                 self.reply(200, self.server.publication.status())
-            elif path in ("/", "/index.html", "/app.js", "/aggregation.js", "/style.css", "/favicon.svg"):
+            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/aggregation.js", "/style.css", "/favicon.svg"):
                 name = "index.html" if path == "/" else path[1:]
                 mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}[Path(name).suffix]
                 self.reply(200, (ROOT / name).read_bytes(), mime + "; charset=utf-8")
@@ -220,7 +220,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         if not self.local_request():
             return
-        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes'):
+        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority'):
             self.reply(404, {"error": "Not found."})
             return
         if not secrets.compare_digest(self.headers.get("X-Board-Token", ""), self.server.token):
@@ -236,6 +236,17 @@ class Handler(BaseHTTPRequestHandler):
                 protocol_state, _ = inspect(body, 'request', PROTOCOL_VERSION, 'protocol_version')
                 require(protocol_state != 'read_only', 'Newer minor request protocol: update Unfertig before writing.')
             if isinstance(self.server.store, BoardStore):
+                if self.path in ('/api/source-record', '/api/source-priority'):
+                    require(self.server.aggregation is not None, 'Source operations require aggregation mode.')
+                    from aggregation import SourceRejected, Unreachable
+                    try:
+                        method = self.server.aggregation.source_record if self.path == '/api/source-record' else self.server.aggregation.source_priority
+                        self.reply(200, method(body))
+                    except SourceRejected as error:
+                        self.reply(error.status, {'error': str(error)})
+                    except Unreachable as error:
+                        self.reply(503, {'error': str(error)})
+                    return
                 if self.path == '/api/routes':
                     require(self.server.aggregation is not None, 'Routing requires aggregation mode.')
                     self.reply(200, self.server.aggregation.route(body))

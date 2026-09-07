@@ -20,7 +20,7 @@ function ownerLink(source, kind, id) {
   return `<a class="button small" target="_blank" rel="noopener noreferrer" href="${escapeHTML(source.url)}/#${kind}-${encodeURIComponent(id)}">Open in ${escapeHTML(sourceName(source))} ↗</a>`;
 }
 async function refreshAggregate() {
-  if (!aggregating() || aggregateBusy || busy || document.hidden) return;
+  if (!aggregating() || aggregateBusy || busy || document.hidden || document.activeElement?.closest('.row-priority')) return;
   aggregateBusy = true;
   try {
     const response = await fetch('/api/aggregate'); const result = await response.json();
@@ -30,12 +30,15 @@ async function refreshAggregate() {
     $('#source-status').textContent = aggregateSources.map(s => `${sourceName(s)}: ${s.status}${s.transport ? ' · ' + s.transport : ''}${s.fallback_reason ? ' · ' + s.fallback_reason : ''}${s.checked_at ? ' · checked ' + new Date(s.checked_at).toLocaleTimeString() : ' · no cached records'}${s.error ? ' · ' + s.error : ''}`).join(' | ') || 'No sources configured. Add explicit sources in configuration and restart.';
     $('#source-status').hidden = false;
     if (signature !== aggregateSignature && !busy) { aggregateSignature = signature; updateChoices(); renderIdeas(); renderTodos(); }
-    const todos = aggregateSources.flatMap(s => s.data?.todos || []), done = todos.filter(t => t.status === 'closed').length;
-    $('#todo-count').textContent = todos.length; $('#done-count').textContent = done;
-    $('#progress-fill').style.width = (todos.length ? done / todos.length * 100 : 0) + '%';
-    $('#progress-note').textContent = `${done} of ${todos.length} source todos complete. See source status for freshness.`;
+    aggregateStats();
   } catch (error) { $('#source-status').hidden = false; $('#source-status').textContent = 'Source refresh failed; displayed records may be stale. ' + error.message; }
   finally { aggregateBusy = false; }
+}
+function aggregateStats() {
+  const todos = aggregateSources.flatMap(s => s.data?.todos || []), done = todos.filter(t => t.status === 'closed').length;
+  $('#todo-count').textContent = todos.length; $('#done-count').textContent = done;
+  $('#progress-fill').style.width = (todos.length ? done / todos.length * 100 : 0) + '%';
+  $('#progress-note').textContent = `${done} of ${todos.length} source todos complete. See source status for freshness.`;
 }
 updateChoices = function() {
   if (!aggregating()) return localUpdateChoices();
@@ -71,7 +74,10 @@ renderTodos = function() {
   rows = rows.filter(({source:s,todo:t}) => (!project || s.project_id === project) && (!group || qualified(s.project_id,t.group) === group) && (!tag || t.tags.some(v => qualified(s.project_id,v) === tag)) && (status === 'all' || (status === 'active' ? t.status !== 'closed' : t.status === status)) && (!query || [sourceName(s),t.id,t.name,t.description,t.author,t.group,...t.tags].join(' ').toLocaleLowerCase().includes(query)));
   const priorities = {urgent:0, high:1, normal:2, low:3};
   rows.sort((a,b) => { const x=a.todo,y=b.todo; switch ($('#sort').value) {case 'name': return x.name.localeCompare(y.name); case 'newest': return y.date_entered.localeCompare(x.date_entered); case 'oldest': return x.date_entered.localeCompare(y.date_entered); default: return priorities[x.priority]-priorities[y.priority] || x.date_entered.localeCompare(y.date_entered);} });
-  const card = ({source:s,todo:t}) => `<details class="aggregate-todo" data-record-key="${escapeHTML(qualified(s.project_id,t.id))}"><summary><span class="project-column">${escapeHTML(sourceName(s))}</span><span><strong>${escapeHTML(t.name)}</strong><br>${escapeHTML(t.id)} · ${escapeHTML(t.status)} · ${escapeHTML(t.group || 'Ungrouped')} · ${escapeHTML(t.tags.join(', '))}</span><span class="badge">${escapeHTML(t.priority)}</span></summary><p>${escapeHTML(t.description)}</p><p>Requested by ${escapeHTML(t.author)} · structured by ${escapeHTML(t.created_by)}</p>${s.status !== 'reachable' ? '<p class="route-warning">Stale cached record</p>' : ''}${ownerLink(s,'todo',t.id)}</details>`;
+  const card = ({source:s,todo:t}) => {
+    const key=qualified(s.project_id,t.id);
+    return `<details class="todo ${t.status}" data-record-key="${escapeHTML(key)}" data-id="${escapeHTML(key)}" ${expanded.has(key) ? 'open' : ''}>${todoSummary(t,{key,project:sourceName(s),priorityHTML:priorityControl(t,key,s.status!=='reachable'||s.compatibility?.read_only||s.history?.pending)})}<section class="source-details"><p class="provenance">Requested by ${escapeHTML(t.author)} · structured by ${escapeHTML(t.created_by)} · ${escapeHTML(t.id)}</p><p class="source-description">${escapeHTML(t.description)}</p><dl><dt>Status</dt><dd>${escapeHTML(t.status)}</dd><dt>Group</dt><dd>${escapeHTML(t.group||'Ungrouped')}</dd><dt>Tags</dt><dd>${escapeHTML(t.tags.join(', '))}</dd><dt>Implementation</dt><dd>${escapeHTML(t.commit_hash||'No commit recorded')}</dd></dl>${t.pr_url ? `<p><a href="${escapeHTML(t.pr_url)}" target="_blank" rel="noopener">Open PR ↗</a></p>` : ''}${t.commit_url ? `<p><a href="${escapeHTML(t.commit_url)}" target="_blank" rel="noopener">Open commit ↗</a></p>` : ''}<p class="hint">Priority can be edited here. Other fields are read-only; use the owning board to edit them. Briefings verify the current source before copying.</p>${s.status!=='reachable' ? '<p class="route-warning">Stale cached details · refresh the source before relying on them.</p>' : ''}${ownerLink(s,'todo',t.id)}</section></details>`;
+  };
   $('#result-count').textContent = `${rows.length} source todos`;
   if ($('#group-by').checked) {
     $('#todos').innerHTML = aggregateSources.filter(s => rows.some(r => r.source === s)).map(s => `<details class="module" open><summary>${escapeHTML(sourceName(s))}</summary>${unique(rows.filter(r => r.source === s).map(r => r.todo.group)).sort().map(g => `<details class="module" open><summary>${escapeHTML(g || 'Ungrouped')}</summary>${rows.filter(r => r.source === s && r.todo.group === g).map(card).join('')}</details>`).join('')}</details>`).join('');
@@ -90,3 +96,39 @@ function aggregationBrief(ideas) {
 }
 setInterval(refreshAggregate, 4000);
 setTimeout(refreshAggregate, 500);
+
+function aggregateDisplayed(key) {
+  const [project,id]=JSON.parse(key), source=aggregateSources.find(s=>s.project_id===project);
+  return {todo:source?.data?.todos.find(t=>t.id===id),revision:source?.revisions?.todos?.[id]};
+}
+async function aggregateFresh(key) {
+  const [project,id]=JSON.parse(key);
+  const result=await priorityJSON('/api/source-record',{project_id:project,todo_id:id});
+  const context=result.context;
+  if(!context?.repository || !context?.process || !context?.data || !context?.todos || context.project_id!==project || result.todo.id!==id || !result.revision)
+    throw new Error('Source context is incomplete; no briefing or edit is available.');
+  if(!result.todo.source_ideas.every(id=>result.ideas.some(i=>i.id===id))) throw new Error('Original source ideas are missing; refresh the source.');
+  return result;
+}
+function acceptAggregatePriority(key,result) {
+  const [project,id]=JSON.parse(key),source=aggregateSources.find(s=>s.project_id===project);
+  if(!source)return;
+  source.data.todos=source.data.todos.map(t=>t.id===id ? result.todo : t);
+  source.revisions ||= {todos:{}};source.revisions.todos[id]=result.revision;source.history=result.history;
+  aggregateSignature='';
+}
+async function aggregateSavePriority(entry) {
+  const [project,id]=JSON.parse(entry.key);
+  const result=await priorityJSON('/api/source-priority',{project_id:project,todo_id:id,original:entry.original,
+    revision:entry.revision,priority:entry.priority,actor:entry.actor,request_id:entry.request_id,preflight:entry.preflight});
+  acceptAggregatePriority(entry.key,result);return result;
+}
+async function showAggregateBrief(key,human) {
+  if(priorityDrafts.entries.has(key)){toast('Resolve this priority draft before copying a saved briefing.');return;}
+  try {
+    const result=await aggregateFresh(key);
+    if(result.compatibility?.read_only || result.history?.pending)throw new Error('Source is read-only or has pending history; briefing is blocked until resolved.');
+    const text=(human ? humanBrief : implementationBrief)(result.todo,{ideas:result.ideas},result.context);
+    await showCopy(text,`${human ? 'Human' : 'AI'} briefing · ${result.context.project_name || result.project_id} · ${result.todo.id}`);
+  } catch(error){toast('No current briefing copied. '+error.message);}
+}

@@ -38,6 +38,15 @@ Reopening a closed todo clears `closed_by` and `date_closed`. Git retains commit
 
 ## AI and human briefings
 
+Aggregate rows offer these same controls and verify a fresh child snapshot before
+copying. Briefings use that child's PROCESS.md, repository and records, including
+local originals and foreign source_refs. Unavailable, incompatible or pending-
+history sources block copying until resolved; cached details remain labelled.
+Expanded aggregate details are read-only. The shared collapsed priority selector
+writes to the owner using its revision and retains uncertain requests for Retry.
+Save or reset a dirty expanded editor before quick-editing that same record;
+other drafts are preserved. See TRANSPORTS.md for the source API and recovery.
+
 Every todo offers **AI briefing** and **Human briefing** directly on its collapsed row, including in grouped views. Buttons copy a snapshot and do not expand the row, start work, or change status. Save inline edits before copying either briefing.
 
 Both briefings are generated from the current saved todo and its linked original ideas. There are no separate `ai_briefing` or `human_briefing` fields. Both formats use the same records and source links; no separate briefing data is stored. Keep this single source of truth so edits, acceptance conditions, and approval gates cannot drift between copies.
