@@ -348,3 +348,67 @@ run status together. Expand its automatic/manual summary for timing, system scop
 working directory and the latest result. Individual idea rows offer a briefing
 or manual todo creation. Unsaved drafts and an empty queue disable the Codex
 action immediately; activity remains batched into the existing heartbeats.
+
+## Implementation workflow
+
+Expand a saved todo to use **Implement with Codex → Test branch → Merge & restart**.
+Implementation runs in a `codex/…` branch in a locally excluded
+`.worktrees/unfertig/` checkout. It receives the host's instructions, design,
+developer rules, saved context and original ideas. It uses the configured Codex
+executable with `--approve-for-me`. Progress & branch details shows live output.
+A finished agent report, new commit, clean worktree and configured checks are
+required before preview. The task stays started until deployment succeeds.
+
+Test reruns checks and launches an isolated preview, opening web previews in a
+new tab or launching a native window. Data and logs live beside the worktree,
+never in the live board. Stopping the board stops previews. Merge confirms the
+exact tested commit, fast-forwards a clean checkout on the configured base,
+pushes without force, then runs the configured artifact restart. Concurrent main
+changes require reconciliation and retesting. A detached supervisor retains
+restart results even when Unfertig itself restarts. Failed pushes/restarts and
+interrupted stages remain visible for explicit retries. Worktrees are retained.
+
+Configure `workflow` in the instance config and restart. Commands are argv arrays,
+without a shell. Named placeholders are `{worktree}`, `{repository}`, `{context}`,
+`{data}` and `{port}`. Commands come only from administrator configuration.
+
+```json
+"workflow": {
+  "automatic": false,
+  "automatic_since": "2026-09-07T00:00:00+00:00",
+  "repository": "../../../unfertig",
+  "base_branch": "main",
+  "test": ["uv", "run", "--no-project", "--python", "3.12", "--script", "{worktree}/workflow_support.py", "unfertig", "test", "--repository", "{worktree}", "--context", "{context}"],
+  "preview": ["uv", "run", "--no-project", "--python", "3.12", "--script", "{worktree}/workflow_support.py", "unfertig", "preview", "--repository", "{worktree}", "--context", "{context}", "--data", "{data}", "--port", "{port}"],
+  "preview_url": "http://127.0.0.1:{port}",
+  "restart": ["uv", "run", "--no-project", "--python", "3.12", "--script", "{repository}/workflow_support.py", "unfertig", "restart", "--repository", "{repository}", "--context", "{context}"],
+  "timeout_seconds": 3600
+}
+```
+
+Paths resolve from the config file. Omit repository to use the processing
+context's node.json project.path, otherwise that context itself. Missing declared
+paths block; no recursive project discovery occurs. All three commands are
+required. The optional workflow_support.py recipes cover Unfertig, Kermit,
+Unendlich's native app and document-only contexts. Other projects supply their
+own commands. Managed Unfertig retains its normal update gate: a future storage
+migration requires an explicit stopped migration. Unmanaged artifact processes
+are not killed; configure their owning supervisor when necessary.
+
+Automatic implementation defaults **off**, separately from idea processing.
+When enabled, it selects open, unclaimed todos entered on/after automatic_since
+(or the current startup when omitted), after 60 seconds without a todo edit and
+after this board's planner finishes. Every linked local or foreign original
+must have this system's capture provenance. Legacy, standalone, foreign-system
+and existing backlog todos remain manual. Aggregators never implement; open the
+source's owner link. Claims prevent automatic retries across restarts or sync.
+Explicit Retry implementation uses the retained branch. Task-scope changes
+require reviewing and reconciling that branch. Preview and merge remain manual.
+
+These are CLI runs with output in Unfertig. A shared live Codex desktop session
+is separate backlog work, not a supported claim of this implementation.
+
+When a context repository also owns its board, its progress commits necessarily
+advance main. The merge accepts those board-file-only changes if the tested
+branch did not modify board files; any other main change blocks. It preserves
+board history with a merge commit rather than losing it in a fast-forward.

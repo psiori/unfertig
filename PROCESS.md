@@ -224,7 +224,7 @@ feature only with disposable local repositories/bare remotes, never real remotes
 ## Data and API versions
 
 [VERSIONING.md](VERSIONING.md) governs both idea processing and implementation.
-Persisted JSON uses `format_version` (currently `1.1.0`), independently of integer
+Persisted JSON uses `format_version` (currently `1.5.0`), independently of integer
 layout schema_version. Snapshots declare protocol_version `2.0.0`. Preserve these
 fields and unknown extensions in edits. Newer major versions require updating;
 newer minor versions allow inspection only; compatible builds preserve their
@@ -363,3 +363,16 @@ checks completion and Git history; a process exit alone is not board completion.
 New ideas have server-assigned immutable `captured_system` provenance. Never add,
 remove or alter it manually, including on legacy ideas. Automatic launch selects
 only matching local provenance; manual launch can include legacy/foreign ideas.
+
+## UI-launched implementation (format 1.5)
+
+An implementation launch is distinct authorization from idea processing. It
+permits the selected todo's implementation, tests and local branch commits.
+The UI controls preview, explicitly confirmed merge/push and configured artifact
+restart. The implementation agent must not close the board record. Preserve
+backend-managed workflow claims in ordinary edits. Owner-local /api/workflow
+reports progress; token-protected /api/workflow/action takes id, action, current
+todo revision and the reviewed commit for test/merge. Run on the claiming system.
+Never hand-edit claims to bypass failures. Failed/interrupted runs retain their
+worktree and allow explicit retry; no automatic replacement worker is launched.
+See README for configuration and recovery details.

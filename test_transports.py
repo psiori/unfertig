@@ -54,6 +54,16 @@ class Conformance:
         self.assertEqual(retry['assigned'], result['assigned'])
         self.assertEqual(retry['data']['ideas'][-1], idea)
 
+    def test_workflow_claims_cannot_be_forged_by_either_transport(self):
+        source = self.sources[0]
+        snapshot = self.router.inspect_source(source)
+        old = snapshot['data']['todos'][0]
+        request = dict(request_id=uuid.uuid4().hex, actor='Test', changes=[dict(collection='todos',
+            id=old['id'], revision=digest(old), record=dict(old, workflow={'phase':'done'}))])
+        with self.assertRaises((ValueError, Conflict)):
+            self.router.transfer(source, '/api/changes', request, snapshot.get('token'), preflight_context(snapshot['context']))
+        self.assertNotIn('workflow', self.alpha.read()[0]['todos'][0])
+
     def test_same_and_different_record_revisions(self):
         source = self.sources[0]
         snapshot = self.router.inspect_source(source)

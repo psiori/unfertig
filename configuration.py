@@ -28,7 +28,7 @@ def board_context(configuration, app_root):
                 process=str(app_root / 'PROCESS.md'), data=str(path), todos=str(path.parent / 'todos'),
                 repository=str(configuration['repository'] or ''), mode=configuration['mode'],
                 project_name=configuration['project_name'], project_id=configuration['project_id'],
-                sources=configuration['sources'], processing=configuration['processing'])
+                sources=configuration['sources'], processing=configuration['processing'], workflow=configuration['workflow'])
 
 def valid_port(value):
     if type(value) is not int or not 1 <= value <= 65535:
@@ -239,7 +239,9 @@ def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
         raise ValueError('Sources require aggregation mode.')
     from processing import settings as processing_settings
     processing = processing_settings(settings.get('processing', {}), base, app_root, owner)
-    return dict(processing=processing, path=path, repository=owner, mode=mode, config=selected, project_name=project_name,
+    from workflow import settings as workflow_settings
+    workflow = workflow_settings(settings.get('workflow', {}), base, processing, mode)
+    return dict(workflow=workflow, processing=processing, path=path, repository=owner, mode=mode, config=selected, project_name=project_name,
                 project_id=project_id, sources=sources,
                 port=valid_port(settings.get("port", DEFAULT_PORT)),
                 bootstrap=data is None and mode == 'standalone' and (selected is None or

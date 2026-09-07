@@ -71,6 +71,19 @@ def validate(data, previous=None):
                     require(isinstance(item['captured_system'], str) and re.fullmatch(r'[a-f0-9]{64}', item['captured_system']), 'Invalid capturing system.')
                 continue
             inspect(item, f'todo {ident}')
+            if 'workflow' in item:
+                require(isinstance(item['workflow'], dict), 'workflow must be an object.')
+                for key in ('run_id', 'system', 'repository', 'worktree', 'branch', 'base', 'phase', 'message'):
+                    string(item['workflow'].get(key), 'workflow.'+key, True)
+                run = item['workflow']
+                require(bool(re.fullmatch(r'[a-f0-9]{32}', run['run_id'])), 'Invalid workflow run ID.')
+                require(bool(re.fullmatch(r'[a-f0-9]{64}', run['system'])), 'Invalid workflow system.')
+                require(run['branch'] == f"codex/{ident.lower()}-{run['run_id'][:8]}", 'Invalid workflow branch.')
+                require(bool(re.fullmatch(r'[a-f0-9]{40,64}', run['base'])), 'Invalid workflow base.')
+                require(run['phase'] in {'implementing','ready','testing','tested','merging','restarting','done','implementation_failed','test_failed','merge_failed','push_failed','restart_failed'}, 'Invalid workflow phase.')
+                if run.get('preview_url'):
+                    preview = urlsplit(run['preview_url'])
+                    require(preview.scheme == 'http' and preview.hostname in ('localhost','127.0.0.1') and not preview.username and not preview.password, 'Invalid workflow preview URL.')
             for field in ("name", "description", "created_by"):
                 string(item.get(field), field, True)
             for field in ("group", "closed_by", "date_closed", "pr_url", "commit_url", "commit_hash"):
@@ -163,6 +176,7 @@ class Server(ThreadingHTTPServer):
     def __init__(self, address, store):
         super().__init__(address, Handler)
         self.processing = None
+        self.workflow = None
         self.store = store
         self.token = secrets.token_urlsafe(32)
         self.publication = Publication(store) if isinstance(store, BoardStore) else None
@@ -172,8 +186,12 @@ class Server(ThreadingHTTPServer):
     def service_actions(self):
         if self.processing:
             self.processing.tick()
+        if self.workflow and (not self.processing or self.processing.status()['status'] != 'running'):
+            self.workflow.tick()
 
     def server_close(self):
+        if self.workflow:
+            self.workflow.close()
         if self.processing:
             self.processing.close()
         super().server_close()
@@ -218,13 +236,15 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     data, revision = self.server.store.read()
                     self.reply(200, {"data": data, "revision": revision, "token": self.server.token})
+            elif path == '/api/workflow' and self.server.workflow:
+                self.reply(200, self.server.workflow.status())
             elif path == '/api/processing' and self.server.processing:
                 self.reply(200, self.server.processing.status())
             elif path == '/api/aggregate' and self.server.aggregation:
                 self.reply(200, self.server.aggregation.view())
             elif path == "/api/publication" and self.server.publication:
                 self.reply(200, self.server.publication.status())
-            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/aggregation.js", "/style.css", "/favicon.svg"):
+            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/workflow.js", "/aggregation.js", "/style.css", "/favicon.svg"):
                 name = "index.html" if path == "/" else path[1:]
                 mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}[Path(name).suffix]
                 self.reply(200, (ROOT / name).read_bytes(), mime + "; charset=utf-8")
@@ -236,7 +256,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         if not self.local_request():
             return
-        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence'):
+        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action'):
             self.reply(404, {"error": "Not found."})
             return
         if not secrets.compare_digest(self.headers.get("X-Board-Token", ""), self.server.token):
@@ -252,6 +272,10 @@ class Handler(BaseHTTPRequestHandler):
                 protocol_state, _ = inspect(body, 'request', PROTOCOL_VERSION, 'protocol_version')
                 require(protocol_state != 'read_only', 'Newer minor request protocol: update Unfertig before writing.')
             if isinstance(self.server.store, BoardStore):
+                if self.path == '/api/workflow/action':
+                    require(self.server.workflow is not None, 'Workflow is unavailable.')
+                    self.reply(200, self.server.workflow.start(body))
+                    return
                 if self.path in ('/api/processing/start', '/api/processing/presence'):
                     require(self.server.processing is not None, 'Processing is unavailable.')
                     result = self.server.processing.start() if self.path.endswith('/start') else self.server.processing.presence(body)
@@ -377,6 +401,8 @@ def main():
     url = f"http://127.0.0.1:{server.server_port}"
     from processing import Processor
     server.processing = Processor(store, url, configuration["processing"])
+    from workflow import Workflow
+    server.workflow = Workflow(store, url, configuration["workflow"], configuration["processing"])
     print(f"\n  unfertig\n  {url}\n\n  Saving to {store.path}\n  Keep this terminal open. Press Ctrl+C to stop.\n", flush=True)
     if not args.no_browser:
         threading.Timer(0.4, webbrowser.open, args=(url,)).start()
