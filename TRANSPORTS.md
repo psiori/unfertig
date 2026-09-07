@@ -139,3 +139,9 @@ presence. Filesystem aggregation does not start a source service or agent.
 Codex uses the existing HTTP/routing API and source transport configuration for
 all saves; there is no alternate processing writer. Shared conformance tests
 cover source attribution, retry identity and preservation across all transports.
+
+Workflow execution remains owner-local. Both adapters preserve and protect claims
+for direct merges without a separate preview exactly like tested merges; an
+absent `tested_commit` must remain absent through edits, receipt retries and
+transport switching. Aggregate reads do not infer successful testing from merge
+or completion phases.
