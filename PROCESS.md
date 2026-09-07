@@ -46,6 +46,10 @@ The AI briefing includes the existing agent implementation workflow. The human b
 
 When processing or refining any todo, make its description self-contained and understandable to a human as well as an agent. State the intended result, relevant context, completion criteria, and any approval gates plainly; do not hide requirements in an agent-only briefing. Re-read the authoritative record before acting on either copied snapshot. Do not mark an approval-gated planning task implemented just because a generic briefing contains implementation steps.
 
+## Shared HTTP/filesystem maintenance requirement
+
+Update HTTP and filesystem together for every relevant schema, API, storage, migration, aggregation or routing change. Keep semantics in BoardStore/common context validation, and extend and run the shared `test_transports.py` matrix plus all Python/JavaScript regression tests. See TRANSPORTS.md for the maintained contract. Filesystem discovery requires already migrated sources and never initializes them. It can operate with an upgraded POSIX service running; lock contention or incompatible writers report a block. Retain claims/drafts and retry with the same request after uncertain writes. HTTP rejections must never be bypassed through filesystem fallback. The active transport and fallback reason appear in source status.
+
 ## Storage layout (version 2), record schema (version 1)
 
 `BOARD/data.json` is a UTF-8 JSON object with `schema_version: 2` and `ideas: []`; it retains any other board metadata but has no `todos` array. Each todo is one JSON object at `BOARD/todos/T0001.json` (using its own ID). The assembled HTTP snapshot retains `schema_version: 1` for the record validator and advertises `api_version: 2`; it is a read view, not a file to write back. `data.v1-backup.json` is the immutable pre-migration recovery copy, never an active store. Preserve fields you do not own. Use two-space indentation and a final newline; retain array order and append new records to keep diffs small. Dates use ISO 8601 with timezone, preferably UTC (`2026-09-06T12:00:00Z`). Browser presentation uses local time.
@@ -100,7 +104,7 @@ A todo has these standard fields:
 
 ### Server running: record-scoped HTTP API
 
-Use one server per board directory. An OS file lock excludes other new servers and offline commands, even on different ports. Default base URL: `http://127.0.0.1:8765`. Do not directly write files while it runs. Arbitrary editors bypass the lock and cannot be made safe by the API. Ideas remain immutable original input; corrections belong in an additional idea or todo description.
+Use one server per board directory. Lifetime leases exclude other services and stopped offline/migration commands, even on different ports. Upgraded POSIX filesystem aggregation clients share the lifetime lease and serialize complete reads/transactions with the service through the operation lock; see TRANSPORTS.md. Older exclusive-lock writers and Windows filesystem access remain blocked. Default base URL: `http://127.0.0.1:8765`. Do not directly write files while it runs. Arbitrary editors bypass the lock and cannot be made safe by the API. Ideas remain immutable original input; corrections belong in an additional idea or todo description.
 
 GET `/api/state` returns `api_version: 2`, assembled `data`, per-record `revisions`, an aggregate `revision` for polling only, a session `token`, and `history` status. Save only intended records using PUT `/api/changes`. Unrelated idea additions and edits to different todos can use the same older snapshot. Changes to the same record require its exact current revision. Whole-board PUT `/api/state` is rejected, including from old browser tabs.
 
@@ -238,12 +242,16 @@ actual `actor`, omitting `project_id`, to record red **Unclear** status. The use
 can correct the project dropdown and obtain a new briefing. No arbitrary tree
 scans, implicit task relocation, service launches or destination creation occur.
 
-Before routing, read the destination's GET `/api/state`, actual `PROCESS.md` and
+Before routing, read the destination's GET `/api/state` or filesystem source
+snapshot context from `/api/aggregate`, actual `PROCESS.md` and
 applicable repository rules, verify the Git owner and local author configuration,
 and determine authorization from the user's scope, not physical containment.
-Sources must run a format-1.2-capable server. A stopped/unreachable source blocks
-routing; do not write its files to bypass the service. This implementation uses
-the supported running record API only. Source URLs never redirect.
+HTTP sources must run a format-1.2-capable server. Filesystem-enabled sources
+must already be migrated to format 1.3 and use the shared BoardStore adapter;
+they need no running HTTP service. Upgraded POSIX services coordinate with these
+clients even while running. Older exclusive writers, pending migrations/history
+and inaccessible sources block with retained claims. Never hand-edit source
+files. HTTP rejection never triggers fallback; Source URLs never redirect.
 
 PUT `/api/routes` on the aggregator with its session `X-Board-Token`:
 

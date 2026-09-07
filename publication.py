@@ -80,7 +80,7 @@ class Publication:
         prefix = '' if board_folder == '.' else board_folder + '/'
         for path, mode in modes.items():
             relative = path[len(prefix):] if path.startswith(prefix) else None
-            if relative is not None and (relative in ('.transaction.json', '.history-pending.json', '.server.lock') or relative.startswith('.receipts/')):
+            if relative is not None and (relative in ('.transaction.json', '.history-pending.json', '.server.lock', '.operation.lock', '.service.lock') or relative.startswith('.receipts/')):
                 raise GitError('Board runtime recovery files are tracked in Git; resolve manually before publishing.')
             if (path == header_path or path.startswith(prefix + 'todos/')) and mode != '100644':
                 raise GitError('Board records must be ordinary non-executable files, not links or submodules.')

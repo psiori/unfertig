@@ -78,7 +78,7 @@ def split(source, app, project, recovery, assignments):
             # Retire request IDs without exporting original bodies to another repository.
             for receipt in (recovery/'original'/'.receipts').glob('*.json'):
                 atomic(target/'.receipts'/receipt.name, encode({'format_version':FORMAT_VERSION, 'retired':True}))
-            atomic(target/'.gitignore', b'.server.lock\n.transaction.json\n.history-pending.json\n.receipts/\n.board-*.tmp\n')
+            atomic(target/'.gitignore', b'.server.lock\n.service.lock\n.operation.lock\n.transaction.json\n.history-pending.json\n.receipts/\n.board-*.tmp\n')
             current,_=BoardStore(target/'data.json', validate, git=False).read()
             if current != data: raise ValueError('Destination validation mismatch.')
         # Retiring the source makes legacy clients fail closed before old files are removed.

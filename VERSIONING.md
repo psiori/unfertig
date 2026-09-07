@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.2.0`.
+`format_version` is a major.minor.build string. Current storage is `1.3.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -74,3 +74,12 @@ record extensions plus new /api/aggregate and /api/routes endpoints. The source
 preflight explicitly requires 1.2-capable writers for foreign provenance guards.
 Routing requests live in the versioned ideas header; ordinary transaction and
 receipt recovery applies to them. No new unversioned durable cache is introduced.
+
+Format **1.3.0** registers the 1.2.0 → 1.3.0 transport step. It versions active
+files without changing originals or receipts, and gives aggregation configs an
+explicit HTTP-only transport default when absent. New transport settings preserve
+unknown fields and explicit booleans. Older writers become read-only and their
+exclusive lifetime locks also exclude upgraded cooperative clients. Filesystem
+aggregation requires an already migrated source; discovery cannot perform this
+step. Stop services/clients for explicit migration and preserve all recovery
+files. See TRANSPORTS.md for the shared adapter and contributor contract.

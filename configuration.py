@@ -13,6 +13,23 @@ from versions import inspect, migrate, VersionError
 DEFAULT_PORT = 8765
 PORT_RANGE = range(8765, 8800)
 
+def transports(value):
+    if not isinstance(value, dict) or set(value) != {'http', 'filesystem'} or any(type(v) is not bool for v in value.values()):
+        raise ValueError('transports requires exactly boolean http and filesystem fields.')
+    if not any(value.values()):
+        raise ValueError('At least one aggregation transport must be enabled.')
+    return dict(value)
+
+
+def board_context(configuration, app_root):
+    app_root = Path(app_root).resolve()
+    path = configuration['path']
+    return dict(config=str(configuration['config'] or ''), app_root=str(app_root),
+                process=str(app_root / 'PROCESS.md'), data=str(path), todos=str(path.parent / 'todos'),
+                repository=str(configuration['repository'] or ''), mode=configuration['mode'],
+                project_name=configuration['project_name'], project_id=configuration['project_id'],
+                sources=configuration['sources'])
+
 def valid_port(value):
     if type(value) is not int or not 1 <= value <= 65535:
         raise ValueError("Port must be an integer from 1 to 65535.")
@@ -70,7 +87,8 @@ def configure_mode(configuration, app_root):
         raise ValueError('Choose standalone, embedded or aggregation.')
     settings['mode'] = mode
     if mode == 'aggregation':
-        print('Sources: JSON array of {"data":"path/to/data.json","url":"http://127.0.0.1:8766","project_id":"ID from source context"}. Paths are relative to this config.')
+        settings['transports'] = transports(json.loads(input('Transports JSON {"http":true,"filesystem":false}: ')))
+        print('Sources: JSON array with data and project_id; HTTP requires url; filesystem requires config and app_root. Paths are relative to this config. See README.md for examples.')
         settings['sources'] = json.loads(input('Sources: '))
     else:
         settings.pop('sources', None)
@@ -175,31 +193,48 @@ def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
     project_id = settings.get('project_id', hashlib.sha256(str(path).encode()).hexdigest()[:32])
     if not isinstance(project_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', project_id):
         raise ValueError('project_id must contain 1–100 letters, digits, underscores or hyphens.')
+    enabled = transports(settings.get('transports', {'http': True, 'filesystem': False}))
     sources, paths, identities = [], set(), set()
     if not isinstance(settings.get('sources', []), list):
         raise ValueError('sources must be an explicit list.')
     if len(settings.get('sources', [])) > 20:
         raise ValueError('At most 20 explicit sources are supported.')
     for source in settings.get('sources', []):
-        if not isinstance(source, dict) or not all(isinstance(source.get(k), str) and source[k] for k in ('data', 'url', 'project_id')):
-            raise ValueError('Each source requires data (JSON file), url and project_id.')
+        if not isinstance(source, dict) or not all(isinstance(source.get(k), str) and source[k] for k in ('data', 'project_id')):
+            raise ValueError('Each source requires data (JSON file) and project_id.')
+        if 'transports' in source:
+            raise ValueError('Transport enablement is global; source overrides are not supported.')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', source['project_id']):
+            raise ValueError('Invalid source project_id.')
         location = (base / source['data']).resolve()
-        parsed = urlsplit(source['url'])
-        if parsed.scheme != 'http' or parsed.hostname not in ('127.0.0.1', 'localhost') or not parsed.port or parsed.path not in ('', '/') or parsed.query or parsed.fragment or parsed.username or parsed.password:
-            raise ValueError('Source URL must be an explicit loopback HTTP origin with a port.')
+        url = source.get('url', '')
+        if not isinstance(url, str) or (enabled['http'] and not url):
+            raise ValueError('HTTP-enabled sources require a URL.')
+        if url:
+            parsed = urlsplit(url)
+            if parsed.scheme != 'http' or parsed.hostname not in ('127.0.0.1', 'localhost') or not parsed.port or parsed.path not in ('', '/') or parsed.query or parsed.fragment or parsed.username or parsed.password:
+                raise ValueError('Source URL must be an explicit loopback HTTP origin with a port.')
+        normalized = dict(data=str(location), url=url.rstrip('/'), project_id=source['project_id'], transports=enabled)
+        for field in ('config', 'app_root'):
+            if enabled['filesystem'] and (not isinstance(source.get(field), str) or not source[field].strip()):
+                raise ValueError('Filesystem sources require explicit config and app_root paths.')
+            if source.get(field):
+                normalized[field] = str((base / source[field]).resolve())
+        if normalized.get('config') and Path(normalized['config']).suffix != '.json':
+            raise ValueError('Source config must name a JSON file.')
         if location == path or source['project_id'] == project_id:
             raise ValueError('An aggregator cannot include itself.')
         if location.suffix != '.json':
             raise ValueError('Source data must name a JSON file.')
         if location in paths:
             prior = next(s for s in sources if s['data'] == str(location))
-            if prior['project_id'] != source['project_id'] or prior['url'] != source['url'].rstrip('/'):
-                raise ValueError('Duplicate source has conflicting identity or URL.')
+            if prior != normalized:
+                raise ValueError('Duplicate source has conflicting metadata.')
             continue
         if source['project_id'] in identities:
             raise ValueError('Distinct boards cannot share a configured project_id.')
         paths.add(location); identities.add(source['project_id'])
-        sources.append(dict(data=str(location), url=source['url'].rstrip('/'), project_id=source['project_id']))
+        sources.append(normalized)
     if sources and mode != 'aggregation':
         raise ValueError('Sources require aggregation mode.')
     return dict(path=path, repository=owner, mode=mode, config=selected, project_name=project_name,
