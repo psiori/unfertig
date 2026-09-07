@@ -1,6 +1,22 @@
 'use strict';
 (() => {
   let latest = null, sending = false, previewWindow = null, previewId = null;
+  let verifiedAt = null, refreshing = false;
+  // A hung request or a suspended tab must not leave confirmed activity behind.
+  const activityLifetime = 6000;
+  function renderActivity() {
+    const fresh = verifiedAt !== null && Date.now() - verifiedAt < activityLifetime;
+    document.querySelectorAll('[data-workflow-icon]').forEach(icon => {
+      const todo = data.todos.find(t => t.id === icon.dataset.workflowIcon);
+      const run = latest?.runs?.[todo?.id];
+      const running = Boolean(fresh && latest?.enabled === true && latest.busy === true &&
+        run?.phase === 'implementing' && !run.foreign && !run.resume_action);
+      icon.classList.toggle('implementation-running', running);
+      const label = running ? `${todo.status} — Implementation running` : (todo?.status || '');
+      icon.setAttribute('aria-label', label);
+      icon.title = label;
+    });
+  }
   function canMerge(run) {
     return ['ready','tested','test_failed','merge_failed','push_failed','restart_failed'].includes(run?.phase) || run?.resume_action === 'merge';
   }
@@ -19,6 +35,7 @@
     return null;
   }
   function render() {
+    renderActivity();
     if (!latest) return;
     document.querySelectorAll('[data-workflow-next]').forEach(slot => {
       const todo = data.todos.find(t => t.id === slot.dataset.workflowNext);
@@ -53,20 +70,28 @@
     });
   }
   async function refresh() {
-    if (!token || sending) return;
+    renderActivity();
+    if (!token || sending || refreshing) return;
+    refreshing = true;
+    const requestedAt = Date.now();
     try {
-      const response = await fetch('/api/workflow');
-      if (!response.ok) return;
+      const response = await fetch('/api/workflow', {cache:'no-store', signal:AbortSignal.timeout(activityLifetime)});
+      if (!response.ok) throw new Error('Workflow activity unavailable');
       latest = await response.json();
+      verifiedAt = requestedAt;
       if (previewWindow && previewId) {
         const preview = latest.runs[previewId];
         if (preview?.preview_url && preview.phase === 'tested') { previewWindow.location.href = preview.preview_url; previewWindow = null; previewId = null; }
         else if (preview?.phase.endsWith('failed')) { previewWindow.close(); previewWindow = null; previewId = null; }
       }
       render();
-    } catch (_) { /* retain visible last progress during restart */ }
+    } catch (_) {
+      verifiedAt = null;
+      renderActivity(); // Keep existing progress details, but withdraw confirmed activity.
+    } finally { refreshing = false; }
   }
   document.addEventListener('unfertig:todos-rendered', render);
+  document.addEventListener('visibilitychange', renderActivity);
   document.addEventListener('input', render);
   document.addEventListener('change', render);
   document.addEventListener('click', async event => {
@@ -89,7 +114,7 @@
       const response = await fetch('/api/workflow/action', {method:'PUT',headers:{'Content-Type':'application/json','X-Board-Token':snapshot.token},body:JSON.stringify({id,action,revision:snapshot.revisions.todos[id],commit:run?.commit})});
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Could not start the stage.');
-      latest = result; await load(); render();
+      latest = result; verifiedAt = null; await load(); render();
     } catch (error) { if (previewWindow) previewWindow.close(); previewWindow = null; previewId = null; alert(error.message); }
     finally { sending = false; render(); }
   });

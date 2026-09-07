@@ -380,6 +380,15 @@ executable with `--approve-for-me`. Progress & branch details shows live output.
 A finished agent report, new commit, clean worktree and configured checks are
 required before preview or merge. The task stays started until deployment succeeds.
 
+The leading todo icon shows a small rotating ring while fresh owner-local workflow
+status confirms an active implementation worker, including its required checks.
+It remains visible on collapsed rows and recovers after refresh. The accessible
+label says “Implementation running”; reduced-motion preferences keep the working
+ring static. Started status alone, foreign or interrupted claims, and waiting for
+preview or merge do not activate it. Activity is polled every two seconds; failed
+polls clear the indication and evidence expires after six seconds without a fresh
+response. Existing progress details remain available during connection loss.
+
 The optional Test branch step reruns checks and launches an isolated preview,
 opening web previews in a new tab or launching a native window. Data and logs live beside the worktree,
 never in the live board. Stopping the board stops previews. Merge confirms the

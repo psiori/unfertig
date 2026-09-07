@@ -2,11 +2,47 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const vm=require('node:vm');
 const fs=require('node:fs');
+test('leading icon requires fresh verified local implementation activity',async()=>{
+  const events={};let poll, now=1000, failure=false, pending=false, resolve;
+  let result={enabled:true,busy:true,runs:{T0001:{phase:'implementing'}}};
+  const makeIcon=()=>({dataset:{workflowIcon:'T0001'},classList:{toggle(_,value){this.running=value;}},setAttribute(_,value){this.label=value;}});
+  let icon=makeIcon();
+  const context={AbortSignal,Date:{now:()=>now},token:'token',data:{todos:[{id:'T0001',status:'started'}]},
+    document:{querySelectorAll:s=>s==='[data-workflow-icon]'?[icon]:[],addEventListener:(n,f)=>events[n]=f},
+    setInterval:f=>poll=f,setTimeout:()=>{},fetch:async()=>{
+      if(pending)await new Promise(r=>resolve=r);
+      if(failure==='network')throw Error('offline');
+      return {ok:!failure,json:async()=>{if(failure==='json')throw Error('invalid');return result;}};
+    }};
+  vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
+  events['unfertig:todos-rendered']();assert.equal(icon.classList.running,false);
+  await poll();assert.equal(icon.classList.running,true);assert.equal(icon.label,'started — Implementation running');
+  icon=makeIcon();events['unfertig:todos-rendered']();assert.equal(icon.classList.running,true);
+  for(const phase of ['ready','implementation_failed','interrupted','testing','tested','merging','restarting','done']){
+    result.runs.T0001={phase};await poll();assert.equal(icon.classList.running,false,phase);
+  }
+  for(const extra of [{foreign:true},{resume_action:'retry'}]){
+    result.runs.T0001={phase:'implementing',...extra};await poll();assert.equal(icon.classList.running,false);
+  }
+  result.runs.T0001={phase:'implementing'};
+  for(const field of ['busy','enabled']){
+    result[field]=false;await poll();assert.equal(icon.classList.running,false);result[field]=true;
+  }
+  for(const error of [true,'network','json']){
+    await poll();assert.equal(icon.classList.running,true);
+    failure=error;await poll();assert.equal(icon.classList.running,false);assert.equal(icon.label,'started');failure=false;
+  }
+  await poll();pending=true;const request=poll();now+=6001;
+  await poll();assert.equal(icon.classList.running,false);resolve();await request;
+  assert.equal(icon.classList.running,false,'late response does not renew old evidence');
+  pending=false;await poll();assert.equal(icon.classList.running,true);
+  result.runs={};await poll();assert.equal(icon.classList.running,false,'started alone is idle');
+});
 test('disabled or missing feature flag hides all workflow controls and blocks stale clicks',async()=>{
   const events={};let poll,result={enabled:false,runs:{},configured:true};const calls=[];
   const panel={hidden:true,innerHTML:'',dataset:{workflow:'T0001'},querySelector:()=>null};
   const context={document:{querySelectorAll:s=>s==='[data-workflow]'?[panel]:[],addEventListener:(name,fn)=>events[name]=fn},
-    token:'token',data:{todos:[{id:'T0001',status:'open'}]},compatibility:{read_only:false},history:{pending:false},
+    AbortSignal,token:'token',data:{todos:[{id:'T0001',status:'open'}]},compatibility:{read_only:false},history:{pending:false},
     hasDraft:()=>false,escapeHTML:s=>s,setInterval:fn=>poll=fn,setTimeout:()=>{},
     fetch:async(url)=>{calls.push(url);return {ok:true,json:async()=>result};}};
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
@@ -25,7 +61,7 @@ test('collapsed row follows workflow stages and respects execution guards',async
   let result={enabled:true,runs:{},configured:true,busy:false};
   const slot={hidden:true,innerHTML:'',dataset:{workflowNext:'T0001'}};
   const context={document:{querySelectorAll:s=>s==='[data-workflow-next]'?[slot]:[],addEventListener:(name,fn)=>events[name]=fn},
-    token:'token',data:{todos:[{id:'T0001',status:'open'}]},compatibility:{read_only:false},history:{pending:false},
+    AbortSignal,token:'token',data:{todos:[{id:'T0001',status:'open'}]},compatibility:{read_only:false},history:{pending:false},
     hasDraft:()=>draft,escapeHTML:s=>s,setInterval:fn=>poll=fn,setTimeout:()=>{},
     fetch:async()=>({ok:true,json:async()=>result})};
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
@@ -47,12 +83,12 @@ test('both entry points offer optional preview and confirmed direct merge with t
   const commit='a'.repeat(40),todo={id:'T0001',status:'started',name:'Task',description:'Scope'};
   const slot={dataset:{workflowNext:todo.id}},panel={dataset:{workflow:todo.id},querySelector:()=>null};
   let result={enabled:true,configured:true,runs:{T0001:{phase:'ready',commit,branch:'codex/task'}}};
-  const context={document:{querySelectorAll:s=>s==='[data-workflow-next]'?[slot]:[panel],addEventListener:(n,f)=>events[n]=f},
-    token:'token',data:{todos:[todo]},compatibility:{read_only:false},history:{pending:false},hasDraft:()=>false,
+  const context={document:{querySelectorAll:s=>s==='[data-workflow-next]'?[slot]:s==='[data-workflow]'?[panel]:[],addEventListener:(n,f)=>events[n]=f},
+    AbortSignal,token:'token',data:{todos:[todo]},compatibility:{read_only:false},history:{pending:false},hasDraft:()=>false,
     escapeHTML:s=>s,setInterval:f=>poll=f,setTimeout:()=>{},load:async()=>{},alert:assert.fail,
     confirm:s=>{confirmation=s;return approved;},fetch:async(url,options)=>{
       if(url==='/api/state')return {ok:true,json:async()=>({data:{todos:[todo]},token:'fresh',revisions:{todos:{T0001:'revision'}}})};
-      if(options)submitted=JSON.parse(options.body);
+      if(options?.body)submitted=JSON.parse(options.body);
       return {ok:true,json:async()=>result};
     }};
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
