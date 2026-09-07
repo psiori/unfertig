@@ -165,6 +165,44 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(resumed.status()['runs']['T0001']['phase'],'interrupted')
         with patch.object(resumed,'start') as start:resumed.tick();start.assert_not_called()
 
+    def check_live_implementation(self, outcome):
+        # Hold a real disposable agent process so polling has observable activity.
+        executable = self.root/'codex'
+        entered, release = self.root/'entered', self.root/'release'
+        pause = (f'import time\npathlib.Path({str(entered)!r}).touch()\n'
+                 f'while not pathlib.Path({str(release)!r}).exists(): time.sleep(.02)\n')
+        if outcome == 'failure':
+            pause += 'sys.exit(1)\n'
+        executable.write_text(executable.read_text().replace('sys.stdin.read()\n', 'sys.stdin.read()\n'+pause))
+        self.run_stage('implement', wait=False)
+        deadline = time.monotonic()+10
+        while not entered.exists() and time.monotonic() < deadline:
+            time.sleep(.02)
+        self.assertTrue(entered.exists(), 'Disposable worker did not start')
+        for _ in range(2):
+            status = self.workflow.status()
+            self.assertTrue(status['busy'])
+            self.assertEqual(status['runs']['T0001']['phase'], 'implementing')
+            self.assertNotIn('foreign', status['runs']['T0001'])
+        if outcome == 'interruption':
+            self.workflow.close()
+        else:
+            release.touch()
+        self.workflow.worker.join(10)
+        status = self.workflow.status()
+        self.assertFalse(status['busy'])
+        self.assertNotEqual(status['runs']['T0001']['phase'], 'implementing')
+        self.assertEqual(status['runs']['T0001']['phase'], 'ready' if outcome == 'completion' else 'implementation_failed')
+
+    def test_live_implementation_completion(self):
+        self.check_live_implementation('completion')
+
+    def test_live_implementation_failure(self):
+        self.check_live_implementation('failure')
+
+    def test_live_implementation_interruption(self):
+        self.check_live_implementation('interruption')
+
     def test_board_owned_context_can_merge_its_own_workflow_history(self):
         # Simulate Vesoma: the code target and board share their Git owner.
         self.workflow.close(); self.store.close()
