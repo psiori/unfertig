@@ -461,3 +461,11 @@ When a context repository also owns its board, its progress commits necessarily
 advance main. The merge accepts those board-file-only changes if the tested
 branch did not modify board files; any other main change blocks. It preserves
 board history with a merge commit rather than losing it in a fast-forward.
+
+Work categories describe the kind of deliverable independently of Group and
+Status. Choose one in the new-todo or expanded editor; Unclassified is the safe
+default. Guidance explains the expected result and completion criteria, and is
+included in human and AI handoffs. Search includes the selected category. See
+[PROCESS.md](PROCESS.md#work-categories-format-17) and the canonical
+[categories.json](categories.json). Format 1.7 requires an explicit supported
+migration before rollout; see [VERSIONING.md](VERSIONING.md).

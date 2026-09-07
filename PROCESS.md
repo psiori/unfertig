@@ -233,7 +233,7 @@ feature only with disposable local repositories/bare remotes, never real remotes
 ## Data and API versions
 
 [VERSIONING.md](VERSIONING.md) governs both idea processing and implementation.
-Persisted JSON uses `format_version` (currently `1.6.0`), independently of integer
+Persisted JSON uses `format_version` (currently `1.7.0`), independently of integer
 layout schema_version. Snapshots declare protocol_version `2.0.0`. Preserve these
 fields and unknown extensions in edits. Newer major versions require updating;
 newer minor versions allow inspection only; compatible builds preserve their
@@ -397,3 +397,30 @@ choose Merge & restart directly or first run the optional Test branch / Preview
 step. Both collapsed and expanded controls retain that choice. Merge confirms
 the exact selected commit and displays its separate test/preview status; merging
 never supplies `tested_commit`. All other eligibility and recovery guards remain.
+
+## Work categories (format 1.7)
+
+`category` is one optional work type, separate from module/group and lifecycle
+status. Choose ideation, research, concept, design, implementation, debugging or
+refactoring to describe the task's primary intended deliverable. Leave it absent
+or empty (Unclassified) when undecided. Existing records are not classified.
+For mixed work, choose the primary type and explain secondary work in the task;
+split only independently useful deliverables. Change the selection manually as
+scope changes; no automatic transitions, status changes or approvals follow.
+
+The canonical definitions in [categories.json](categories.json) specify each
+type's meaning, deliverable, completion criteria and instructions. The editor,
+human/AI briefings and launched implementation prompts use this same vocabulary.
+Both audiences follow the same intent and approval boundaries, with their
+existing identity and tracking instructions. A category never grants permission
+to implement, publish, merge or deploy. Read the task's actual acceptance and
+approval conditions first. Changes to an assigned category invalidate the scope
+check for subsequent workflow actions; reconcile the branch explicitly.
+
+Create or edit a todo to choose its category and read the guidance below the
+selector. Collapsed rows and aggregate details display it. Text search includes
+the category; dedicated category filters and category grouping are deferred.
+Existing group/tag filters and status sorting retain their meanings. Aggregated
+records use their owning board for category edits. Unsaved category edits follow
+the same draft, revision-conflict and save-before-briefing rules as other edits.
+See VERSIONING.md for migration, compatibility and recovery.

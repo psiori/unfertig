@@ -54,6 +54,34 @@ class Conformance:
         self.assertEqual(retry['assigned'], result['assigned'])
         self.assertEqual(retry['data']['ideas'][-1], idea)
 
+    def test_categories_save_reload_conflict_and_transport_retry(self):
+        from categories import CATEGORIES
+        source = self.sources[0]
+        for category in [*CATEGORIES, '']:
+            snapshot = self.router.inspect_source(source)
+            old = snapshot['data']['todos'][0]
+            request = dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=old['id'], revision=digest(old), record=dict(old, category=category))])
+            expected = preflight_context(snapshot['context'])
+            self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
+            switched = dict(source, transports=dict(http=False, filesystem=True))
+            retry = self.router.transfer(switched, '/api/changes', request, None, expected)
+            saved = retry['data']['todos'][0]
+            self.assertEqual(saved['category'], category)
+            for field in ('author', 'created_by', 'group', 'status', 'source_ideas'):
+                self.assertEqual(saved[field], old[field])
+            self.assertEqual(self.router.inspect_source(switched)['data']['todos'][0], saved)
+            stale = dict(request, request_id=uuid.uuid4().hex)
+            with self.assertRaises((ValueError, Conflict)):
+                self.router.transfer(source, '/api/changes', stale, snapshot.get('token'), expected)
+        snapshot = self.router.inspect_source(source)
+        old = snapshot['data']['todos'][0]
+        for invalid in ('unknown', None, [], 7):
+            request = dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=old['id'], revision=digest(old), record=dict(old, category=invalid))])
+            with self.assertRaises((ValueError, Conflict)):
+                self.router.transfer(source, '/api/changes', request, snapshot.get('token'), preflight_context(snapshot['context']))
+
     def test_workflow_claims_cannot_be_forged_by_either_transport(self):
         source = self.sources[0]
         snapshot = self.router.inspect_source(source)

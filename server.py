@@ -17,6 +17,7 @@ import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
+from categories import CATEGORIES, DEFINITIONS
 from storage import BoardStore, Conflict
 from publication import Publication
 from versions import inspect, migrate, parse, PROTOCOL_VERSION
@@ -88,6 +89,9 @@ def validate(data, previous=None):
                 string(item.get(field), field, True)
             for field in ("group", "closed_by", "date_closed", "pr_url", "commit_url", "commit_hash"):
                 string(item.get(field), field)
+            category = item.get('category', '')
+            string(category, 'Category')
+            require(not category or category in CATEGORIES or inspect(item)[0] == 'read_only', 'Invalid category.')
             timestamp(item.get("updated_at"), "Updated at")
             require(isinstance(item.get("priority"), str) and item["priority"] in PRIORITIES, "Invalid priority.")
             require(isinstance(item.get("status"), str) and item["status"] in STATUSES, "Invalid status.")
@@ -244,6 +248,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, self.server.aggregation.view())
             elif path == "/api/publication" and self.server.publication:
                 self.reply(200, self.server.publication.status())
+            elif path == '/categories-data.js':
+                self.reply(200, ('const categoryDefinitions = ' + json.dumps(DEFINITIONS) + ';').encode(), 'text/javascript; charset=utf-8')
             elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/workflow.js", "/aggregation.js", "/style.css", "/favicon.svg"):
                 name = "index.html" if path == "/" else path[1:]
                 mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}[Path(name).suffix]

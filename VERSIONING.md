@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.6.0`.
+`format_version` is a major.minor.build string. Current storage is `1.7.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -117,3 +117,16 @@ Direct merge after completed implementation does not change the stored format:
 step, and is never populated by merge. Existing phases, claims, receipts and
 recovery retain their meanings. Older writers preserve these claims but may
 require preview before accepting a merge retry. No migration is required.
+
+Format **1.7.0** introduces optional todo `category`: an empty string or one key
+from `categories.json`. The sequential 1.6 → 1.7 step only advances format
+metadata; absent fields remain absent and mean Unclassified. It never infers
+categories, rewrites attribution, or changes groups, statuses or workflow claims.
+New clients may explicitly save an empty selection; omitted fields in older
+client edits retain the saved value through BoardStore's extension merge.
+Invalid explicit values are rejected. Future-minor categories remain inspectable
+in read-only mode; older writers cannot ignore the new semantics. Protocol stays
+2.0.0. HTTP and filesystem use the same validator, revision checks, migration,
+journal and receipt recovery. Filesystem discovery still requires explicit prior
+migration. Use the stopped-instance upgrade procedure above; this change does
+not authorize upgrading the live board.

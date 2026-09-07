@@ -160,6 +160,15 @@ class ApiTests(unittest.TestCase):
         except HTTPError as error:
             return error.code, error.read(), error.headers
 
+    def test_category_definitions_are_served_before_app(self):
+        from categories import DEFINITIONS
+        status, raw, headers = self.request('/categories-data.js')
+        self.assertEqual(status, 200)
+        self.assertIn('text/javascript', headers['Content-Type'])
+        self.assertEqual(json.loads(raw.decode().removeprefix('const categoryDefinitions = ').removesuffix(';')), DEFINITIONS)
+        _, html, _ = self.request('/')
+        self.assertLess(html.index(b'/categories-data.js'), html.index(b'/app.js'))
+
     def test_full_api_save_and_conflict(self):
         status, raw, _ = self.request()
         self.assertEqual(status, 200)
