@@ -451,6 +451,11 @@ class BoardStore:
                     prefix = (initials + '_' if initials else '') + prefix
                     ident = prefix + str(max((int(re.search(r'\d+$', r['id']).group()) for r in data[kind]), default=0) + 1).zfill(4)
                     record['id'] = ident
+                    if kind == 'ideas':
+                        from processing import system_id
+                        record.pop('captured_system', None)
+                        if system_id():
+                            record['captured_system'] = system_id()
                     if self.context.get('project_id'):
                         record['project_id'] = self.context['project_id']
                     if kind == 'ideas' and record.get('selected_project') and record['selected_project'] not in {s['project_id'] for s in self.context.get('sources', [])}:

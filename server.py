@@ -67,6 +67,8 @@ def validate(data, previous=None):
             timestamp(item.get("date_entered"), "Date entered")
             if collection == "ideas":
                 string(item.get("text"), "Idea text", True)
+                if 'captured_system' in item:
+                    require(isinstance(item['captured_system'], str) and re.fullmatch(r'[a-f0-9]{64}', item['captured_system']), 'Invalid capturing system.')
                 continue
             inspect(item, f'todo {ident}')
             for field in ("name", "description", "created_by"):
@@ -113,7 +115,9 @@ def validate(data, previous=None):
                 new = current[old["id"]]
                 for field in (("author", "date_entered", "text") if collection == "ideas" else ("author", "date_entered", "created_by")):
                     require(new[field] == old[field], f"Original {field} must be preserved for {old['id']}.")
-                for field in ('source_refs', 'project_id'):
+                if collection == 'ideas':
+                    require(new.get('captured_system') == old.get('captured_system'), 'Original capturing system must be preserved.')
+                for field in ('source_refs', 'project_id', 'captured_system'):
                     if field in old:
                         require(new.get(field) == old[field], f'Original {field} must be preserved.')
 
@@ -158,11 +162,21 @@ class Server(ThreadingHTTPServer):
 
     def __init__(self, address, store):
         super().__init__(address, Handler)
+        self.processing = None
         self.store = store
         self.token = secrets.token_urlsafe(32)
         self.publication = Publication(store) if isinstance(store, BoardStore) else None
         from aggregation import Aggregation
         self.aggregation = Aggregation(store) if getattr(store, 'context', {}).get('mode') == 'aggregation' else None
+
+    def service_actions(self):
+        if self.processing:
+            self.processing.tick()
+
+    def server_close(self):
+        if self.processing:
+            self.processing.close()
+        super().server_close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -204,11 +218,13 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     data, revision = self.server.store.read()
                     self.reply(200, {"data": data, "revision": revision, "token": self.server.token})
+            elif path == '/api/processing' and self.server.processing:
+                self.reply(200, self.server.processing.status())
             elif path == '/api/aggregate' and self.server.aggregation:
                 self.reply(200, self.server.aggregation.view())
             elif path == "/api/publication" and self.server.publication:
                 self.reply(200, self.server.publication.status())
-            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/aggregation.js", "/style.css", "/favicon.svg"):
+            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/aggregation.js", "/style.css", "/favicon.svg"):
                 name = "index.html" if path == "/" else path[1:]
                 mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}[Path(name).suffix]
                 self.reply(200, (ROOT / name).read_bytes(), mime + "; charset=utf-8")
@@ -220,7 +236,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         if not self.local_request():
             return
-        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority'):
+        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence'):
             self.reply(404, {"error": "Not found."})
             return
         if not secrets.compare_digest(self.headers.get("X-Board-Token", ""), self.server.token):
@@ -236,6 +252,11 @@ class Handler(BaseHTTPRequestHandler):
                 protocol_state, _ = inspect(body, 'request', PROTOCOL_VERSION, 'protocol_version')
                 require(protocol_state != 'read_only', 'Newer minor request protocol: update Unfertig before writing.')
             if isinstance(self.server.store, BoardStore):
+                if self.path in ('/api/processing/start', '/api/processing/presence'):
+                    require(self.server.processing is not None, 'Processing is unavailable.')
+                    result = self.server.processing.start() if self.path.endswith('/start') else self.server.processing.presence(body)
+                    self.reply(200, result)
+                    return
                 if self.path in ('/api/source-record', '/api/source-priority'):
                     require(self.server.aggregation is not None, 'Source operations require aggregation mode.')
                     from aggregation import SourceRejected, Unreachable
@@ -354,6 +375,8 @@ def main():
             server.server_close()
         parser.exit(1, f"\nCould not start: {error}\nIf the port is busy, close the other app window's terminal or use --port 8766.\nSee {ROOT / 'README.md'} for help.\n")
     url = f"http://127.0.0.1:{server.server_port}"
+    from processing import Processor
+    server.processing = Processor(store, url, configuration["processing"])
     print(f"\n  unfertig\n  {url}\n\n  Saving to {store.path}\n  Keep this terminal open. Press Ctrl+C to stop.\n", flush=True)
     if not args.no_browser:
         threading.Timer(0.4, webbrowser.open, args=(url,)).start()

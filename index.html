@@ -10,6 +10,7 @@
   <script src="/app.js" defer></script>
   <script src="/priority.js" defer></script>
   <script src="/aggregation.js" defer></script>
+  <script src="/processing.js" defer></script>
 </head>
 <body>
   <div class="history-banner"><span id="history-state"></span> <button id="history-retry" class="button small" hidden>Retry Git commit</button></div>
@@ -26,6 +27,7 @@
     <div id="notice" class="notice" role="alert" hidden><span id="notice-text"></span><button id="reload" class="button small">Load latest</button></div>
     <section class="scratchpad panel" aria-labelledby="scratch-heading">
       <div class="section-heading"><div><span class="section-index">01 / CAPTURE</span><h2 id="scratch-heading">The scratchpad <span id="pending-count" class="count">0</span></h2></div><button id="process" class="button subtle" disabled><span aria-hidden="true">✧</span> Copy processing briefing</button></div>
+      <div class="processing-controls"><button id="process-run" class="button primary" type="button" disabled>Process ideas with Codex</button><span id="processing-state" role="status" aria-live="polite"></span><details><summary>Processing details</summary><pre id="processing-details"></pre></details></div>
       <form id="idea-form"><label for="idea-text" class="sr-only">New idea</label><textarea id="idea-text" rows="2" placeholder="What’s on your mind? Rough ideas welcome." required maxlength="100000"></textarea><div class="composer-footer"><span><kbd id="shortcut">⌘</kbd> <kbd>Enter</kbd> to capture · original words kept</span><label id="idea-project-label" hidden>Project <select id="idea-project"><option value="">Infer from text</option></select></label><button id="add-idea" class="button primary" type="submit" disabled>Add idea <span aria-hidden="true">↗</span></button></div></form>
       <div class="scratch-toolbar"><span id="scratch-summary">Your ideas, before they become a plan.</span><label class="check"><input type="checkbox" id="show-processed"> Show processed</label></div>
       <ul id="ideas" class="ideas"></ul>

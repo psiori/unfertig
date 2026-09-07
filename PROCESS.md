@@ -338,3 +338,16 @@ explicit/inferred selection separately. Names are presentation metadata from the
 source context; renaming a project_name does not change identity. Set a durable
 config `project_id` before moving a board: absent IDs default deterministically to
 a hash of the canonical data path, so relocation needs an explicit pinned ID.
+
+## Button-launched processing
+
+Unfertig may launch a separate Codex planning job with explicit board context and
+an allowlist of idea IDs. Process only those IDs; re-read them and existing todos
+before writing. Follow the same local-commit and routing procedure above. Report
+essential ambiguities as questions and leave those ideas pending. The launch does
+not authorize implementation, push, merge or messages to others. The backend
+checks completion and Git history; a process exit alone is not board completion.
+
+New ideas have server-assigned immutable `captured_system` provenance. Never add,
+remove or alter it manually, including on legacy ideas. Automatic launch selects
+only matching local provenance; manual launch can include legacy/foreign ideas.

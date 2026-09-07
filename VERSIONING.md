@@ -83,3 +83,11 @@ exclusive lifetime locks also exclude upgraded cooperative clients. Filesystem
 aggregation requires an already migrated source; discovery cannot perform this
 step. Stop services/clients for explicit migration and preserve all recovery
 files. See TRANSPORTS.md for the shared adapter and contributor contract.
+
+Format **1.4.0** adds processing configuration with manual-only migration defaults
+and immutable, server-assigned `captured_system` on newly created ideas. The
+1.3 → 1.4 step preserves existing records exactly except their format metadata;
+it does not invent origins for old ideas. Earlier writers become read-only.
+Both HTTP and filesystem creations use BoardStore's same system attribution and
+immutability checks. Processing status/presence are ephemeral service controls,
+not a second record writer or persistent job format. API protocol remains 2.0.0.

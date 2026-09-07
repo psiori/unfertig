@@ -39,6 +39,19 @@ class Conformance:
     test_duplicate_provenance = fixtures.AggregationTests.test_duplicate_source_provenance_rejected_with_new_request_id
     test_inbox_history_recovery = fixtures.AggregationTests.test_local_history_failure_after_destination_save
 
+    def test_capture_system_is_authoritative_and_preserved(self):
+        source = self.sources[0]
+        snapshot = self.router.inspect_source(source)
+        record = dict(author='Test', date_entered='2026-09-07T12:00:00Z', text='Transport capture', captured_system='b'*64)
+        request = dict(request_id=uuid.uuid4().hex, actor='Test', changes=[dict(collection='ideas', id=None, record=record)])
+        with patch('processing.system_id', return_value='a'*64):
+            result = self.router.transfer(source, '/api/changes', request, snapshot.get('token'), preflight_context(snapshot['context']))
+        idea = result['data']['ideas'][-1]
+        self.assertEqual(idea['captured_system'], 'a'*64)
+        retry = self.router.transfer(source, '/api/changes', request, snapshot.get('token'), preflight_context(snapshot['context']))
+        self.assertEqual(retry['assigned'], result['assigned'])
+        self.assertEqual(retry['data']['ideas'][-1], idea)
+
     def test_same_and_different_record_revisions(self):
         source = self.sources[0]
         snapshot = self.router.inspect_source(source)

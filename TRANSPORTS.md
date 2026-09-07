@@ -126,3 +126,12 @@ Filesystem records expand in the aggregator with their data location and ID;
 opening them never launches a service or invents an HTTP link. HTTP sources keep
 their existing record links. Generated routing briefings include current source
 context and transport and retain the same preflight, claim and recovery workflow.
+
+Format 1.4 adds identical capture-system attribution and preservation to HTTP and
+filesystem idea writes. The processing launcher is a local service operation;
+GET `/api/processing` returns status and token-protected PUT
+`/api/processing/start` and `/api/processing/presence` launch/report browser
+presence. Filesystem aggregation does not start a source service or agent.
+Codex uses the existing HTTP/routing API and source transport configuration for
+all saves; there is no alternate processing writer. Shared conformance tests
+cover source attribution, retry identity and preservation across all transports.

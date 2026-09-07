@@ -269,3 +269,59 @@ Run the shared conformance and regression suites:
 uv run --no-project --python 3.12 python -m unittest discover -v
 node --test test_*.cjs
 ```
+
+### Process ideas with Codex
+
+**Process ideas with Codex** starts a planning-only local Codex CLI job in the
+resolved project directory. It reads repository instructions, current design,
+saved context and the selected developer's rules, then re-reads the authoritative
+board. It creates/refines open todos through the board API, whose normal history
+commits them locally. It does not implement or publish them. Aggregator inboxes
+use the existing verified routing workflow and configured source projects.
+Conversation history from an existing Codex task is not inherited.
+
+Install and sign in to Codex CLI first (`codex login`). The launcher uses
+`codex exec --sandbox workspace-write --approve-for-me -C <directory>`; approval
+requests go through Codex's automatic review. CLI user settings and authentication
+remain in effect. No shell command interpolation or credentials in board config.
+Processing details show the resolved directory, completion summary, questions or
+failure. A failed/ambiguous idea is not retried automatically during that server
+session; use the manual button after addressing it. Stop shuts down its worker.
+
+Configure optional `processing` in the instance config (relative paths resolve
+from that file), and restart:
+
+```json
+"processing": {
+  "enabled": true,
+  "automatic": true,
+  "working_directory": "../../..",
+  "developer": "sl",
+  "executable": "codex",
+  "idle_seconds": 600,
+  "closed_seconds": 90
+}
+```
+
+Migration defaults to manual processing (`automatic: false`). Omit
+`working_directory` to inspect the known board-owning repository and at most two
+parents for `node.json` or `AGENTS.md`, otherwise use the owner. Explicit directories
+always win and missing explicit directories fail clearly. No recursive project
+search. Set `executable` to an absolute CLI path when a desktop launcher has a
+limited PATH. `enabled: false` disables all launches.
+
+Automatic processing requires a browser visit during the current server session,
+then either ten minutes without activity or a 90-second grace period after the
+last browser tab disappears. Input/click/key activity is aggregated in 20-second
+heartbeats; each batch resets inactivity. Multiple tabs share the backend timer.
+Live unsaved drafts postpone automatic processing. Closure is best effort:
+pagehide sends a final heartbeat; crashed/throttled tabs expire after 75 seconds.
+Only saved ideas are ever processed; drafts are not uploaded by heartbeats.
+
+Each newly saved idea receives an immutable, opaque `captured_system` fingerprint
+from its writing system. Automatic jobs select only ideas captured on the current
+system, excluding older ideas without provenance and ideas synchronized from
+another machine. Manual processing can select all pending ideas. Unsupported
+system identity disables automatic selection rather than guessing. A running
+job excludes another launch on the same board. Other manual agents must still
+follow the existing source-link/revision conflict and routing-receipt rules.

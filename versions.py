@@ -2,7 +2,7 @@
 import copy
 import re
 
-FORMAT_VERSION = '1.3.0'
+FORMAT_VERSION = '1.4.0'
 PROTOCOL_VERSION = '2.0.0'
 
 
@@ -26,7 +26,7 @@ def inspect(value, label='data', supported=FORMAT_VERSION, field='format_version
     if found > current:
         level = 'read_only' if found[:2] > current[:2] else 'compatible'
         return level, f'{label} uses newer {field} {version} (supported {supported}). ' + ('Read-only until Unfertig is updated.' if level == 'read_only' else 'Compatible build; version and unknown fields are preserved.')
-    if found < current and field == 'format_version' and version not in ('0.0.0', '1.0.0', '1.1.0', '1.2.0'):
+    if found < current and field == 'format_version' and version not in ('0.0.0', '1.0.0', '1.1.0', '1.2.0', '1.3.0'):
         raise VersionError(f'No migration registered for {label} version {version}. Update Unfertig; data was not changed.')
     return ('legacy' if found < current else 'current'), ''
 
@@ -64,8 +64,16 @@ def transport_format(value, kind):
     return value
 
 
+def processing_format(value, kind):
+    if kind == 'config':
+        value.setdefault('processing', {'enabled': True, 'automatic': False, 'idle_seconds': 600, 'closed_seconds': 90})
+    # Do not guess a capturing machine for existing ideas.
+    value['format_version'] = '1.4.0'
+    return value
+
+
 MIGRATIONS = {'0.0.0': introduce_version, '1.0.0': useful_defaults,
-              '1.1.0': aggregation_format, '1.2.0': transport_format}
+              '1.1.0': aggregation_format, '1.2.0': transport_format, '1.3.0': processing_format}
 
 
 def migrate(value, kind, label='data'):
