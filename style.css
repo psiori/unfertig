@@ -115,7 +115,7 @@ main { padding-top:18px; }
 .scratchpad h1 { font-size:23px; letter-spacing:-.7px; line-height:1.2; margin:0; }
 .scratch-note { font-size:12px; color:var(--muted); margin:4px 0 0; }
 .capture-mark { color:#d6a982; font-size:28px; line-height:1; padding-right:2px; }
-.scratch-grid { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:24px; align-items:start; }
+.scratch-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:24px; align-items:start; }
 .capture-column,.saved-column { min-width:0; }
 .saved-column { border-left:1px solid var(--line); padding-left:24px; }
 .scratchpad textarea { min-height:64px; padding:12px 14px 4px; font-size:13px; }
@@ -186,3 +186,38 @@ main { padding-top:18px; }
   .masthead .history-banner { max-width:270px; }
   .scratchpad .ideas { max-height:100px; }
 }
+
+/* Restore a welcoming header and a generous writing area. */
+.masthead { padding-top:20px; padding-bottom:20px; }
+.header-right { margin-left:auto; }
+.welcome { display:flex; align-items:center; justify-content:space-between; gap:32px; padding:4px 0 24px; }
+.welcome h1 { font-size:30px; line-height:1.2; letter-spacing:-1px; margin:0; max-width:620px; }
+.welcome h1 span { color:var(--orange); }
+.welcome > div > p { margin:10px 0 0; color:var(--muted); font-size:13px; }
+.welcome .progress-card { flex:0 0 270px; width:270px; padding:22px; transform:rotate(1deg); }
+.welcome .progress-number { margin:0 0 8px; }
+.welcome .progress-number strong { font-size:44px; }
+.welcome .progress-card p { font-size:10px; margin:8px 0 0; }
+.scratchpad.panel { padding:22px 24px 16px; }
+.scratchpad h2 { font-size:23px; margin:0; letter-spacing:-.7px; }
+.scratchpad .section-heading { margin-bottom:18px; }
+.scratchpad textarea { min-height:80px; font-size:14px; padding:14px 16px 6px; }
+.scratchpad .composer-footer { padding:8px 12px 12px; }
+.scratchpad .idea { flex-wrap:wrap; }
+.scratchpad .idea-actions { flex-direction:row; flex-wrap:wrap; padding-left:15px; gap:12px; }
+.scratchpad .ideas { max-height:130px; }
+.scratchpad .processing-controls { margin-top:18px; padding-top:14px; }
+@media(max-width:700px) {
+  .masthead { padding:16px 18px; }
+  .welcome { padding:4px 0 20px; }
+  .welcome h1 { font-size:26px; }
+  .welcome .progress-card { display:none; }
+  .scratchpad.panel { padding:20px 18px 16px; }
+  .scratchpad .ideas { max-height:110px; }
+}
+.scratchpad .idea-actions { flex-basis:100%; }
+.welcome .progress-number strong { font-size:44px; }
+.welcome .progress-card { padding:22px; }
+.welcome .progress-card p { line-height:1.4; }
+.welcome { padding-bottom:20px; }
+.scratchpad .ideas { max-height:110px; }
