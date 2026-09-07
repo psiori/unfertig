@@ -213,9 +213,9 @@ function render() {
 function renderIdeas() {
   const linked = id => data.todos.filter(todo => todo.source_ideas.includes(id));
   const pending = data.ideas.filter(idea => !linked(idea.id).length);
-  $('#pending-count').textContent = pending.length;
+  $('#pending-count').textContent = data.ideas.length;
   $('#process').disabled = !pending.length;
-  $('#scratch-summary').textContent = data.ideas.length ? `${pending.length} unprocessed · ${data.ideas.length} ${data.ideas.length === 1 ? 'idea' : 'ideas'} captured` : 'Your ideas, before they become a plan.';
+  $('#scratch-summary').textContent = data.ideas.length ? `${pending.length} waiting for todos` : 'Your ideas, before they become a plan.';
   const visible = [...data.ideas].sort((a,b) => b.date_entered.localeCompare(a.date_entered)).filter(idea => $('#show-processed').checked || !linked(idea.id).length);
   $('#ideas').innerHTML = visible.length ? visible.map(idea => {
     const todos = linked(idea.id);
