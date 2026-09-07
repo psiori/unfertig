@@ -27,7 +27,7 @@ async function refreshAggregate() {
     if (!response.ok) throw new Error(result.error || 'Could not refresh sources.');
     const signature = JSON.stringify(result.sources.map(s => [s.project_id,s.name,s.revision,s.status,s.error,s.transport,s.fallback_reason]));
     aggregateSources = result.sources;
-    $('#source-status').textContent = aggregateSources.map(s => `${sourceName(s)}: ${s.status}${s.transport ? ' · ' + s.transport : ''}${s.fallback_reason ? ' · ' + s.fallback_reason : ''}${s.checked_at ? ' · checked ' + new Date(s.checked_at).toLocaleTimeString() : ' · no cached records'}${s.error ? ' · ' + s.error : ''}`).join(' | ') || 'No sources configured. Add explicit sources in configuration and restart.';
+    $('#source-status').textContent = aggregateSources.map(s => `${sourceName(s)}: ${s.status}${s.transport ? ' · ' + s.transport : ''}${s.fallback_reason ? ' · HTTP unavailable; using filesystem' : ''}${['unavailable', 'stale'].includes(s.status) ? ' · retry every 20s' : ''}`).join(' | ') || 'No sources configured. Add explicit sources in configuration and restart.';
     $('#source-status').hidden = false;
     if (signature !== aggregateSignature && !busy) { aggregateSignature = signature; updateChoices(); renderIdeas(); renderTodos(); }
     aggregateStats();

@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import threading
+import time
 import uuid
 import re
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from urllib.error import URLError, HTTPError
 from http.client import RemoteDisconnected, IncompleteRead
 import errno
 
+from configuration import git_root
 from storage import Conflict, digest
 from versions import migrate, parse
 from transports import filesystem, preflight_context
@@ -34,6 +36,24 @@ class SourceRejected(ValueError):
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         raise ValueError('Source redirects are not allowed.')
+
+
+def source_repository_name(source):
+    """Identify an offline board by its owner, not its storage directory."""
+    try:
+        root = git_root(source['data'])
+    except (OSError, ValueError):
+        return source['project_id']
+    if root is not None:
+        try:
+            node = json.loads((root / 'node.json').read_text())
+            name = node.get('repository', {}).get('name')
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+        except (OSError, ValueError, AttributeError):
+            pass
+        return root.name
+    return source['project_id']
 
 
 def exchange(source, path='/api/state', body=None, token=None):
@@ -66,6 +86,13 @@ class Aggregation:
         self.sources = store.context.get('sources', [])
         self.cache = {}
         self.lock = threading.RLock()
+        self.view_lock = threading.Lock()
+        self.inflight = set()
+        self.next_check = {}
+        self.generations = {}
+        self.entries = {s['project_id']: dict(project_id=s['project_id'],
+                        name=source_repository_name(s), url=s.get('url', ''), data=None,
+                        checked_at=None, status='checking', error='', transport=None, fallback_reason='') for s in self.sources}
 
     def transfer(self, source, path='/api/state', body=None, token=None, expected=None):
         enabled = source.get('transports', {'http': True, 'filesystem': False})
@@ -126,7 +153,18 @@ class Aggregation:
         request = dict(request_id=body.get('request_id'), actor=body['actor'],
                        changes=[dict(collection='todos', id=original['id'], revision=body['revision'], record=record)])
         result = self.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
-        self.cache.pop(source['project_id'], None)
+        key = source['project_id']
+        with self.view_lock:
+            self.generations[key] = self.generations.get(key, 0) + 1
+            entry = dict(self.entries[key], data=result['data'], revision=result['revision'],
+                         revisions=result['revisions'], history=result['history'],
+                         compatibility=snapshot['compatibility'], context=snapshot['context'],
+                         name=snapshot['context'].get('project_name') or source_repository_name(source),
+                         transport=result['transport'], fallback_reason=result['fallback_reason'],
+                         checked_at=datetime.now(timezone.utc).isoformat(), status='reachable', error='')
+            self.entries[key] = entry
+            self.cache[key] = entry
+            self.next_check[key] = 0
         saved = next(t for t in result['data']['todos'] if t['id'] == original['id'])
         return dict(todo=saved, revision=result['revisions']['todos'][original['id']], history=result['history'],
                     project_id=source['project_id'], transport=result['transport'], fallback_reason=result['fallback_reason'])
@@ -146,24 +184,40 @@ class Aggregation:
         return snapshot
 
     def view(self):
-        with self.lock:
-            result = []
+        # Network I/O never runs under the view lock or in the HTTP handler.
+        with self.view_lock:
             for source in self.sources:
                 key = source['project_id']
-                try:
-                    snapshot = self.inspect_source(source)
-                    self.cache[key] = dict(project_id=key, name=snapshot['context'].get('project_name') or Path(source['data']).parent.name,
-                                           url=source.get('url', ''), data=snapshot['data'], revision=snapshot['revision'],
-                                           transport=snapshot['transport'], fallback_reason=snapshot['fallback_reason'],
-                                           revisions=snapshot['revisions'], compatibility=snapshot['compatibility'], history=snapshot['history'],
-                                           context=snapshot['context'], checked_at=datetime.now(timezone.utc).isoformat())
-                    entry = dict(self.cache[key], status='reachable', error='')
-                except (ValueError, KeyError, TypeError) as error:
-                    entry = dict(self.cache.get(key, dict(project_id=key, name=Path(source['data']).parent.name,
-                                                         url=source.get('url', ''), data=None, checked_at=None)),
-                                 status='stale' if key in self.cache else 'unavailable', transport=None, fallback_reason='', error=str(error))
-                result.append(entry)
-            return dict(sources=result)
+                if key not in self.inflight and time.monotonic() >= self.next_check.get(key, 0):
+                    self.inflight.add(key)
+                    threading.Thread(target=self.refresh_source, args=(source,), daemon=True).start()
+            return dict(sources=[dict(self.entries[s['project_id']]) for s in self.sources])
+
+    def refresh_source(self, source):
+        key = source['project_id']
+        with self.view_lock:
+            generation = self.generations.get(key, 0)
+        try:
+            snapshot = self.inspect_source(source)
+            entry = dict(project_id=key, name=snapshot['context'].get('project_name') or source_repository_name(source),
+                         url=source.get('url', ''), data=snapshot['data'], revision=snapshot['revision'],
+                         transport=snapshot['transport'], fallback_reason=snapshot['fallback_reason'],
+                         revisions=snapshot['revisions'], compatibility=snapshot['compatibility'], history=snapshot['history'],
+                         context=snapshot['context'], checked_at=datetime.now(timezone.utc).isoformat(),
+                         status='reachable', error='')
+        except (ValueError, KeyError, TypeError, OSError) as error:
+            with self.view_lock:
+                entry = dict(self.entries[key], status='stale' if key in self.cache else 'unavailable', error=str(error), transport=None, fallback_reason='')
+        with self.view_lock:
+            if self.generations.get(key, 0) != generation:
+                self.inflight.discard(key)
+                self.next_check[key] = 0
+                return
+            if entry['status'] == 'reachable':
+                self.cache[key] = entry
+            self.entries[key] = entry
+            self.next_check[key] = time.monotonic() + (4 if entry['status'] == 'reachable' else 20)
+            self.inflight.discard(key)
 
     def save_route(self, idea, state, actor):
         revision = digest(idea)

@@ -91,3 +91,24 @@ class SwitchingRecords(SourceRecords, unittest.TestCase):
         self.assertEqual(result['todo']['priority'],'urgent')
         self.assertEqual(result['transport'],'filesystem')
         self.assertEqual(len(list(self.alpha.receipts.glob('*.json'))),1)
+
+class BackgroundPriorityRecords(SourceRecords, unittest.TestCase):
+    enabled={"http":False,"filesystem":True}
+    def test_older_background_snapshot_cannot_replace_saved_priority(self):
+        import threading
+        source=self.router.sources[0]
+        body=self.edit(); original=self.router.inspect_source
+        old=original(source);entered=threading.Event();release=threading.Event()
+        def delayed(config):
+            if threading.current_thread().name=='old-refresh':
+                entered.set();release.wait(5);return old
+            return original(config)
+        with patch.object(self.router,'inspect_source',side_effect=delayed):
+            worker=threading.Thread(target=self.router.refresh_source,args=(source,),name='old-refresh')
+            worker.start();self.assertTrue(entered.wait(2))
+            try:saved=self.router.source_priority(body)
+            finally:release.set();worker.join(5)
+        entry=self.router.entries[source['project_id']]
+        self.assertEqual(entry['data']['todos'][0]['priority'],'urgent')
+        self.assertEqual(entry['revisions']['todos']['T0001'],saved['revision'])
+        self.assertEqual(self.router.next_check[source['project_id']],0)
