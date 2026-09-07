@@ -75,10 +75,10 @@ class VersionTests(unittest.TestCase):
 
     def test_mixed_supported_versions_and_future_build(self):
         data = json.loads(self.todo.read_text()); data['format_version']='1.0.0'; self.write(self.todo,data)
-        header = json.loads(self.path.read_text()); header['format_version']='1.6.9'; self.write(self.path,header)
+        header = json.loads(self.path.read_text()); header['format_version']='1.7.9'; self.write(self.path,header)
         self.store.initialize()
         self.assertEqual(json.loads(self.todo.read_text())['format_version'],FORMAT_VERSION)
-        self.assertEqual(json.loads(self.path.read_text())['format_version'],'1.6.9')
+        self.assertEqual(json.loads(self.path.read_text())['format_version'],'1.7.9')
         self.assertFalse(self.store.snapshot()['compatibility']['read_only'])
         self.assertTrue(self.store.snapshot()['compatibility']['warnings'])
 
@@ -98,7 +98,7 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.files(),originals)
 
     def test_future_minor_read_only_preserves_mixed_old_bytes(self):
-        data = json.loads(self.todo.read_text()); data['format_version']='1.7.0'; self.write(self.todo,data)
+        data = json.loads(self.todo.read_text()); data['format_version']='1.8.0'; self.write(self.todo,data)
         before = self.files(); self.store.initialize()
         snap = self.store.snapshot()
         self.assertTrue(snap['compatibility']['read_only'])
@@ -107,7 +107,7 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.files(),before)
 
     def test_future_build_edit_preserves_unknown_fields_and_version(self):
-        data = json.loads(self.todo.read_text()); data.update(format_version='1.6.42', extension={'nested':[1,2]})
+        data = json.loads(self.todo.read_text()); data.update(format_version='1.7.42', extension={'nested':[1,2]})
         self.write(self.todo,data); self.store.initialize()
         request = self.edit(name='Changed')
         request['changes'][0]['record'].pop('extension')
@@ -115,9 +115,41 @@ class VersionTests(unittest.TestCase):
         self.store.mutate(request)
         saved = json.loads(self.todo.read_text())
         self.assertEqual(saved['extension'],data['extension'])
-        self.assertEqual(saved['format_version'],'1.6.42')
+        self.assertEqual(saved['format_version'],'1.7.42')
         request = self.edit(format_version='1.1.0')
         with self.assertRaisesRegex(VersionError,'downgrade'): self.store.mutate(request)
+
+    def test_category_workflow_scope_and_prompt_vocabulary(self):
+        from categories import CATEGORIES, DEFINITIONS, briefing
+        from workflow import scope_digest
+        todo = fixture()['todos'][0]
+        legacy = digest({k: todo.get(k) for k in ('name', 'description', 'source_ideas', 'source_refs')})
+        self.assertEqual(scope_digest(todo), legacy)
+        self.assertEqual(scope_digest(dict(todo, category='')), legacy)
+        for category, definition in CATEGORIES.items():
+            selected = dict(todo, category=category)
+            self.assertNotEqual(scope_digest(selected), legacy)
+            text = briefing(selected)
+            for value in definition.values():
+                self.assertIn(value, text)
+            self.assertIn(DEFINITIONS['boundary'], text)
+        self.assertNotEqual(scope_digest(dict(todo, category='design')), scope_digest(dict(todo, category='implementation')))
+
+    def test_category_migration_preserves_absence_and_explicit_values(self):
+        for category in (None, '', 'research'):
+            todo = dict(fixture()['todos'][0], format_version='1.6.0', extension={'keep': True})
+            if category is not None:
+                todo['category'] = category
+            migrated = migrate(todo, 'todo')
+            self.assertEqual(semantic(migrated), semantic(todo))
+            self.assertEqual(migrate(migrated, 'todo'), migrated)
+        self.store.initialize()
+        self.store.mutate(self.edit(category='research'))
+        # Legacy clients omitting optional fields cannot erase a saved selection.
+        request = self.edit(group='City')
+        request['changes'][0]['record'].pop('category')
+        self.store.mutate(request)
+        self.assertEqual(self.store.read()[0]['todos'][0]['category'], 'research')
 
     def test_invalid_or_unregistered_version_never_rewrites(self):
         for version in (1,None,'1.01.0','1.1','0.5.0','1.0.9'):
@@ -130,6 +162,7 @@ class VersionTests(unittest.TestCase):
     def test_interrupted_migration_recovers_and_retains_receipt_identity(self):
         receipt = dict(request_id='a'*16, fingerprint='existing-fingerprint', assigned=[{'collection':'todos','id':'T0001'}])
         self.write(self.store.receipts/('a'*16+'.json'),receipt)
+        todo = json.loads(self.todo.read_text()); todo.update(format_version='1.6.0', category='debugging'); self.write(self.todo, todo)
         original_ideas=json.loads(self.path.read_text())['ideas']
         real=storage.atomic
         def interrupted(path,raw):
@@ -140,6 +173,7 @@ class VersionTests(unittest.TestCase):
         self.assertTrue(self.store.journal.exists())
         self.store.initialize()
         self.assertFalse(self.store.journal.exists())
+        self.assertEqual(self.store.read()[0]['todos'][0]['category'], 'debugging')
         self.assertEqual(json.loads(self.path.read_text())['ideas'],original_ideas)
         saved=json.loads((self.store.receipts/('a'*16+'.json')).read_text())
         self.assertEqual(semantic(saved),receipt)

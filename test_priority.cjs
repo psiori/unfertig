@@ -34,6 +34,8 @@ test('briefings use explicit child paths and both local and foreign originals',(
   const app=fs.readFileSync(__dirname+'/app.js','utf8');
   const context={boardContext:{process:'/inbox/PROCESS.md',data:'/inbox/data.json',todos:'/inbox/todos',repository:'/inbox'},data:{ideas:[]},date:v=>v};
   vm.createContext(context);
+  context.categoryDefinitions = JSON.parse(fs.readFileSync(__dirname+'/categories.json','utf8'));
+  vm.runInContext(app.slice(app.indexOf('function categoryBrief('),app.indexOf('function categoryEditor(')),context);
   vm.runInContext(app.slice(app.indexOf('function boardLocations('),app.indexOf('let revisions')),context);
   vm.runInContext(app.slice(app.indexOf('function implementationBrief('),app.indexOf("$('#idea-form')")),context);
   const child={process:'/child/PROCESS.md',data:'/child/data.json',todos:'/child/todos',repository:'/child'};

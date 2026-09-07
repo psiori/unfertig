@@ -2,7 +2,7 @@
 import copy
 import re
 
-FORMAT_VERSION = '1.6.0'
+FORMAT_VERSION = '1.7.0'
 PROTOCOL_VERSION = '2.0.0'
 
 
@@ -26,7 +26,7 @@ def inspect(value, label='data', supported=FORMAT_VERSION, field='format_version
     if found > current:
         level = 'read_only' if found[:2] > current[:2] else 'compatible'
         return level, f'{label} uses newer {field} {version} (supported {supported}). ' + ('Read-only until Unfertig is updated.' if level == 'read_only' else 'Compatible build; version and unknown fields are preserved.')
-    if found < current and field == 'format_version' and version not in ('0.0.0', '1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0'):
+    if found < current and field == 'format_version' and version not in ('0.0.0', '1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0'):
         raise VersionError(f'No migration registered for {label} version {version}. Update Unfertig; data was not changed.')
     return ('legacy' if found < current else 'current'), ''
 
@@ -88,8 +88,14 @@ def workflow_switch_format(value, kind):
     return value
 
 
+def category_format(value, kind):
+    # Absence means unclassified; never infer work type from existing records.
+    value['format_version'] = '1.7.0'
+    return value
+
+
 MIGRATIONS = {'0.0.0': introduce_version, '1.0.0': useful_defaults,
-              '1.1.0': aggregation_format, '1.2.0': transport_format, '1.3.0': processing_format, '1.4.0': workflow_format, '1.5.0': workflow_switch_format}
+              '1.1.0': aggregation_format, '1.2.0': transport_format, '1.3.0': processing_format, '1.4.0': workflow_format, '1.5.0': workflow_switch_format, '1.6.0': category_format}
 
 
 def migrate(value, kind, label='data'):

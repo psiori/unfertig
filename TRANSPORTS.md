@@ -145,3 +145,11 @@ for direct merges without a separate preview exactly like tested merges; an
 absent `tested_commit` must remain absent through edits, receipt retries and
 transport switching. Aggregate reads do not infer successful testing from merge
 or completion phases.
+
+Format 1.7 categories are optional record fields validated by the common
+BoardStore validator for both adapters. Snapshots retain selections and aggregate
+views/briefings use the same definitions as owner views. Omission preserves a
+saved selection, and explicit empty text clears it. The shared conformance
+matrix covers all seven values, clearing, invalid values, stale revisions and
+receipt retries after switching transports. Filesystem access never migrates a
+source during discovery; upgrade sources explicitly before use.

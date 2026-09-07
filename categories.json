@@ -1,0 +1,54 @@
+{
+  "boundary": "Category describes work type, not lifecycle stage or authorization. Follow the task scope and explicit approvals. Planning does not authorize implementation; publishing, merging and deployment require separate authorization.",
+  "categories": {
+    "ideation": {
+      "label": "Ideation",
+      "meaning": "Explore possibilities and frame the problem.",
+      "deliverable": "A set of ideas with the need, constraints and open questions.",
+      "completion": "Promising options and next questions are recorded.",
+      "instructions": "Generate alternatives before choosing; do not begin implementation."
+    },
+    "research": {
+      "label": "Research",
+      "meaning": "Investigate a question using evidence.",
+      "deliverable": "Findings with sources, uncertainties and a recommendation.",
+      "completion": "The question is answered with traceable evidence or explicit gaps.",
+      "instructions": "Check sources, separate facts from inference, and report uncertainty."
+    },
+    "concept": {
+      "label": "Concept",
+      "meaning": "Choose a coherent approach and define its scope.",
+      "deliverable": "A proposal describing goals, alternatives, tradeoffs and acceptance conditions.",
+      "completion": "The proposed direction and decisions needing approval are explicit.",
+      "instructions": "Compare approaches and resolve scope before detailed design or implementation."
+    },
+    "design": {
+      "label": "Design",
+      "meaning": "Specify how the chosen approach should work.",
+      "deliverable": "A design, interface specification, model or prototype with rationale.",
+      "completion": "Key interactions, constraints and verification criteria are specified.",
+      "instructions": "Explore and validate details; keep prototypes disposable unless delivery is authorized."
+    },
+    "implementation": {
+      "label": "Implementation",
+      "meaning": "Build the agreed behavior within the authorized scope.",
+      "deliverable": "A working change with appropriate checks and documentation.",
+      "completion": "Acceptance conditions pass and the authorized deliverable is recorded.",
+      "instructions": "Follow the agreed design, preserve unrelated work and verify the result."
+    },
+    "debugging": {
+      "label": "Debugging",
+      "meaning": "Find and explain the cause of an observed failure.",
+      "deliverable": "A reproduction, causal explanation and, when authorized, a verified fix.",
+      "completion": "Evidence explains the failure; any authorized fix passes regression checks.",
+      "instructions": "Reproduce first, test hypotheses and distinguish diagnosis from permission to fix."
+    },
+    "refactoring": {
+      "label": "Refactoring",
+      "meaning": "Improve internal structure while preserving observable behavior.",
+      "deliverable": "A focused structural change with evidence of behavior preservation.",
+      "completion": "Existing behavior remains intact and the intended structural improvement is demonstrated.",
+      "instructions": "Define the behavior to preserve, make bounded changes and run relevant regression checks."
+    }
+  }
+}

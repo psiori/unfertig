@@ -13,6 +13,8 @@ function setup() {
     escapeHTML:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),boardLocations:()=> 'Read PROCESS.md'};
   vm.createContext(context);
   const app=fs.readFileSync(__dirname+'/app.js','utf8');
+  context.categoryDefinitions = JSON.parse(fs.readFileSync(__dirname+'/categories.json','utf8'));
+  vm.runInContext(app.slice(app.indexOf('function categoryBrief('),app.indexOf('function categoryEditor(')),context);
   vm.runInContext(app.slice(app.indexOf('function todoSummary('),app.indexOf('function todoCard(')),context);
   vm.runInContext(fs.readFileSync(__dirname+'/priority.js','utf8'),context);
   vm.runInContext(fs.readFileSync(__dirname+'/aggregation.js','utf8'),context);
