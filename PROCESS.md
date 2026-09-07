@@ -22,6 +22,15 @@ A registered submodule defaults to its superproject's `state/unfertig/config/con
 8. New todos start `open`, with empty closure and implementation-reference fields. Link every source idea ID. This link is the processed marker on ordinary boards. Aggregator inboxes use the confirmed routing receipt described below.
 9. Save using the procedure below and report the created/updated IDs. **Do not implement anything during processing.** Re-running should not create duplicates.
 
+## Maintenance work alongside board workflows
+
+Keep the configured merge target checkout clean. Use an isolated branch/worktree
+for manual maintenance just as implementation jobs do, and finish with a tested
+commit or an explicit committed checkpoint. Report its branch, remaining work
+and deployment state at handoff. Do not leave maintenance edits on main where
+they block unrelated workflow merges. Preserve active worktrees and receipts;
+cleanliness is not a reason to delete unfinished work.
+
 ## Implementing a todo
 
 1. Re-read the authoritative record by its stable `T…` ID, even if a briefing contains a snapshot.
