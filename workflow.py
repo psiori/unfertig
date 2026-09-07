@@ -14,6 +14,7 @@ import uuid
 from urllib.parse import urlsplit
 
 from processing import Processor, system_id
+from codex_runtime import resolve_executable
 from storage import Conflict, digest
 
 ACTIVE = {'implementing', 'testing', 'merging'}
@@ -150,7 +151,7 @@ class Workflow:
             if action == 'implement':
                 if old or todo['status'] != 'open':
                     raise ValueError('Existing run or started task: inspect its branch and recover manually; no duplicate implementation is launched.')
-                executable = shutil.which(self.processing['executable'])
+                executable = resolve_executable(self.processing['executable'])
                 if not executable:
                     raise ValueError('Codex executable unavailable.')
                 repository = Path(self.options['repository'])
@@ -264,7 +265,10 @@ Use uv for Python. Commit the finished implementation. End your final response w
                 final = Path(run['worktree']).parent / (run['run_id']+'-result.txt')
                 if final.exists():
                     final.rename(final.with_name(final.name+'.previous-'+uuid.uuid4().hex))
-                self.command([self.processing['executable'], 'exec', '--approve-for-me', '-C', run['worktree'], '-o', str(final), '-'], run['worktree'], ident, prompt)
+                executable = resolve_executable(self.processing['executable'])
+                if not executable:
+                    raise ValueError('Codex executable unavailable. Configure processing.executable or install Codex on PATH.')
+                self.command([executable, 'exec', '--approve-for-me', '-C', run['worktree'], '-o', str(final), '-'], run['worktree'], ident, prompt)
                 if not final.is_file() or not final.read_text().rstrip().endswith('UNFERTIG_IMPLEMENTATION_COMPLETE'):
                     raise ValueError('Agent reports incomplete work. '+(final.read_text()[-4000:] if final.is_file() else 'No completion report was written.'))
                 commit = self.git('rev-parse', 'HEAD', cwd=run['worktree'])

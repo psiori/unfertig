@@ -337,8 +337,14 @@ Migration defaults to manual processing (`automatic: false`). Omit
 `working_directory` to inspect the known board-owning repository and at most two
 parents for `node.json` or `AGENTS.md`, otherwise use the owner. Explicit directories
 always win and missing explicit directories fail clearly. No recursive project
-search. Set `executable` to an absolute CLI path when a desktop launcher has a
-limited PATH. `enabled: false` disables all launches.
+search. At startup, a usable `executable` wins; otherwise Unfertig discovers
+`codex` on PATH, common user/system CLI installations (including mise), and
+macOS/Linux desktop bundle locations. Both processing and implementation retry
+discovery before launching, so installing Codex does not require rewriting the
+config. Discovery stays in memory; no host-specific path is saved in Git.
+Use an absolute CLI path for a custom installation. If no executable is found,
+the board remains usable and Codex actions report the setup requirement. Codex
+must already be installed and signed in. `enabled: false` disables all launches.
 
 Automatic processing requires a browser visit during the current server session,
 then either ten minutes without activity or a 90-second grace period after the
