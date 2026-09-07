@@ -6,11 +6,12 @@ from pathlib import Path
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 import uuid
 from unittest.mock import patch
 
-from aggregation import Aggregation, exchange
+from aggregation import Aggregation, exchange, source_repository_name
 from configuration import resolve
 from server import Server, validate
 from storage import BoardStore, Conflict, digest
@@ -19,6 +20,60 @@ from versions import FORMAT_VERSION, migrate
 
 
 class AggregationTests(unittest.TestCase):
+    def refreshed(self, router):
+        for source in router.sources:
+            router.refresh_source(source)
+        return router.view()
+
+    def test_slow_source_is_nonblocking_and_retries_after_twenty_seconds(self):
+        entered, release = threading.Event(), threading.Event()
+        def slow(source):
+            if source['project_id'] == 'alpha':
+                entered.set()
+                release.wait(2)
+                raise ValueError('offline')
+            return original(source)
+        original = self.router.inspect_source
+        with patch.object(self.router, 'inspect_source', side_effect=slow) as inspect:
+            start = time.monotonic()
+            self.router.view()
+            self.assertLess(time.monotonic() - start, 0.2)
+            self.assertTrue(entered.wait(1))
+            self.router.view()
+            self.assertEqual(sum(c.args[0]['project_id'] == 'alpha' for c in inspect.call_args_list), 1)
+            release.set()
+            deadline = time.monotonic() + 2
+            while self.router.inflight and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertFalse(self.router.inflight)
+            self.assertEqual(self.router.entries['beta']['status'], 'reachable')
+            self.assertEqual(self.router.entries['alpha']['status'], 'unavailable')
+            due = self.router.next_check['alpha']
+            self.assertGreater(due - time.monotonic(), 19)
+            with patch('aggregation.time.monotonic', return_value=due - 0.1):
+                self.router.view()
+                self.assertEqual(sum(c.args[0]['project_id'] == 'alpha' for c in inspect.call_args_list), 1)
+            with patch('aggregation.time.monotonic', return_value=due + 0.1):
+                self.router.view()
+            deadline = time.monotonic() + 2
+            while self.router.inflight and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(sum(c.args[0]['project_id'] == 'alpha' for c in inspect.call_args_list), 2)
+
+    def test_offline_nested_board_uses_repository_name(self):
+        root = Path(self.alpha.context['repository'])
+        (root / 'node.json').write_text(json.dumps({'repository': {'name': 'procedural-game'}}))
+        source = dict(self.sources[0], data=str(root / 'state/unfertig/data/data.json'))
+        self.inbox.context['sources'] = [source]
+        with patch('aggregation.exchange', side_effect=ValueError('offline')):
+            entry = self.refreshed(Aggregation(self.inbox))['sources'][0]
+        self.assertEqual(entry['name'], 'procedural-game')
+        self.assertEqual(entry['status'], 'unavailable')
+        (root / 'node.json').write_text('invalid')
+        self.assertEqual(source_repository_name(source), root.name)
+        with patch('aggregation.git_root', side_effect=ValueError('missing')):
+            self.assertEqual(source_repository_name(source), source['project_id'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='aggregation-test-')
         self.addCleanup(self.temp.cleanup)
@@ -58,15 +113,15 @@ class AggregationTests(unittest.TestCase):
         return dict(idea_id=idea['id'],revision=digest(idea),actor='Codex',initials='CX',project_id=project,reason='Alpha explicitly named in text',todo=todo,preflight=context)
 
     def test_views_qualified_ids_fallback_stale_and_nested(self):
-        view=self.router.view()['sources']
+        view=self.refreshed(self.router)['sources']
         self.assertEqual([s['name'] for s in view],['Alpha','beta'])
         self.assertEqual([s['data']['todos'][0]['id'] for s in view],['T0001','T0001'])
         with patch('aggregation.exchange',side_effect=ValueError('offline')):
-            stale=self.router.view()['sources']
+            stale=self.refreshed(self.router)['sources']
         self.assertEqual(stale[0]['status'],'stale');self.assertEqual(stale[0]['data'],view[0]['data'])
         fresh=Aggregation(self.inbox)
         self.alpha.context['mode']='aggregation'
-        self.assertEqual(fresh.view()['sources'][0]['status'],'unavailable')
+        self.assertEqual(self.refreshed(fresh)['sources'][0]['status'],'unavailable')
 
     def test_http_route_and_changed_source_revision(self):
         server=Server(('127.0.0.1',0),self.inbox)
@@ -74,10 +129,18 @@ class AggregationTests(unittest.TestCase):
         self.addCleanup(server.server_close);self.addCleanup(server.shutdown)
         source=dict(url=f'http://127.0.0.1:{server.server_port}')
         snapshot=exchange(source)
-        before=exchange(source,'/api/aggregate')['sources'][0]['revision']
+        def wait_revision(previous=None):
+            deadline = time.monotonic() + 6
+            while time.monotonic() < deadline:
+                entry = exchange(source, '/api/aggregate')['sources'][0]
+                if entry.get('revision') and entry['revision'] != previous:
+                    return entry
+                time.sleep(0.02)
+            self.fail('Source refresh did not complete')
+        before=wait_revision()['revision']
         result=exchange(source,'/api/routes',self.request(),snapshot['token'])
         self.assertEqual(result['idea']['routing']['status'],'routed')
-        after=exchange(source,'/api/aggregate')['sources'][0]
+        after=wait_revision(before)
         self.assertNotEqual(before,after['revision'])
         self.assertEqual(len(after['data']['todos']),2)
 

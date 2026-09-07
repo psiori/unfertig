@@ -204,14 +204,18 @@ them. Existing boards with todos cannot become aggregators implicitly.
 The aggregator presents read-only child todos with a project column, project
 filter, and project → group nesting. Group/tag filter choices include the project
 and work equally in flat views; identical labels do not merge across projects.
-The source's configured/discovered project_name is used; an empty name falls back
-to the directory directly containing its data JSON (often `data`). Source ideas
+The source's configured/discovered project_name is used; an empty name or an
+uncached offline source falls back to its owning repository's node.json
+repository name, then its checkout directory name (or project ID if unavailable). Source ideas
 appear as read-only reference sections; their processed filter uses source todos.
 Open actions target the configured origin and record fragment; unavailable
 services show a label instead of launching anything.
 
-Visible pages refresh sources every four seconds after the preceding request
-finishes. Each source snapshot supplies record revisions; a successful refresh
+Visible pages poll the cached view every four seconds. Independent background
+checks refresh healthy sources at most every four seconds and retry failed
+sources after 20 seconds, measured from completion. Only one check per source
+runs at a time; slow/offline sources do not block the view or other sources.
+Each source snapshot supplies record revisions; a successful refresh
 replaces its read view. On failure the server retains its last successful
 in-memory snapshot, labelled stale. After restart there is no disk cache: a failed
 source says unavailable/no cached records, never "empty". Authoritative child

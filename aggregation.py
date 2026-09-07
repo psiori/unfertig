@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import threading
+import time
 import uuid
 import re
 from datetime import datetime, timezone
@@ -22,6 +23,24 @@ from versions import migrate, parse
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         raise ValueError('Source redirects are not allowed.')
+
+
+def source_repository_name(source):
+    """Identify an offline board by its owner, not its storage directory."""
+    try:
+        root = git_root(source['data'])
+    except (OSError, ValueError):
+        return source['project_id']
+    if root is not None:
+        try:
+            node = json.loads((root / 'node.json').read_text())
+            name = node.get('repository', {}).get('name')
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+        except (OSError, ValueError, AttributeError):
+            pass
+        return root.name
+    return source['project_id']
 
 
 def exchange(source, path='/api/state', body=None, token=None):
@@ -47,6 +66,12 @@ class Aggregation:
         self.sources = store.context.get('sources', [])
         self.cache = {}
         self.lock = threading.RLock()
+        self.view_lock = threading.Lock()
+        self.inflight = set()
+        self.next_check = {}
+        self.entries = {s['project_id']: dict(project_id=s['project_id'],
+                        name=source_repository_name(s), url=s['url'], data=None,
+                        checked_at=None, status='checking', error='') for s in self.sources}
 
     def inspect_source(self, source):
         snapshot = exchange(source)
@@ -63,22 +88,32 @@ class Aggregation:
         return snapshot
 
     def view(self):
-        with self.lock:
-            result = []
+        # Network I/O never runs under the view lock or in the HTTP handler.
+        with self.view_lock:
             for source in self.sources:
                 key = source['project_id']
-                try:
-                    snapshot = self.inspect_source(source)
-                    self.cache[key] = dict(project_id=key, name=snapshot['context'].get('project_name') or Path(source['data']).parent.name,
-                                           url=source['url'], data=snapshot['data'], revision=snapshot['revision'],
-                                           context=snapshot['context'], checked_at=datetime.now(timezone.utc).isoformat())
-                    entry = dict(self.cache[key], status='reachable', error='')
-                except (ValueError, KeyError, TypeError) as error:
-                    entry = dict(self.cache.get(key, dict(project_id=key, name=Path(source['data']).parent.name,
-                                                         url=source['url'], data=None, checked_at=None)),
-                                 status='stale' if key in self.cache else 'unavailable', error=str(error))
-                result.append(entry)
-            return dict(sources=result)
+                if key not in self.inflight and time.monotonic() >= self.next_check.get(key, 0):
+                    self.inflight.add(key)
+                    threading.Thread(target=self.refresh_source, args=(source,), daemon=True).start()
+            return dict(sources=[dict(self.entries[s['project_id']]) for s in self.sources])
+
+    def refresh_source(self, source):
+        key = source['project_id']
+        try:
+            snapshot = self.inspect_source(source)
+            entry = dict(project_id=key, name=snapshot['context'].get('project_name') or source_repository_name(source),
+                         url=source['url'], data=snapshot['data'], revision=snapshot['revision'],
+                         context=snapshot['context'], checked_at=datetime.now(timezone.utc).isoformat(),
+                         status='reachable', error='')
+        except (ValueError, KeyError, TypeError, OSError) as error:
+            with self.view_lock:
+                entry = dict(self.entries[key], status='stale' if key in self.cache else 'unavailable', error=str(error))
+        with self.view_lock:
+            if entry['status'] == 'reachable':
+                self.cache[key] = entry
+            self.entries[key] = entry
+            self.next_check[key] = time.monotonic() + (4 if entry['status'] == 'reachable' else 20)
+            self.inflight.discard(key)
 
     def save_route(self, idea, state, actor):
         revision = digest(idea)
