@@ -434,7 +434,8 @@ Explicit Retry implementation uses the retained branch. Task-scope changes
 require reviewing and reconciling that branch. Preview and merge remain manual.
 
 These are CLI runs with output in Unfertig. A shared live Codex desktop session
-is separate backlog work, not a supported claim of this implementation.
+has not been demonstrated. See [Codex session interoperability](CODEX_SESSIONS.md)
+for the checked interfaces, reproduction procedure, and sequential handoff.
 
 When a context repository also owns its board, its progress commits necessarily
 advance main. The merge accepts those board-file-only changes if the tested
