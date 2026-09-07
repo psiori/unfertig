@@ -115,6 +115,11 @@ main { padding-top:18px; }
 .scratchpad h1 { font-size:23px; letter-spacing:-.7px; line-height:1.2; margin:0; }
 .scratch-note { font-size:12px; color:var(--muted); margin:4px 0 0; }
 .capture-mark { color:#d6a982; font-size:28px; line-height:1; padding-right:2px; }
+.capture-mark.is-processing { color:var(--green); animation:scratchpad-processing-spin 1.5s linear infinite; }
+@keyframes scratchpad-processing-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) {
+  .capture-mark.is-processing { animation:none; outline:2px solid currentColor; outline-offset:4px; border-radius:50%; }
+}
 .scratch-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:24px; align-items:start; }
 .capture-column,.saved-column { min-width:0; }
 .saved-column { border-left:1px solid var(--line); padding-left:24px; }
