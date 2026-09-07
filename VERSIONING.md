@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.1.0`.
+`format_version` is a major.minor.build string. Current storage is `1.2.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -64,3 +64,13 @@ Tests must cover every migration step, mixed versions, absent optional fields,
 unknown fields, newer major/minor/build handling, malformed data, interrupted
 recovery, retry identity, and idempotence. Register a successor for every future
 supported format change instead of silently rewriting files with a new shape.
+
+Format **1.2.0** adds optional record project_id, inbox selected_project/routing,
+destination source_refs and initials-prefixed IDs. The registered 1.1.0 → 1.2.0
+step preserves all original content and extensions without adding invented
+project assignments to legacy records. Earlier 1.1 writers see the newer minor
+and become read-only. The API envelope stays protocol 2.0.0; these are optional
+record extensions plus new /api/aggregate and /api/routes endpoints. The source
+preflight explicitly requires 1.2-capable writers for foreign provenance guards.
+Routing requests live in the versioned ideas header; ordinary transaction and
+receipt recovery applies to them. No new unversioned durable cache is introduced.

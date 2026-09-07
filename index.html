@@ -8,12 +8,13 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
+  <script src="/aggregation.js" defer></script>
 </head>
 <body>
   <div class="history-banner"><span id="history-state"></span> <button id="history-retry" class="button small" hidden>Retry Git commit</button></div>
   <header class="masthead">
     <a class="brand" href="/" aria-label="unfertig home"><span class="brand-mark" aria-hidden="true">✳</span> unfertig<span class="brand-dot">.</span><span id="project-name"></span></a>
-    <div class="header-right"><span class="local-label"><span class="live-dot"></span> LOCAL & YOURS</span><label class="identity">Working as <input id="author" aria-label="Your name or agent identity" placeholder="Your name" maxlength="100"></label></div>
+    <div class="header-right"><span class="local-label"><span class="live-dot"></span> LOCAL & YOURS</span><label class="identity">Author <input id="author" aria-label="Your name or agent identity" placeholder="Your name" maxlength="100"></label><label class="identity">Initials <input id="initials" aria-label="Initials for new IDs" placeholder="SL" maxlength="12" pattern="[A-Za-z][A-Za-z0-9]{0,11}"></label></div>
   </header>
   <main>
     <p id="compatibility-state" class="notice" role="alert" hidden></p>
@@ -24,14 +25,14 @@
     <div id="notice" class="notice" role="alert" hidden><span id="notice-text"></span><button id="reload" class="button small">Load latest</button></div>
     <section class="scratchpad panel" aria-labelledby="scratch-heading">
       <div class="section-heading"><div><span class="section-index">01 / CAPTURE</span><h2 id="scratch-heading">The scratchpad <span id="pending-count" class="count">0</span></h2></div><button id="process" class="button subtle" disabled><span aria-hidden="true">✧</span> Copy processing briefing</button></div>
-      <form id="idea-form"><label for="idea-text" class="sr-only">New idea</label><textarea id="idea-text" rows="2" placeholder="What’s on your mind? Rough ideas welcome." required maxlength="100000"></textarea><div class="composer-footer"><span><kbd id="shortcut">⌘</kbd> <kbd>Enter</kbd> to capture · original words kept</span><button id="add-idea" class="button primary" type="submit" disabled>Add idea <span aria-hidden="true">↗</span></button></div></form>
+      <form id="idea-form"><label for="idea-text" class="sr-only">New idea</label><textarea id="idea-text" rows="2" placeholder="What’s on your mind? Rough ideas welcome." required maxlength="100000"></textarea><div class="composer-footer"><span><kbd id="shortcut">⌘</kbd> <kbd>Enter</kbd> to capture · original words kept</span><label id="idea-project-label" hidden>Project <select id="idea-project"><option value="">Infer from text</option></select></label><button id="add-idea" class="button primary" type="submit" disabled>Add idea <span aria-hidden="true">↗</span></button></div></form>
       <div class="scratch-toolbar"><span id="scratch-summary">Your ideas, before they become a plan.</span><label class="check"><input type="checkbox" id="show-processed"> Show processed</label></div>
       <ul id="ideas" class="ideas"></ul>
     </section>
     <section class="work" aria-labelledby="work-heading">
       <div class="section-heading"><div><span class="section-index">02 / MAKE IT HAPPEN</span><h2 id="work-heading">One thing at a time <span id="todo-count" class="count">0</span></h2></div><div class="work-actions"><span id="save-state" role="status" aria-live="polite">Connecting…</span><button id="publication-push" class="button" hidden>Push all commits</button><button id="publication-refresh" class="refresh-button" type="button" aria-label="Refresh from remote" title="Refresh from remote" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.4 6M20 4v7h-7"/></svg></button><button id="new-todo" class="button" disabled>+ New todo</button></div></div>
       <p id="publication-state" class="publication-feedback" role="alert" hidden></p>
-      <div class="filters"><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Find a todo…" aria-label="Search todos"></label><label>Status<select id="status-filter"><option value="active">Open + started</option><option value="all">All statuses</option><option value="open">Open</option><option value="started">Started</option><option value="closed">Closed</option></select></label><label>Group<select id="group-filter"><option value="">All groups</option></select></label><label>Tag<select id="tag-filter"><option value="">All tags</option></select></label><label>Sort<select id="sort"><option value="priority">Priority ↓</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name A–Z</option></select></label></div>
+      <p id="source-status" class="notice" hidden></p><div class="filters"><label id="project-filter-label" hidden>Project<select id="project-filter"><option value="">All projects</option></select></label><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Find a todo…" aria-label="Search todos"></label><label>Status<select id="status-filter"><option value="active">Open + started</option><option value="all">All statuses</option><option value="open">Open</option><option value="started">Started</option><option value="closed">Closed</option></select></label><label>Group<select id="group-filter"><option value="">All groups</option></select></label><label>Tag<select id="tag-filter"><option value="">All tags</option></select></label><label>Sort<select id="sort"><option value="priority">Priority ↓</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name A–Z</option></select></label></div>
       <div class="view-options"><span id="result-count">0 todos</span><div><label class="check"><input type="checkbox" id="group-by"> Group by module</label><button class="text-button" id="fold-all">Collapse all</button><button class="text-button" id="unfold-all">Expand all</button></div></div>
       <div id="todos"></div>
     </section>

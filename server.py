@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 from storage import BoardStore, Conflict
 from publication import Publication
 from versions import inspect, migrate, parse, PROTOCOL_VERSION
-from configuration import resolve, configure_port, valid_port
+from configuration import resolve, configure_port, configure_mode, valid_port
 
 ROOT = Path(__file__).resolve().parent
 MAX_BYTES = 5_000_000
@@ -60,7 +60,7 @@ def validate(data, previous=None):
         for item in data[collection]:
             require(isinstance(item, dict), "Each entry must be an object.")
             ident = item.get("id")
-            require(isinstance(ident, str) and re.fullmatch(prefix + r"\d{4,}", ident), "Invalid entry ID.")
+            require(isinstance(ident, str) and re.fullmatch(r"(?:[A-Z][A-Z0-9]{0,11}_)?" + prefix + r"\d{4,}", ident), "Invalid entry ID.")
             require(ident not in ids, f"Duplicate ID: {ident}")
             ids.add(ident)
             string(item.get("author"), "Author", True)
@@ -92,8 +92,19 @@ def validate(data, previous=None):
                     require(parsed.scheme == "https" and bool(parsed.netloc), f"{field} must be an HTTPS URL.")
             require(not item["commit_hash"] or re.fullmatch(r"[a-fA-F0-9]{7,64}", item["commit_hash"]), "Commit hash must contain 7–64 hexadecimal characters.")
     idea_ids = {item["id"] for item in data["ideas"]}
+    foreign_ids = set()
     for todo in data["todos"]:
         require(set(todo["source_ideas"]) <= idea_ids, f"Unknown source idea in {todo['id']}.")
+        require(isinstance(todo.get('source_refs', []), list), 'source_refs must be a list.')
+        for ref in todo.get('source_refs', []):
+            require(isinstance(ref, dict), 'Invalid source reference.')
+            string(ref.get('project_id'), 'Source project ID', True)
+            original = ref.get('idea')
+            require(isinstance(original, dict), 'Source reference must retain the original idea.')
+            validate(dict(schema_version=1, ideas=[original], todos=[]))
+            identity = (ref['project_id'], original['id'])
+            require(identity not in foreign_ids, 'Foreign idea already has a destination todo.')
+            foreign_ids.add(identity)
     if previous:
         for collection in ("ideas", "todos"):
             current = {item["id"]: item for item in data[collection]}
@@ -102,6 +113,9 @@ def validate(data, previous=None):
                 new = current[old["id"]]
                 for field in (("author", "date_entered", "text") if collection == "ideas" else ("author", "date_entered", "created_by")):
                     require(new[field] == old[field], f"Original {field} must be preserved for {old['id']}.")
+                for field in ('source_refs', 'project_id'):
+                    if field in old:
+                        require(new.get(field) == old[field], f'Original {field} must be preserved.')
 
 
 class Store:
@@ -147,6 +161,8 @@ class Server(ThreadingHTTPServer):
         self.store = store
         self.token = secrets.token_urlsafe(32)
         self.publication = Publication(store) if isinstance(store, BoardStore) else None
+        from aggregation import Aggregation
+        self.aggregation = Aggregation(store) if getattr(store, 'context', {}).get('mode') == 'aggregation' else None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -188,9 +204,11 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     data, revision = self.server.store.read()
                     self.reply(200, {"data": data, "revision": revision, "token": self.server.token})
+            elif path == '/api/aggregate' and self.server.aggregation:
+                self.reply(200, self.server.aggregation.view())
             elif path == "/api/publication" and self.server.publication:
                 self.reply(200, self.server.publication.status())
-            elif path in ("/", "/index.html", "/app.js", "/style.css", "/favicon.svg"):
+            elif path in ("/", "/index.html", "/app.js", "/aggregation.js", "/style.css", "/favicon.svg"):
                 name = "index.html" if path == "/" else path[1:]
                 mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}[Path(name).suffix]
                 self.reply(200, (ROOT / name).read_bytes(), mime + "; charset=utf-8")
@@ -202,7 +220,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         if not self.local_request():
             return
-        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push"):
+        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes'):
             self.reply(404, {"error": "Not found."})
             return
         if not secrets.compare_digest(self.headers.get("X-Board-Token", ""), self.server.token):
@@ -218,6 +236,10 @@ class Handler(BaseHTTPRequestHandler):
                 protocol_state, _ = inspect(body, 'request', PROTOCOL_VERSION, 'protocol_version')
                 require(protocol_state != 'read_only', 'Newer minor request protocol: update Unfertig before writing.')
             if isinstance(self.server.store, BoardStore):
+                if self.path == '/api/routes':
+                    require(self.server.aggregation is not None, 'Routing requires aggregation mode.')
+                    self.reply(200, self.server.aggregation.route(body))
+                    return
                 if self.path == "/api/publication/refresh":
                     self.reply(200, self.server.publication.refresh())
                     return
@@ -247,6 +269,7 @@ def main():
     parser = argparse.ArgumentParser(description="unfertig — local ideas and todos")
     parser.add_argument("--port", type=int, help="Override configured port (default 8765)")
     parser.add_argument("--configure-port", action="store_true", help="Ask for and save an instance port, then exit")
+    parser.add_argument('--configure-mode', action='store_true', help='Configure standalone, embedded or explicit-source aggregation mode, then exit')
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--data", type=Path, help="Board file; relative to config directory, or app root without config")
     parser.add_argument("--config", type=Path, help="Explicit configuration JSON")
@@ -267,12 +290,20 @@ def main():
     store.context = {"config": str(configuration["config"] or ""), "app_root": str(ROOT), "process": str(ROOT / "PROCESS.md"),
                      "data": str(store.path), "todos": str(store.root / "todos"),
                      "repository": str(configuration["repository"] or ""), "mode": configuration["mode"],
-                     "project_name": configuration["project_name"]}
+                     "project_name": configuration["project_name"], "project_id": configuration['project_id'],
+                     "sources": configuration['sources']}
     server = None
     try:
-        if not store.path.exists() and not (args.configure_port or args.init or configuration["bootstrap"]) and not store.journal.exists():
+        if not store.path.exists() and not (args.configure_port or args.configure_mode or args.init or configuration["bootstrap"]) and not store.journal.exists():
             raise ValueError("Configured board is missing. Check its path or explicitly use --init.")
         store.acquire()
+        if args.configure_mode:
+            store.preflight(); store.require_writable()
+            if store.path.exists() and store.read()[0]['todos']:
+                raise ValueError('Mode setup requires an empty todo collection; use configuration directly for non-aggregation changes.')
+            configure_mode(configuration, ROOT)
+            store.close()
+            return
         if args.configure_port:
             store.preflight()
             store.require_writable()
@@ -299,6 +330,8 @@ def main():
         if not store.path.exists() and not store.journal.exists():
             store.create_starter()
         store.initialize()
+        if configuration['mode'] == 'aggregation' and store.read()[0]['todos']:
+            raise ValueError('Aggregation requires an inbox with no todos. Existing todos must not be relocated implicitly.')
         if args.snapshot or args.retry_history:
             print(json.dumps(store.snapshot(), ensure_ascii=False))
             store.close()

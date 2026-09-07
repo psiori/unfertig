@@ -37,3 +37,15 @@
 @media (prefers-reduced-motion: reduce) { .refresh-button.refreshing svg { animation: none; } }
 .publication-feedback { color: #835516; font-size: 12px; margin: 0 0 16px; overflow-wrap: anywhere; }
 .work-actions { flex-wrap: wrap; }
+
+/* Aggregation retains project-qualified records and readable source status. */
+[hidden] { display: none !important; }
+.route-warning { color: #a51e2c; font-weight: 600; }
+.aggregate-todo { border: 1px solid var(--line, #ddd); border-radius: 10px; padding: 16px; margin: 10px 0; background: white; }
+.aggregate-todo summary { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(180px, 3fr) auto; gap: 16px; cursor: pointer; }
+.aggregate-todo p, .source-idea p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.project-column { font-weight: 600; overflow-wrap: anywhere; }
+.source-idea { padding: 16px; border-top: 1px solid #ddd; }
+#source-status { overflow-wrap: anywhere; }
+#initials { width: 70px; }
+@media (max-width: 650px) { .aggregate-todo summary { grid-template-columns: 1fr; } .header-right { flex-wrap: wrap; } }

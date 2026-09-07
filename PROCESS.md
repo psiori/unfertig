@@ -12,14 +12,14 @@ A registered submodule defaults to its superproject's `state/unfertig/config/con
 
 ## Processing ideas is planning only
 
-1. Read the latest ideas in `BOARD/data.json` and todos in `BOARD/todos/*.json` (or the assembled API snapshot). An idea is pending when no todo references its ID in `source_ideas`.
+1. Read the latest ideas in `BOARD/data.json` and todos in `BOARD/todos/*.json` (or the assembled API snapshot). In ordinary boards an idea is pending when no local todo references its ID in `source_ideas`. Aggregator inboxes instead use the routing section below.
 2. Preserve the idea's `id`, `text`, `author`, and `date_entered` exactly.
 3. Check existing todos for overlap. Link a matching todo to the additional source idea rather than duplicating work when it already captures the intent. Do not silently reopen closed work; identify follow-up work separately when needed.
 4. Usually create one todo per idea. Split only into independently implementable, verifiable steps. Several ideas can support one todo.
 5. Write a short actionable heading and a refined description. Include acceptance conditions proportional to the task. State meaningful ambiguities, ask if essential, and never invent requirements. Do not split off trivial implementation steps as separate todos.
 6. Keep original requester attribution in `author`. If several ideas have different authors, use the primary requester and note other contributors in the description. Record your actual agent identity (e.g. Codex, Claude, Cursor) in `created_by`.
 7. Default to `normal` priority unless the user specified urgency. Reuse groups/tags when appropriate; new values are allowed. Leave `group` empty when uncertain.
-8. New todos start `open`, with empty closure and implementation-reference fields. Link every source idea ID. This link is the processed marker; no separate processed flag exists.
+8. New todos start `open`, with empty closure and implementation-reference fields. Link every source idea ID. This link is the processed marker on ordinary boards. Aggregator inboxes use the confirmed routing receipt described below.
 9. Save using the procedure below and report the created/updated IDs. **Do not implement anything during processing.** Re-running should not create duplicates.
 
 ## Implementing a todo
@@ -85,7 +85,7 @@ A todo has these standard fields:
 }
 ```
 
-- IDs: separate numeric sequences with `I` / `T` prefixes, padded to at least four digits. The server assigns one greater than the maximum in the latest collection, inside its write lock; creations send `id: null` at the change level and omit the record ID. Never renumber, delete, or reuse an ID. More than 9999 entries are supported by longer IDs.
+- IDs: separate numeric sequences with `I` / `T` or optional initials prefixes (see Identity below), padded to at least four digits. The server assigns one greater than the maximum in the latest collection, inside its write lock; creations send `id: null` at the change level and omit the record ID. Never renumber, delete, or reuse an ID. More than 9999 entries are supported by longer IDs.
 - Original `author`, `date_entered`, and `created_by` are immutable. Update `updated_at` on todo changes. Todo entry date is when the structured todo was created; the idea retains its own original capture date.
 - `priority`: `low`, `normal`, `high`, or `urgent`.
 - `status`: `open`, `started`, or `closed`.
@@ -218,3 +218,106 @@ newer minor versions allow inspection only; compatible builds preserve their
 original version. Do not bypass read-only guards through offline edits. Use
 `--check` for non-mutating validation; startup/`--snapshot` perform supported
 sequential migrations under the writer lock and commit meaningful changes locally.
+
+## Aggregation routing (format 1.2)
+
+Aggregation uses an explicit list of sources, never filesystem recursion or nested
+aggregators. Each source is an exact data JSON path, loopback service origin and
+stable project_id. GET `/api/aggregate` is a read-only view with source-qualified
+identities, revisions, context and reachable/stale/unavailable status. Only its
+local inbox is writable through `/api/changes`; it cannot own any todos. Source
+ideas are read-only reference material, processed in their own instances.
+
+The original inbox idea keeps `id`, `text`, `author`, `date_entered` unchanged.
+`selected_project` is mutable until a routing request is claimed. An explicit
+selection always wins. Otherwise the processing agent infers a single configured
+project from the idea text and records its rationale; there is no automatic
+keyword classifier or numeric confidence claim. Ambiguous or multi-project ideas
+stay pending: PUT `/api/routes` with `idea_id`, current idea `revision`, and the
+actual `actor`, omitting `project_id`, to record red **Unclear** status. The user
+can correct the project dropdown and obtain a new briefing. No arbitrary tree
+scans, implicit task relocation, service launches or destination creation occur.
+
+Before routing, read the destination's GET `/api/state`, actual `PROCESS.md` and
+applicable repository rules, verify the Git owner and local author configuration,
+and determine authorization from the user's scope, not physical containment.
+Sources must run a format-1.2-capable server. A stopped/unreachable source blocks
+routing; do not write its files to bypass the service. This implementation uses
+the supported running record API only. Source URLs never redirect.
+
+PUT `/api/routes` on the aggregator with its session `X-Board-Token`:
+
+```json
+{
+  "idea_id": "SL_I0001",
+  "revision": "current idea revision from aggregator /api/state",
+  "actor": "Codex",
+  "initials": "CX",
+  "project_id": "inferred-project-id-if-no-explicit-selection",
+  "reason": "Why this single project matches the original text",
+  "preflight": {
+    "data": "/exact/destination/data.json",
+    "repository": "/exact/owning/repository",
+    "process": "/exact/app/PROCESS.md",
+    "project_id": "destination-project-id",
+    "process_sha256": "SHA-256 of the PROCESS.md bytes you read"
+  },
+  "todo": {"name": "Refined task", "description": "Self-contained requirements and acceptance", "date_entered": "2026-09-07T12:00:00Z"}
+}
+```
+
+The example todo uses the version contract's defaults (open/normal, empty group,
+tags, references, closure fields, and updated_at from date_entered). The server
+sets requester attribution from the idea and created_by from actor. Requester
+identity and processor initials are independent. Use optional todo fields normally.
+
+The server durably commits a routing claim in the inbox idea before contacting
+the destination. `routing.request` contains the exact destination mutation with a
+stable retry ID derived from the inbox project ID and original idea ID. The
+claimed destination, preflight and payload cannot be changed by ordinary edits.
+The destination allocates its ID under its writer lock, and saves a todo with
+`source_ideas: []` and immutable `source_refs: [{project_id, idea: {id, text,
+author, date_entered}}]`. This is provenance, not another actionable inbox idea.
+Duplicate qualified foreign provenance is rejected even with a different retry ID.
+
+There is **no cross-repository atomic transaction**. After a lost response,
+interruption, or local history failure, retain the claim and retry `/api/routes`
+for the same idea. The stored destination request wins over any new payload; keep
+new drafts separately. Destination receipts prevent duplicate saves. The inbox
+becomes `routing.status: routed` only after confirmed destination save and local
+history success; `routing.todo_id` identifies the result. Its own final history
+may still be pending and must be completed. Blocked/unclear/routing ideas remain
+pending. A processed inbox idea remains in storage and is hidden by default.
+
+Multiple routing workers serialize under the inbox writer lock; edits to claimed
+selections are rejected. Child edits use their own record revisions. No stale
+snapshot is restored. Preserve transaction journals, receipts, original content
+and Git-history pending files. If destination context or PROCESS changes after a
+claim, routing stops for manual review; do not erase the claim, mint another
+creation ID or restore old files. Moving a routed todo requires a separately
+authorized migration, not a dropdown change.
+
+Meaningful saves commit in each board's own Git repository using its configured
+name/email. Routing never fetches, pushes, merges, rebases, changes SSH identity,
+or automatically resolves conflicts. On a Git conflict retain accepted work and
+report manual recovery before any push. Push needs explicit authorization. This
+routing policy is distinct from T0023's explicit publication operation; it does
+not resolve that policy's scope/precedence question.
+
+## Identity and metadata (format 1.2)
+
+The UI separates **Initials** from **Author**. Mutation bodies may supply `initials`
+(empty, or 1–12 uppercase ASCII letters/digits starting with a letter). New IDs
+are `SL_I0001` / `SL_T0001` when set, and legacy `I0001` / `T0001` when empty.
+Numbering is one monotonically increasing sequence per collection across every
+prefix, allocated inside the server lock. Changed initials affect only future
+IDs; existing IDs and source links never change. Routed todos use the processor's
+submitted initials, while author remains the requester and created_by the agent.
+Initials are neither authentication nor a globally unique namespace.
+
+New records automatically carry the owning `project_id`. Legacy records remain
+unchanged and inherit their board's context for display. Routing records store
+explicit/inferred selection separately. Names are presentation metadata from the
+source context; renaming a project_name does not change identity. Set a durable
+config `project_id` before moving a board: absent IDs default deterministically to
+a hash of the canonical data path, so relocation needs an explicit pinned ID.

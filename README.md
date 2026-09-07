@@ -173,3 +173,60 @@ Publication tests use disposable repositories and local bare remotes:
 uv run --no-project --python 3.12 -m unittest test_publication -v
 node --test test_title.cjs test_publication.cjs
 ```
+
+## Aggregation and initials
+
+Choose `--configure-mode` during stopped setup, or configure an empty inbox:
+
+```json
+{
+  "format_version": "1.2.0",
+  "mode": "aggregation",
+  "project_id": "workspace-inbox",
+  "project_name": "Workspace",
+  "data": "../data/data.json",
+  "port": 8765,
+  "sources": [
+    {"data": "../../../alpha/state/unfertig/data/data.json", "url": "http://127.0.0.1:8766", "project_id": "alpha"},
+    {"data": "../../../beta/state/unfertig/data/data.json", "url": "http://127.0.0.1:8767", "project_id": "beta"}
+  ]
+}
+```
+
+Set the corresponding `project_id` in each source config and restart it first;
+verify source IDs and exact data paths with `/api/state`. Configuration paths are
+relative to the config file. Up to 20 explicit JSON locations are supported.
+Canonical duplicate paths are deduplicated; conflicting aliases/identities and
+self references are rejected. No arbitrary recursion or nested aggregation is
+supported. Source services must be started separately; Unfertig never launches
+them. Existing boards with todos cannot become aggregators implicitly.
+
+The aggregator presents read-only child todos with a project column, project
+filter, and project → group nesting. Group/tag filter choices include the project
+and work equally in flat views; identical labels do not merge across projects.
+The source's configured/discovered project_name is used; an empty name falls back
+to the directory directly containing its data JSON (often `data`). Source ideas
+appear as read-only reference sections; their processed filter uses source todos.
+Open actions target the configured origin and record fragment; unavailable
+services show a label instead of launching anything.
+
+Visible pages refresh sources every four seconds after the preceding request
+finishes. Each source snapshot supplies record revisions; a successful refresh
+replaces its read view. On failure the server retains its last successful
+in-memory snapshot, labelled stale. After restart there is no disk cache: a failed
+source says unavailable/no cached records, never "empty". Authoritative child
+files are untouched. Change config and restart to alter sources.
+
+Ideas entered here stay in this inbox. Select a project immediately before **Add
+idea**, or later on the idea. Copy its processing briefing for explicit/inferred
+routing; unclear ideas remain red and pending. See PROCESS.md for exact routing,
+provenance, retry, preflight and local-commit semantics. Routing requires source
+format 1.2, and never pushes or resolves conflicts automatically.
+
+**Initials** optionally prefix newly allocated IDs. **Author** remains a separate
+required capture/acting identity; agent requests independently set created_by.
+Empty initials retain legacy IDs; changing initials never renumbers records.
+
+Format 1.2 is a storage migration. For managed existing instances follow
+VERSIONING.md's stopped-service backup, disposable rehearsal, explicit migration
+and idempotence checks. The ordinary unchanged-storage updater remains unchanged.

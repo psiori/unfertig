@@ -76,7 +76,7 @@ class BoardStore:
     def target(self, relative):
         if relative == '@config' and self.config:
             return self.config
-        if relative == self.path.name or relative == 'data.v1-backup.json' or re.fullmatch(r'todos/T\d{4,}\.json|\.receipts/[a-zA-Z0-9_-]{16,100}\.json', relative):
+        if relative == self.path.name or relative == 'data.v1-backup.json' or re.fullmatch(r'todos/(?:[A-Z][A-Z0-9]{0,11}_)?T\d{4,}\.json|\.receipts/[a-zA-Z0-9_-]{16,100}\.json', relative):
             path = self.root / relative
             if path.is_symlink() or not path.resolve().is_relative_to(self.root):
                 raise ValueError('Data paths cannot be symbolic links.')
@@ -192,8 +192,10 @@ class BoardStore:
                         created_by='unfertig', updated_at=now, priority='normal', group='',
                         name='Add your first idea', description='Capture an idea in the scratchpad, then turn it into an actionable todo. Close this onboarding task when you are ready.',
                         tags=[], status='open', closed_by='', date_closed='', pr_url='', commit_url='', commit_hash='')
-            self.transaction({self.path.name: {'schema_version': 2, 'ideas': []},
-                              'todos/T0001.json': todo}, 'Initialize board')
+            files = {self.path.name: {'schema_version': 2, 'ideas': []}}
+            if self.context.get('mode') != 'aggregation':
+                files['todos/T0001.json'] = todo
+            self.transaction(files, 'Initialize board')
 
     def initialize(self):
         with self.lock:
@@ -328,7 +330,7 @@ class BoardStore:
             self.history_error = (getattr(error, 'stderr', '') or str(error)).strip()
             return False
 
-    def mutate(self, body):
+    def mutate(self, body, *, routing=False):
         with self.lock:
             self.require_writable()
             if 'protocol_version' in body:
@@ -362,17 +364,40 @@ class BoardStore:
                 kind = change.get('collection')
                 if kind not in ('ideas', 'todos'):
                     raise ValueError('Unknown collection.')
+                if kind == 'todos' and self.context.get('mode') == 'aggregation':
+                    raise ValueError('The aggregator owns no todos; use /api/routes.')
                 record = copy.deepcopy(change.get('record'))
                 if not isinstance(record, dict):
                     raise ValueError('record must be an object.')
                 ident = change.get('id')
+                if not routing and ('routing' in record or (ident and any(r['id'] == ident and 'routing' in r for r in data[kind]))):
+                    old_route = next((r.get('routing') for r in data[kind] if r['id'] == ident), None)
+                    if record.get('routing', old_route) != old_route:
+                        raise ValueError('Routing state is managed by /api/routes.')
                 if ident is None:
                     if kind == 'todos':
                         record = migrate(record, 'todo')
                     prefix = 'I' if kind == 'ideas' else 'T'
-                    ident = prefix + str(max((int(r['id'][1:]) for r in data[kind]), default=0) + 1).zfill(4)
+                    initials = body.get('initials', '')
+                    if not isinstance(initials, str) or (initials and not re.fullmatch(r'[A-Z][A-Z0-9]{0,11}', initials)):
+                        raise ValueError('Initials must be empty or 1–12 uppercase letters/digits, starting with a letter.')
+                    prefix = (initials + '_' if initials else '') + prefix
+                    ident = prefix + str(max((int(re.search(r'\d+$', r['id']).group()) for r in data[kind]), default=0) + 1).zfill(4)
                     record['id'] = ident
+                    if self.context.get('project_id'):
+                        record['project_id'] = self.context['project_id']
+                    if kind == 'ideas' and record.get('selected_project') and record['selected_project'] not in {s['project_id'] for s in self.context.get('sources', [])}:
+                        raise ValueError('Unknown selected project.')
                     if kind == 'todos':
+                        foreign = record.get('source_refs', [])
+                        if not isinstance(foreign, list):
+                            raise ValueError('source_refs must be a list.')
+                        for ref in foreign:
+                            if not isinstance(ref, dict) or not isinstance(ref.get('project_id'), str) or not isinstance(ref.get('idea'), dict):
+                                raise ValueError('Foreign source needs project_id and immutable original idea.')
+                            self.validator(dict(schema_version=1, ideas=[ref['idea']], todos=[]))
+                            if any(any(r['project_id'] == ref['project_id'] and r['idea']['id'] == ref['idea']['id'] for r in t.get('source_refs', [])) for t in data['todos']):
+                                raise Conflict('Foreign source already routed. Recover the original stable request.')
                         linked = [t['id'] for t in data['todos'] if set(t['source_ideas']) & set(record.get('source_ideas', []))]
                         if linked and not change.get('allow_shared_sources', False):
                             raise Conflict('Source idea already processed by ' + ', '.join(linked) + '. Review overlap; explicitly allow shared sources for intentional splits.')
@@ -386,6 +411,15 @@ class BoardStore:
                         raise ValueError('Record ID cannot change.')
                     # Older clients may omit extensions; omission never deletes them.
                     record = {**copy.deepcopy(old), **record}
+                    for field in ('project_id', 'source_refs'):
+                        if field in old and record.get(field) != old[field]:
+                            raise ValueError(f'Original {field} must be preserved.')
+                    if kind == 'ideas' and record.get('selected_project', '') != old.get('selected_project', ''):
+                        if old.get('routing', {}).get('request'):
+                            raise Conflict('Routing already claimed; project changes cannot move a todo. Recover the route first.')
+                        if record.get('selected_project') and record['selected_project'] not in {s['project_id'] for s in self.context.get('sources', [])}:
+                            raise ValueError('Unknown selected project.')
+                        record.pop('routing', None)
                     if kind == 'todos':
                         if parse(record.get('format_version', FORMAT_VERSION)) < parse(old.get('format_version', FORMAT_VERSION)):
                             raise VersionError('Cannot downgrade a record format_version.')
