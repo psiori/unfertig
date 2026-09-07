@@ -1,6 +1,6 @@
 """Explicit local source views and a recoverable, one-way routing saga.
 
-No child files are written here: every destination save uses its record API.
+Both adapters use the shared BoardStore record transaction contract.
 The original inbox idea durably owns the exact destination request until receipt.
 """
 import copy
@@ -12,11 +12,17 @@ import uuid
 import re
 from datetime import datetime, timezone
 from urllib.request import Request, build_opener, ProxyHandler, HTTPRedirectHandler
-from urllib.error import URLError
+from urllib.error import URLError, HTTPError
+from http.client import RemoteDisconnected, IncompleteRead
+import errno
 
-from configuration import git_root
 from storage import Conflict, digest
 from versions import migrate, parse
+from transports import filesystem, preflight_context
+
+
+class Unreachable(ValueError):
+    """Only connection establishment or lost-response failures allow fallback."""
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -37,8 +43,15 @@ def exchange(source, path='/api/state', body=None, token=None):
             if len(raw) > 5_000_000:
                 raise ValueError('Source response exceeds 5 MB.')
             return json.loads(raw)
-    except (URLError, OSError) as error:
-        raise ValueError(f'Source unavailable or rejected the request: {error}') from error
+    except HTTPError as error:
+        raise ValueError(f'Source rejected HTTP request ({error.code}); filesystem fallback is forbidden.') from error
+    except (TimeoutError, ConnectionError, RemoteDisconnected, IncompleteRead) as error:
+        raise Unreachable(f'HTTP connection unavailable or response lost: {error}') from error
+    except URLError as error:
+        reason = error.reason
+        if isinstance(reason, (TimeoutError, ConnectionError)) or getattr(reason, 'errno', None) in (errno.ECONNREFUSED, errno.ECONNRESET, errno.ETIMEDOUT, errno.EHOSTUNREACH, errno.ENETUNREACH):
+            raise Unreachable(f'HTTP source cannot be reached: {error}') from error
+        raise ValueError(f'HTTP transport blocked: {error}') from error
 
 
 class Aggregation:
@@ -48,8 +61,25 @@ class Aggregation:
         self.cache = {}
         self.lock = threading.RLock()
 
+    def transfer(self, source, path='/api/state', body=None, token=None, expected=None):
+        enabled = source.get('transports', {'http': True, 'filesystem': False})
+        if not any(enabled.values()):
+            raise ValueError('At least one transport must be enabled.')
+        reason = ''
+        if enabled['http']:
+            try:
+                return dict(exchange(source, path, body, token), transport='http', fallback_reason='')
+            except Unreachable as error:
+                if not enabled['filesystem']:
+                    raise
+                reason = str(error)
+        try:
+            return dict(filesystem(source, self.store.validator, body, expected), transport='filesystem', fallback_reason=reason)
+        except (OSError, Conflict, ValueError) as error:
+            raise ValueError(f'Filesystem blocked: {error}' + (f' (fallback: {reason})' if reason else '')) from error
+
     def inspect_source(self, source):
-        snapshot = exchange(source)
+        snapshot = self.transfer(source)
         context = snapshot['context']
         if snapshot.get('api_version') != 2 or snapshot.get('protocol_version') != '2.0.0':
             raise ValueError('Source requires the supported record API.')
@@ -70,13 +100,14 @@ class Aggregation:
                 try:
                     snapshot = self.inspect_source(source)
                     self.cache[key] = dict(project_id=key, name=snapshot['context'].get('project_name') or Path(source['data']).parent.name,
-                                           url=source['url'], data=snapshot['data'], revision=snapshot['revision'],
+                                           url=source.get('url', ''), data=snapshot['data'], revision=snapshot['revision'],
+                                           transport=snapshot['transport'], fallback_reason=snapshot['fallback_reason'],
                                            context=snapshot['context'], checked_at=datetime.now(timezone.utc).isoformat())
                     entry = dict(self.cache[key], status='reachable', error='')
                 except (ValueError, KeyError, TypeError) as error:
                     entry = dict(self.cache.get(key, dict(project_id=key, name=Path(source['data']).parent.name,
-                                                         url=source['url'], data=None, checked_at=None)),
-                                 status='stale' if key in self.cache else 'unavailable', error=str(error))
+                                                         url=source.get('url', ''), data=None, checked_at=None)),
+                                 status='stale' if key in self.cache else 'unavailable', transport=None, fallback_reason='', error=str(error))
                 result.append(entry)
             return dict(sources=result)
 
@@ -113,11 +144,7 @@ class Aggregation:
             try:
                 snapshot = self.inspect_source(source)
                 context = snapshot['context']
-                expected = {k: context[k] for k in ('data', 'repository', 'process', 'project_id')}
-                process = Path(context['process'])
-                if process.name != 'PROCESS.md' or not process.is_file() or git_root(source['data']) != Path(context['repository']).resolve():
-                    raise ValueError('Destination PROCESS.md or owning repository is invalid.')
-                expected['process_sha256'] = hashlib.sha256(process.read_bytes()).hexdigest()
+                expected = preflight_context(context)
                 if not state.get('request') and body.get('preflight') != expected:
                     raise ValueError('Read destination context, PROCESS.md and repository rules; provide matching preflight including process_sha256. Location alone is not authorization.')
                 if state.get('request') and state.get('preflight') != expected:
@@ -149,13 +176,13 @@ class Aggregation:
                     idea = self.save_route(idea, state, actor)
                 if self.store.pending.exists():
                     raise ValueError('Inbox claim saved; finish pending local history before destination writes.')
-                result = exchange(source, '/api/changes', state['request'], snapshot['token'])
+                result = self.transfer(source, '/api/changes', state['request'], snapshot.get('token'), expected)
                 assigned = next(a['id'] for a in result['assigned'] if a['collection'] == 'todos')
                 if result['history']['pending']:
                     raise ValueError('Destination saved; local history pending. Retain claim and retry after history recovery.')
                 state = dict(state, status='routed', todo_id=assigned, reason='', completed_at=datetime.now(timezone.utc).isoformat())
                 idea = self.save_route(idea, state, actor)
-            except (ValueError, KeyError, TypeError, StopIteration) as error:
+            except (OSError, Conflict, ValueError, KeyError, TypeError, StopIteration) as error:
                 # Claims are never erased after an uncertain destination result.
                 state = dict(state, status='blocked', project_id=project, reason=str(error))
                 idea = self.save_route(idea, state, actor)

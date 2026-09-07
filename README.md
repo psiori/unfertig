@@ -180,7 +180,7 @@ Choose `--configure-mode` during stopped setup, or configure an empty inbox:
 
 ```json
 {
-  "format_version": "1.2.0",
+  "format_version": "1.3.0",
   "mode": "aggregation",
   "project_id": "workspace-inbox",
   "project_name": "Workspace",
@@ -198,8 +198,8 @@ verify source IDs and exact data paths with `/api/state`. Configuration paths ar
 relative to the config file. Up to 20 explicit JSON locations are supported.
 Canonical duplicate paths are deduplicated; conflicting aliases/identities and
 self references are rejected. No arbitrary recursion or nested aggregation is
-supported. Source services must be started separately; Unfertig never launches
-them. Existing boards with todos cannot become aggregators implicitly.
+supported. HTTP-only sources need a separately started service. Filesystem sources
+need no service; Unfertig never launches one. Existing boards with todos cannot become aggregators implicitly.
 
 The aggregator presents read-only child todos with a project column, project
 filter, and project → group nesting. Group/tag filter choices include the project
@@ -214,8 +214,8 @@ Visible pages refresh sources every four seconds after the preceding request
 finishes. Each source snapshot supplies record revisions; a successful refresh
 replaces its read view. On failure the server retains its last successful
 in-memory snapshot, labelled stale. After restart there is no disk cache: a failed
-source says unavailable/no cached records, never "empty". Authoritative child
-files are untouched. Change config and restart to alter sources.
+source says unavailable/no cached records, never "empty". Discovery never migrates child files; accepted interrupted journals recover under
+the shared writer lock. Change config and restart to alter sources.
 
 Ideas entered here stay in this inbox. Select a project immediately before **Add
 idea**, or later on the idea. Copy its processing briefing for explicit/inferred
@@ -227,6 +227,45 @@ format 1.2, and never pushes or resolves conflicts automatically.
 required capture/acting identity; agent requests independently set created_by.
 Empty initials retain legacy IDs; changing initials never renumbers records.
 
-Format 1.2 is a storage migration. For managed existing instances follow
+Format 1.3 is a storage migration. For managed existing instances follow
 VERSIONING.md's stopped-service backup, disposable rehearsal, explicit migration
 and idempotence checks. The ordinary unchanged-storage updater remains unchanged.
+
+
+### Filesystem access and HTTP-first fallback
+
+Set global `"transports": {"http": true, "filesystem": true}` for HTTP-first
+fallback, or `{"http": false, "filesystem": true}` for filesystem-only. Both
+false is an error. Omission retains HTTP-only; there are no source overrides.
+For filesystem-enabled sources add explicit config and app checkout locations:
+
+```json
+{
+  "data": "../../../alpha/state/unfertig/data/data.json",
+  "project_id": "alpha",
+  "config": "../../../alpha/state/unfertig/config/config.json",
+  "app_root": "../../../alpha/tools/unfertig",
+  "url": "http://127.0.0.1:8766"
+}
+```
+
+Omit `url` when HTTP is disabled. Paths resolve relative to the aggregator config;
+they do not grant write authorization. Configure/migrate the child first using
+its own installation. Filesystem discovery reports a block for older formats,
+missing paths or incompatible writers. Upgraded POSIX services permit coordinated
+filesystem reads and routing while running, even without HTTP access. Windows
+filesystem access is explicitly blocked; its HTTP mode retains exclusive locking.
+
+The source status shows transport and fallback reason. HTTP rejection never
+triggers fallback. A lost HTTP write response recovers the same request/receipt.
+Filesystem records open as details with their location, without launching a
+service. Read [TRANSPORTS.md](TRANSPORTS.md) for exact error classification,
+failback, locks, stopped migrations, recovery and the required parity suite.
+Add `.operation.lock` and `.service.lock` to each host's runtime ignore rules.
+
+Run the shared conformance and regression suites:
+
+```sh
+uv run --no-project --python 3.12 python -m unittest discover -v
+node --test test_*.cjs
+```

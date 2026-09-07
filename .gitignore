@@ -4,6 +4,8 @@ __pycache__/
 
 .board-*.tmp
 .server.lock
+.service.lock
+.operation.lock
 .transaction.json
 .history-pending.json
 .receipts/

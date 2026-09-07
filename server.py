@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 from storage import BoardStore, Conflict
 from publication import Publication
 from versions import inspect, migrate, parse, PROTOCOL_VERSION
-from configuration import resolve, configure_port, configure_mode, valid_port
+from configuration import resolve, configure_port, configure_mode, valid_port, board_context
 
 ROOT = Path(__file__).resolve().parent
 MAX_BYTES = 5_000_000
@@ -287,16 +287,13 @@ def main():
     except (OSError, ValueError) as error:
         parser.exit(1, f"Could not resolve board: {error}\n")
     store = BoardStore(configuration["path"], validate, git=not args.no_git, config=configuration["config"])
-    store.context = {"config": str(configuration["config"] or ""), "app_root": str(ROOT), "process": str(ROOT / "PROCESS.md"),
-                     "data": str(store.path), "todos": str(store.root / "todos"),
-                     "repository": str(configuration["repository"] or ""), "mode": configuration["mode"],
-                     "project_name": configuration["project_name"], "project_id": configuration['project_id'],
-                     "sources": configuration['sources']}
+    store.context = board_context(configuration, ROOT)
     server = None
     try:
         if not store.path.exists() and not (args.configure_port or args.configure_mode or args.init or configuration["bootstrap"]) and not store.journal.exists():
             raise ValueError("Configured board is missing. Check its path or explicitly use --init.")
-        store.acquire()
+        serving = not any((args.apply, args.snapshot, args.retry_history, args.check, args.configure_mode, args.configure_port))
+        store.acquire(cooperative=serving, service=serving)
         if args.configure_mode:
             store.preflight(); store.require_writable()
             if store.path.exists() and store.read()[0]['todos']:

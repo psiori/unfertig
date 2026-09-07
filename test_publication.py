@@ -25,7 +25,7 @@ class PublicationTests(unittest.TestCase):
         self.repo.mkdir()
         self.git(self.repo, 'init', '-b', 'main'); self.identity(self.repo)
         self.git(self.root, 'init', '--bare', str(self.remote))
-        (self.repo / '.gitignore').write_text('.server.lock\n.transaction.json\n.history-pending.json\n.receipts/\n')
+        (self.repo / '.gitignore').write_text('.server.lock\n.service.lock\n.operation.lock\n.transaction.json\n.history-pending.json\n.receipts/\n')
         path = self.repo / 'state' / 'data.json'; path.parent.mkdir()
         data = fixture()
         second = copy.deepcopy(data['todos'][0]); second.update(id='T0002', source_ideas=[])

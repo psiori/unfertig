@@ -8,12 +8,69 @@ import re
 import subprocess
 import tempfile
 import threading
+import time
+from functools import wraps
 from datetime import datetime, timezone
 from versions import FORMAT_VERSION, PROTOCOL_VERSION, inspect, migrate, parse, VersionError
 
 
 class Conflict(Exception):
     pass
+
+
+class OperationLock:
+    """Reentrant thread/process lock; the lifetime lease excludes older writers."""
+    def __init__(self, root):
+        self.root = root
+        self.thread = threading.RLock()
+        self.depth = 0
+        self.file = None
+
+    def __enter__(self):
+        self.thread.acquire()
+        try:
+            if self.depth == 0:
+                self.root.mkdir(parents=True, exist_ok=True)
+                self.file = (self.root / '.operation.lock').open('a+b')
+                deadline = time.monotonic() + 3
+                while True:
+                    try:
+                        if os.name == 'nt':
+                            import msvcrt
+                            self.file.seek(0)
+                            if not self.file.read(1):
+                                self.file.write(b'0'); self.file.flush()
+                            self.file.seek(0)
+                            msvcrt.locking(self.file.fileno(), msvcrt.LK_NBLCK, 1)
+                        else:
+                            import fcntl
+                            fcntl.flock(self.file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() >= deadline:
+                            raise Conflict('Board operation busy; retain the request/draft and retry.')
+                        time.sleep(.02)
+            self.depth += 1
+            return self
+        except BaseException:
+            if self.file:
+                self.file.close(); self.file = None
+            self.thread.release()
+            raise
+
+    def __exit__(self, *_):
+        self.depth -= 1
+        if self.depth == 0:
+            self.file.close(); self.file = None
+        self.thread.release()
+
+
+def coordinated(method):
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with self.lock:
+            return method(self, *args, **kwargs)
+    return call
 
 
 def encode(value):
@@ -50,11 +107,12 @@ class BoardStore:
         self.root = self.path.parent
         self.validator = validator
         self.git = git
-        self.lock = threading.RLock()
+        self.lock = OperationLock(self.root)
         self.journal = self.root / '.transaction.json'
         self.pending = self.root / '.history-pending.json'
         self.receipts = self.root / '.receipts'
         self.lease = None
+        self.service_lease = None
         self.history_error = ''
         self.context = {}
         self.config = Path(config).resolve() if config else None
@@ -159,8 +217,8 @@ class BoardStore:
             self.read()
             self.transaction(files, f'Migrate active JSON formats to {FORMAT_VERSION}')
 
-    def acquire(self):
-        """Held for the server/offline command lifetime, including migration."""
+    def acquire(self, *, cooperative=False, service=False):
+        """Compatibility lease; shared clients additionally serialize operations."""
         self.root.mkdir(parents=True, exist_ok=True)
         self.lease = (self.root / '.server.lock').open('a+b')
         try:
@@ -173,12 +231,18 @@ class BoardStore:
                 msvcrt.locking(self.lease.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
-                fcntl.flock(self.lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(self.lease, (fcntl.LOCK_SH if cooperative else fcntl.LOCK_EX) | fcntl.LOCK_NB)
+                if service:
+                    self.service_lease = (self.root / '.service.lock').open('a+b')
+                    fcntl.flock(self.service_lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             self.close()
             raise ValueError('Another board server or offline writer owns this data directory.') from None
 
     def close(self):
+        if self.service_lease:
+            self.service_lease.close()
+            self.service_lease = None
         if self.lease:
             self.lease.close()
             self.lease = None
@@ -269,6 +333,7 @@ class BoardStore:
                         revisions={kind: {r['id']: digest(r) for r in data[kind]} for kind in ('ideas', 'todos')},
                         history={'pending': self.pending.exists(), 'error': self.history_error, 'enabled': self.git})
 
+    @coordinated
     def transaction(self, files, message, receipt=None, extra_paths=()):
         self.require_writable()
         if self.pending.exists() and not self.commit_pending():
@@ -285,6 +350,7 @@ class BoardStore:
         self.recover()
         self.commit_pending()
 
+    @coordinated
     def recover(self):
         if not self.journal.exists():
             return
@@ -302,6 +368,7 @@ class BoardStore:
             atomic(self.target('.receipts/' + receipt['request_id'] + '.json'), encode(migrate(receipt, 'receipt')))
         self.journal.unlink()
 
+    @coordinated
     def commit_pending(self):
         if not self.pending.exists():
             return True

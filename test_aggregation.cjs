@@ -34,3 +34,12 @@ test('routing briefing carries actual selection, retry and preflight rules',()=>
   const {context:c}=setup(); const text=c.aggregationBrief([{id:'SL_I0001',text:'Original',selected_project:'b'}]);
   for(const expected of ['selected_project','PROCESS.md','process_sha256','/api/routes','source_refs','stored request','No routing step pushes']) assert.ok(text.includes(expected),expected);
 });
+test('filesystem records retain details without a service link and briefings show transport',()=>{
+  const {context:c,$}=setup();
+  vm.runInContext("aggregateSources[0].transport='filesystem'; aggregateSources[0].url='';",c);
+  c.renderTodos();
+  assert.match($('#todos').innerHTML,/Filesystem record/);
+  assert.equal(($('#todos').innerHTML.match(/#todo-T0001/g)||[]).length,1);
+  const text=c.aggregationBrief([]);
+  for (const expected of ['filesystem','TRANSPORTS.md','does not migrate','same request/receipt']) assert.ok(text.includes(expected),expected);
+});
