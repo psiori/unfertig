@@ -1,8 +1,6 @@
 'use strict';
 // Aggregate records never enter `data`: it is exclusively the local writable inbox.
 let aggregateSources = [], aggregateBusy = false, aggregateSignature = '';
-$('#initials').value = preference('initials');
-$('#initials').addEventListener('change', () => { $('#initials').value = $('#initials').value.trim().toUpperCase(); remember('initials', $('#initials').value); });
 const localRenderIdeas = renderIdeas, localRenderTodos = renderTodos, localUpdateChoices = updateChoices;
 const aggregating = () => boardContext?.mode === 'aggregation';
 const qualified = (project, value) => JSON.stringify([project, value]);
