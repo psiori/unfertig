@@ -224,7 +224,7 @@ feature only with disposable local repositories/bare remotes, never real remotes
 ## Data and API versions
 
 [VERSIONING.md](VERSIONING.md) governs both idea processing and implementation.
-Persisted JSON uses `format_version` (currently `1.5.0`), independently of integer
+Persisted JSON uses `format_version` (currently `1.6.0`), independently of integer
 layout schema_version. Snapshots declare protocol_version `2.0.0`. Preserve these
 fields and unknown extensions in edits. Newer major versions require updating;
 newer minor versions allow inspection only; compatible builds preserve their
@@ -376,3 +376,9 @@ todo revision and the reviewed commit for test/merge. Run on the claiming system
 Never hand-edit claims to bypass failures. Failed/interrupted runs retain their
 worktree and allow explicit retry; no automatic replacement worker is launched.
 See README for configuration and recovery details.
+
+
+Workflow actions require workflow.enabled:true (default false). Disabled owner
+instances reject all implementation, retry, preview and merge requests, including
+requests from stale tabs. This is independent of workflow.automatic. Aggregators
+keep the whole workflow disabled. Restart after changing configuration.

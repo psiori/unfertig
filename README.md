@@ -368,12 +368,20 @@ changes require reconciliation and retesting. A detached supervisor retains
 restart results even when Unfertig itself restarts. Failed pushes/restarts and
 interrupted stages remain visible for explicit retries. Worktrees are retained.
 
-Configure `workflow` in the instance config and restart. Commands are argv arrays,
+Configure `workflow` in the instance config and restart. `enabled` defaults to
+false: all implementation/preview/merge controls are hidden and backend workflow
+actions are rejected (HTTP 403). Set `enabled: true` to expose manual controls.
+`automatic` is a separate switch and also defaults false. Disabling the feature
+also prevents automatic kickoff and background workflow reconciliation, while
+retaining saved run records for later inspection. Aggregators always disable it.
+
+Configure the commands below for your project. Commands are argv arrays,
 without a shell. Named placeholders are `{worktree}`, `{repository}`, `{context}`,
 `{data}` and `{port}`. Commands come only from administrator configuration.
 
 ```json
 "workflow": {
+  "enabled": false,
   "automatic": false,
   "automatic_since": "2026-09-07T00:00:00+00:00",
   "repository": "../../../unfertig",
