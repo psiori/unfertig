@@ -6,12 +6,14 @@
   const button = document.querySelector('#process-run');
   const state = document.querySelector('#processing-state');
   const details = document.querySelector('#processing-details');
+  const mark = document.querySelector('.capture-mark');
   function changed() { active = true; queueMicrotask(() => { if (latest) render(latest); }); }
   document.addEventListener('unfertig:ideas-rendered', () => { if (latest) render(latest); });
   for (const name of ['input', 'change', 'pointerdown', 'keydown']) document.addEventListener(name, changed, {passive:true});
   function render(result) {
     latest = result;
     const running = result.status === 'running';
+    mark.classList.toggle('is-processing', running);
     const pending = (data?.ideas || []).filter(idea => idea.routing?.status !== 'routed' && !(data?.todos || []).some(todo => todo.source_ideas.includes(idea.id))).length;
     button.disabled = starting || running || !result.enabled || !result.available || compatibility.read_only || history.pending || !pending || hasDraft();
     button.textContent = running ? 'Creating todos…' : 'Create todos with Codex';
