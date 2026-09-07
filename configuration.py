@@ -5,8 +5,8 @@ from pathlib import Path
 import subprocess
 import socket
 import errno
-import hashlib
 import re
+from board_identity import project_identity
 from urllib.parse import urlsplit
 from versions import inspect, migrate, VersionError
 
@@ -190,7 +190,7 @@ def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
             raise ValueError(f'Board owner {owner} does not match configured parent {expected}.')
     elif selected is None and data is None and owner and owner != git_root(app_root):
         raise ValueError('Default board belongs to an unexpected repository.')
-    project_id = settings.get('project_id', hashlib.sha256(str(path).encode()).hexdigest()[:32])
+    project_id = project_identity(settings, path, base)
     if not isinstance(project_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', project_id):
         raise ValueError('project_id must contain 1–100 letters, digits, underscores or hyphens.')
     enabled = transports(settings.get('transports', {'http': True, 'filesystem': False}))
