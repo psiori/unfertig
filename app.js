@@ -230,7 +230,7 @@ function todoSummary(todo, {key = todo.id, project = "", priorityHTML = ""} = {}
 }
 function todoCard(todo) {
   return `<details class="todo ${todo.status}" id="todo-${todo.id}" data-id="${todo.id}" ${expanded.has(todo.id) ? 'open' : ''}>${todoSummary(todo)}
-  <section class="workflow-panel" data-workflow="${todo.id}" aria-label="Implementation workflow"></section>
+  <section class="workflow-panel" hidden data-workflow="${todo.id}" aria-label="Implementation workflow"></section>
   <form class="todo-editor" data-id="${todo.id}"><p class="provenance">Entered by ${escapeHTML(todo.author)} · ${escapeHTML(date(todo.date_entered))} · Structured by ${escapeHTML(todo.created_by)}${todo.source_ideas.length ? ' · From ' + todo.source_ideas.join(', ') : ''}${todo.status === 'closed' ? ' · Closed by ' + escapeHTML(todo.closed_by) + ' on ' + escapeHTML(date(todo.date_closed)) : ''}</p>
   ${field('Short name','name',todo.name,'required maxlength="300"')}
   <label>Detailed description <textarea name="description" rows="5" required>${escapeHTML(todo.description)}</textarea></label>

@@ -47,7 +47,7 @@ class WorkflowTests(unittest.TestCase):
         executable.write_text('#!'+sys.executable+'\nimport pathlib,subprocess,sys\nsys.stdin.read()\npathlib.Path(sys.argv[sys.argv.index("-o")+1]).write_text("UNFERTIG_IMPLEMENTATION_COMPLETE")\npathlib.Path("result").write_text("implemented")\nsubprocess.run(["git","add","result"],check=True)\nsubprocess.run(["git","commit","-qm","Implement test task"],check=True)\nprint("Implementation complete",flush=True)\n')
         executable.chmod(0o755)
         self.processing=processing_settings(dict(executable=str(executable)),self.root,self.repo,self.repo)
-        self.options=settings(dict(repository=str(self.repo), test=[sys.executable,'-c','print("checks passed")'],
+        self.options=settings(dict(enabled=True,repository=str(self.repo), test=[sys.executable,'-c','print("checks passed")'],
             preview=[sys.executable,'-m','http.server','{port}','--bind','127.0.0.1'],preview_url='http://127.0.0.1:{port}',
             restart=[sys.executable,'-c','print("restarted")']),self.root,self.processing,'embedded')
         self.workflow=Workflow(self.store,'http://127.0.0.1:1',self.options,self.processing)
@@ -125,6 +125,43 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(todo['workflow']['phase'],'restarting',todo)
         self.assertTrue((self.repo/'result').exists())
         self.assertIn('merge_commit',todo['workflow'])
+
+    def test_feature_switch_defaults_migration_and_backend_gate(self):
+        defaults=settings({},self.root,self.processing,'embedded')
+        self.assertFalse(defaults['enabled']);self.assertFalse(defaults['automatic'])
+        for value in ('true', 1, None):
+            with self.assertRaises(ValueError):settings({'enabled':value},self.root,self.processing,'embedded')
+        migrated=migrate({'format_version':'1.5.0','workflow':{'automatic':True,'extension':42}},'config')
+        self.assertEqual(migrated['workflow'],{'enabled':False,'automatic':True,'extension':42})
+        self.assertEqual(migrate(migrated,'config'),migrated)
+        self.assertFalse(settings(migrated['workflow'],self.root,self.processing,'embedded')['automatic'])
+        self.assertFalse(settings({'enabled':True},self.root,self.processing,'aggregation')['enabled'])
+        self.options.update(enabled=False,automatic=True)
+        before=self.store.snapshot()['data']
+        for action in ('implement','retry','test','merge'):
+            with self.assertRaisesRegex(ValueError,'disabled'):self.workflow.start({'action':action})
+        with patch.object(self.workflow,'reconcile') as reconcile, patch.object(self.workflow,'start') as start:
+            self.workflow.tick();reconcile.assert_not_called();start.assert_not_called()
+        self.assertEqual(self.store.snapshot()['data'],before)
+        self.assertFalse(self.workflow.status()['enabled'])
+
+    def test_disabled_http_actions_are_rejected_with_valid_token(self):
+        from server import Server
+        from urllib.request import Request,urlopen
+        from urllib.error import HTTPError
+        import threading
+        server=Server(('127.0.0.1',0),self.store);server.workflow=self.workflow
+        self.options['enabled']=False
+        worker=threading.Thread(target=server.serve_forever,daemon=True);worker.start()
+        try:
+            for action in ('implement','retry','test','merge'):
+                request=Request(f'http://127.0.0.1:{server.server_port}/api/workflow/action',
+                    data=json.dumps({'action':action}).encode(),method='PUT',
+                    headers={'X-Board-Token':server.token,'Content-Type':'application/json'})
+                with self.assertRaises(HTTPError) as error:urlopen(request)
+                self.assertEqual(error.exception.code,403)
+                self.assertIn('disabled',error.exception.read().decode())
+        finally:server.shutdown();server.server_close();worker.join()
 
     def test_defaults_and_original_system_eligibility(self):
         self.assertFalse(settings({},self.root,self.processing,'embedded')['automatic'])

@@ -22,11 +22,12 @@ ACTIVE = {'implementing', 'testing', 'merging'}
 def settings(value, base, processing, mode):
     if not isinstance(value, dict):
         raise ValueError('workflow must be an object.')
-    result = dict(automatic=False, automatic_since='', repository='', base_branch='main',
+    result = dict(enabled=False, automatic=False, automatic_since='', repository='', base_branch='main',
                   test=[], preview=[], preview_url='', restart=[], timeout_seconds=3600)
     result.update(value)
-    if type(result['automatic']) is not bool:
-        raise ValueError('workflow.automatic must be boolean.')
+    for key in ('enabled', 'automatic'):
+        if type(result[key]) is not bool:
+            raise ValueError(f'workflow.{key} must be boolean.')
     for key in ('automatic_since', 'repository', 'base_branch', 'preview_url'):
         if not isinstance(result[key], str):
             raise ValueError(f'workflow.{key} must be text.')
@@ -54,7 +55,8 @@ def settings(value, base, processing, mode):
             repository = (context / declared).resolve()
     result['repository'] = str(repository)
     # An aggregator has no implementation records and must never launch jobs.
-    result['automatic'] = result['automatic'] and mode != 'aggregation'
+    result['enabled'] = result['enabled'] and mode != 'aggregation'
+    result['automatic'] = result['automatic'] and result['enabled']
     return result
 
 
@@ -101,7 +103,7 @@ class Workflow:
                 if todo['id'] not in self.previews or self.previews[todo['id']].poll() is not None:
                     run.pop('preview_url', None)
                 runs[todo['id']] = run
-            return dict(automatic=self.options['automatic'], repository=self.options['repository'],
+            return dict(enabled=self.options['enabled'], automatic=self.options['automatic'], repository=self.options['repository'],
                         web_preview=bool(self.options['preview_url']), configured=bool(self.options['test'] and self.options['preview'] and self.options['restart']),
                         busy=bool(self.worker and self.worker.is_alive()), runs=runs)
 
@@ -124,6 +126,8 @@ class Workflow:
 
     def start(self, body, automatic=False):
         with self.lock:
+            if not self.options['enabled']:
+                raise ValueError('Implementation workflow is disabled in configuration.')
             if self.stopping or (self.worker and self.worker.is_alive()):
                 raise ValueError('A workflow stage is already running on this board.')
             snap = self.snapshot()
@@ -423,6 +427,8 @@ Use uv for Python. Commit the finished implementation. End your final response w
             self.save(todo['id'], run, **fields)
 
     def tick(self):
+        if not self.options['enabled']:
+            return
         try:
             self.reconcile()
         except (OSError, ValueError, Conflict):

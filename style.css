@@ -96,3 +96,5 @@
 .workflow-panel p { margin: 9px 0; font-size: 13px; }
 .workflow-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; font-size: 12px; }
 .workflow-panel details > summary { cursor: pointer; font-size: 13px; }
+
+.workflow-panel[hidden] { display: none; }

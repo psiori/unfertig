@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.5.0`.
+`format_version` is a major.minor.build string. Current storage is `1.6.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -103,3 +103,11 @@ Foreign claims cannot be taken over automatically. Interrupted stages require
 explicit retry. Versioned deployment receipts beside retained worktrees are local
 runtime evidence keyed by run and exact commit; newer-minor receipts cannot
 complete an older writer's job. Preview data and logs remain local there.
+
+
+Format **1.6.0** adds the workflow.enabled feature gate. The sequential 1.5 → 1.6
+migration inserts enabled:false when absent, preserving explicit values, automatic
+preferences, existing claims and unknown fields. Automatic behavior also requires
+the feature gate. Older writers become read-only, preventing them from ignoring
+the disabled feature. Migration and receipt recovery retain the shared storage
+contract; no task records are altered except version metadata.

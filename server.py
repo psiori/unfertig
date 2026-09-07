@@ -274,6 +274,9 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(self.server.store, BoardStore):
                 if self.path == '/api/workflow/action':
                     require(self.server.workflow is not None, 'Workflow is unavailable.')
+                    if not self.server.workflow.options['enabled']:
+                        self.reply(403, {'error': 'Implementation workflow is disabled in configuration.'})
+                        return
                     self.reply(200, self.server.workflow.start(body))
                     return
                 if self.path in ('/api/processing/start', '/api/processing/presence'):

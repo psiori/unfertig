@@ -4,6 +4,8 @@
   function render() {
     if (!latest) return;
     document.querySelectorAll('[data-workflow]').forEach(panel => {
+      panel.hidden = latest.enabled !== true;
+      if (panel.hidden) { panel.innerHTML = ''; delete panel.dataset.rendered; return; }
       const id = panel.dataset.workflow, todo = data.todos.find(t => t.id === id);
       if (!todo) return;
       const run = latest.runs[id];
@@ -37,7 +39,7 @@
     const button = event.target.closest('[data-workflow-action]');
     if (!button) return;
     event.preventDefault(); event.stopPropagation();
-    if (sending || button.disabled || hasDraft()) return;
+    if (!latest?.enabled || sending || button.disabled || hasDraft()) return;
     const id = button.dataset.todo, action = button.dataset.workflowAction, run = latest.runs[id];
     if (action === 'merge' && !confirm(`Merge ${run.branch} at ${run.commit.slice(0,12)}, push it and restart the configured artifact?`)) return;
     sending = true; button.disabled = true;
