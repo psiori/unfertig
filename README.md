@@ -853,3 +853,28 @@ refs, installs or requests restart. Observations expire after two minutes; error
 are unknown, never current. API reads do no network work. No-Git previews cannot
 claim currency and do not contact the remote. Deployment remains independent
 from task publication.
+
+### Tab view state
+
+A tab with no saved view for the board starts with **Open + started**, empty
+search/group/tag/project filters, priority sorting, and grouping/show-processed
+off. These initial defaults were already the board's defaults. Reloading the
+same tab restores its search, all filters, sorting, grouping and processed-idea
+visibility, including explicit **Closed** or **All statuses** selections and
+**Clear filters**. A saved view also takes precedence over a task/idea hash on
+reload; a fresh hash link retains its initial reveal behavior.
+
+Views use optional `sessionStorage`, qualified by project identity and canonical
+board data location (within the browser origin). Another board gets its own view;
+a fresh tab/session without saved state gets the defaults. Browser duplication
+or session recovery may copy an existing tab's session and thus continue its view.
+Old global localStorage view preferences are ignored because they cannot identify
+a board or tab; saved initials remain unchanged. Missing/invalid fields use their
+initial defaults; obsolete group/tag/project selections clear after choices load.
+Aggregate selections wait for source choices and work with either transport.
+
+This version-1 browser cache is disposable, never a record/configuration format or
+an input to board migrations. Invalid or unsupported cache envelopes are reset;
+unknown cache fields are ignored. If browser storage is blocked/full, controls
+still work, but reload persistence is unavailable. No task status or stored record
+changes when selecting or restoring a view.
