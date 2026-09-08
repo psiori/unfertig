@@ -501,6 +501,8 @@ class BoardStore:
                         record = migrate(record, 'todo')
                         if inspect(record)[0] == 'read_only':
                             raise VersionError('Cannot write a newer minor data format.')
+                    if kind == 'todos' and old['status'] == 'closed' and record['status'] != 'closed':
+                        record['completion_summary'] = ''
                     # A Save that only refreshes bookkeeping is not a meaningful edit.
                     meaningful = lambda r: {k: v for k, v in r.items() if k != 'updated_at'}
                     if meaningful(record) == meaningful(old):
