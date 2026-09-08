@@ -187,3 +187,27 @@ test('conflict progress and waiting cause remain visible in pipeline and ticket 
   result.runs.T0001.phase='resolution_blocked';result.runs.T0001.message='Blocked — user input required: missing requirements';
   await poll();assert.match(panel.innerHTML,/Skip & continue queue/);assert.match(row.innerHTML,/missing requirements/);
 });
+
+test('closed history, external completion and uncertain activity agree across all controls',async()=>{
+  let poll;
+  const panel={dataset:{workflow:'T0001'},querySelector:()=>null};
+  const slot={dataset:{workflowNext:'T0001'}};
+  const pipeline={};
+  const run={phase:'historical',historical_phase:'implementation_failed',message:'Original failure',can_complete_external:true};
+  const result={enabled:true,configured:true,runs:{T0001:run}};
+  const context={document:{querySelectorAll:s=>({'[data-workflow]':[panel],'[data-workflow-next]':[slot],'[data-integration-pipeline]':[pipeline]}[s]||[]),addEventListener:()=>{}},
+    AbortSignal,token:'token',data:{todos:[{id:'T0001',status:'closed'}]},compatibility:{read_only:false},history:{pending:false},
+    escapeHTML:s=>s,setInterval:f=>poll=f,setTimeout:()=>{},fetch:async()=>({ok:true,json:async()=>result})};
+  vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
+  for(const phase of ['historical','superseded']) {
+    run.phase=phase;await poll();assert.equal(slot.hidden,true);
+    assert.doesNotMatch(panel.innerHTML,/data-workflow-action="(?:retry|merge|test)"/);
+    assert.match(panel.innerHTML,/Completed externally/);
+    assert.match(panel.innerHTML,/Original failure/);
+    assert.match(pipeline.innerHTML,/Needs attention <span>0/);
+    assert.match(pipeline.innerHTML,/Historical \/ superseded <span>1/);
+  }
+  run.phase='activity_unknown';run.activity_block='Worker still running';run.can_complete_external=false;
+  await poll();assert.equal(slot.hidden,false);assert.match(slot.innerHTML,/disabled/);
+  assert.match(pipeline.innerHTML,/Needs attention <span>1/);
+});

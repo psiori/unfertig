@@ -233,3 +233,12 @@ same protected claim phases, queue decisions, ordering and diagnostics; ordinary
 mutations cannot forge them. Transport switching retains action identity and
 workflow evidence through BoardStore. Older writers are read-only. Queue controls
 use /api/workflow/action, never a filesystem shortcut around owner authorization.
+
+Format 1.15 adds protected `workflow.external_completions`. Both adapters expose
+and preserve the full attempt and reconciliation history through edits, reopenings,
+conflicts, journal recovery and receipt retries after switching transport. Shared
+validation rejects malformed evidence; ordinary writers cannot forge or remove it.
+The owning HTTP service alone performs `complete_external`; filesystem discovery
+never launches it or migrates a source. Aggregate details retain the raw protected
+history and link to the owner for reconciliation. Status-derived historical versus
+active presentation is an owner-service observation, not a filesystem liveness claim.

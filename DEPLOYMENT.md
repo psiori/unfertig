@@ -129,3 +129,13 @@ or migration was attempted. It keeps all evidence and does not start tools. Once
 installation may have begun, resume forward; automatic rollback across a changed
 storage format is deliberately unavailable. Keep backups until recovery is no
 longer needed. Do not label a published or migration-pending task as deployed.
+
+**Completed externally** is distinct from Recover deployment. It only gathers
+read-only evidence and appends protected reconciliation history for an old attempt,
+including replacement PRs lacking original commit/publication evidence. It never
+invokes host deploy/recover or manufactures a successful deployment receipt. A
+merged PR establishes integration only after verifying GitHub's merge revision on
+origin/main; manual closure alone establishes neither integration nor deployment.
+The managed runtime verifier checks both committed wrapper pins, installed revision,
+running startup revision and writable owner history independently. Missing or
+contradictory evidence stays unverified. See README for the API and reopening rules.
