@@ -206,7 +206,7 @@ class RecordTests(unittest.TestCase):
 
     def test_api_new_protocol_and_old_client_rejection(self):
         server = Server(('127.0.0.1', 0), self.store)
-        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True); thread.start()
         try:
             url = f'http://127.0.0.1:{server.server_port}'
             with urlopen(url+'/api/state') as r: state = json.load(r)

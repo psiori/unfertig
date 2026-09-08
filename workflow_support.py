@@ -136,8 +136,12 @@ def main():
     if args.stage=='test':
         run(['git','diff','--check'],repo)
         if args.kind=='unfertig':
-            run([uv,'run','--no-project','--python','3.12','python','-m','unittest','discover','-q'],repo)
-            run(['node','--test',*[str(p) for p in sorted(repo.glob('test_*.cjs'))]],repo)
+            runner = repo / 'suite_runner.py'
+            if runner.is_file():
+                run([uv,'run','--no-project','--python','3.12','python',str(runner),'--javascript'],repo)
+            else:
+                run([uv,'run','--no-project','--python','3.12','python','-m','unittest','discover','-q'],repo)
+                run(['node','--test',*[str(p) for p in sorted(repo.glob('test_*.cjs'))]],repo)
         elif args.kind=='kermit':
             run([uv,'run','--locked','python','-m','unittest','discover','-s','tests','-q'],repo)
         elif args.kind=='native':

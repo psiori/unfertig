@@ -140,7 +140,7 @@ class ApiTests(unittest.TestCase):
         self.path = Path(self.temp.name) / 'data.json'
         self.path.write_text(json.dumps(fixture()))
         self.server = Server(('127.0.0.1', 0), Store(self.path))
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         self.thread.start()
         self.url = f'http://127.0.0.1:{self.server.server_port}'
         self.addCleanup(self.cleanup)

@@ -11,6 +11,51 @@ from storage import Conflict
 from versions import migrate, FORMAT_VERSION
 
 class ContextWorkflowTests(unittest.TestCase):
+    def test_preview_checks_primary_once_and_starts_real_listener(self):
+        import urllib.request
+        self.um(); self.changed = {'context', 'project'}; self.implement()
+        command = self.workflow.command
+        calls = []
+        def count(argv, *args, **kwargs):
+            calls.append(tuple(argv))
+            return command(argv, *args, **kwargs)
+        from context_workflow import metadata_checks
+        with patch.object(self.workflow, 'command', side_effect=count), \
+             patch('context_workflow.metadata_checks', wraps=metadata_checks) as metadata:
+            todo = self.run_stage('test')
+        self.assertEqual(todo['workflow']['phase'], 'tested', todo['workflow']['message'])
+        self.assertEqual(calls.count(tuple(self.workflow.options['test'])), 1)
+        self.assertEqual(metadata.call_count, 1)
+        with urllib.request.urlopen(todo['workflow']['preview_url'], timeout=2) as response:
+            self.assertEqual(response.status, 200)
+
+    def test_preview_missing_or_invalidated_evidence_rechecks(self):
+        from context_workflow import finish
+        self.um(); self.changed = {'project'}; self.implement()
+        command = self.workflow.command
+        for missing in (True, False):
+            calls = []
+            def count(argv, *args, **kwargs):
+                calls.append(tuple(argv))
+                return command(argv, *args, **kwargs)
+            def checked(*args, **kwargs):
+                result = finish(*args, **kwargs)
+                return {} if missing else result
+            with patch.object(self.workflow, 'command', side_effect=count), \
+                 patch('context_workflow.finish', side_effect=checked), \
+                 patch('preview_check.PreviewCheck.consume', return_value=False):
+                todo = self.run_stage('test')
+            self.assertEqual(todo['workflow']['phase'], 'tested', todo['workflow']['message'])
+            self.assertEqual(calls.count(tuple(self.workflow.options['test'])), 2)
+
+    def test_preview_failure_blocks_listener_and_other_repository_checks_remain(self):
+        self.um(); self.changed = {'context', 'project'}; self.implement()
+        with patch.object(self.workflow, 'command', side_effect=ValueError('injected test failure')):
+            todo = self.run_stage('test')
+        self.assertNotEqual(todo['workflow']['phase'], 'tested')
+        self.assertIn('injected test failure', todo['workflow']['message'])
+        self.assertFalse(self.workflow.previews)
+
     setUp=fixtures.WorkflowTests.setUp
     git=fixtures.WorkflowTests.git
     def run_stage(self,action,wait=True):
