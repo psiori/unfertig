@@ -36,3 +36,11 @@ block Preview. Other changed repositories still run their configured checks.
 Actual preview startup/readiness and exact integration/deployment gates remain
 mandatory. Tokens are never saved, recovered after restart, or reused between
 actions. This is not cross-stage verification caching.
+
+View-state regression: `node --test test_view_state.cjs` covers the tab cache and
+recovery defaults. Against a disposable declared preview, run
+`node browser_view_state.cjs` with Playwright installed, optionally selecting it
+via `PLAYWRIGHT_MODULE`, Chromium via `CHROMIUM`, and the preview URL via
+`VIEW_PREVIEW_URL`. The browser check uses mocked disposable board snapshots,
+new browser state, desktop/narrow screenshots in `/tmp`, real reloads and both
+aggregate transport presentations. Never point it at a live board.
