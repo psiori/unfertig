@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import subprocess
 import tempfile
 import threading
 import webbrowser
@@ -410,6 +411,14 @@ def main():
             store.close()
             return
         if not (args.apply or args.snapshot or args.retry_history):
+            # Capture the loaded service revision once. A later checkout change
+            # must not make an old process claim to serve the new implementation.
+            try:
+                revision = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'],
+                                          capture_output=True, text=True, timeout=10)
+                store.context['runtime_commit'] = revision.stdout.strip() if revision.returncode == 0 else ''
+            except (OSError, subprocess.SubprocessError):
+                store.context['runtime_commit'] = ''  # Archive installs can serve, but cannot attest a Git deployment.
             server = Server(("127.0.0.1", port), store)
         if not store.path.exists() and not store.journal.exists():
             store.create_starter()
