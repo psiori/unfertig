@@ -33,6 +33,19 @@ and deployment state at handoff. Do not leave maintenance edits on main where
 they block unrelated workflow merges. Preserve active worktrees and receipts;
 cleanliness is not a reason to delete unfinished work.
 
+## UM context runs
+
+For new UM runs, and legacy runs explicitly expanded by the owner's Retry action,
+the supplied repository mapping overrides the legacy single-worktree instructions
+below. The UM worktree is always available for task-related design, concepts,
+decisions, evidence and notes; declared available children have independent
+worktrees. Resolve policy references against the original read-only context.
+Do not modify live board/runtime state or original checkouts. Commit in each
+owning branch; the coordinator publishes meaningful checkpoints and creates PRs
+only for changed repositories. Report every available repository's actual HEAD.
+The coordinator integrates children before wrapper pins and retains partial
+publication evidence. Migration alone never expands historical authorization.
+
 ## Implementing a todo
 
 The canonical briefing text is `agent_advice.json`. The server-generated browser
