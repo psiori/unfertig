@@ -20,3 +20,5 @@ and run `test_transports` plus the full suite. Put record semantics in BoardStor
 and common validation/context helpers; never implement a weaker filesystem writer.
 Add recovery and transport-switch scenarios to the shared conformance suite.
 See TRANSPORTS.md for configuration, coordination, and compatibility boundaries.
+
+Read the located process and authoritative task/originals and verify the ID and repository before work or status changes; stop dependent work on missing files. Follow agent_advice.json for local commits, explicit push authorization and no-change/no-branch handling. Closure reports belong in completion_summary, separate from requirements; managed workers hand results to the coordinator.
