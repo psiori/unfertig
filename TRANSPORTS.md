@@ -267,3 +267,12 @@ or retry grants. Instance maintenance and hook retries are owner-local operation
 through /api/maintenance; filesystem aggregation does not execute another board's
 hooks or request its restart. The owning server reconciles durable events after
 startup with the same version, transaction and history guards.
+
+## Instance settings
+
+`/api/settings` is an owner-service operation, alongside worker capacity.
+Aggregation and filesystem adapters do not edit source configuration or assert
+its live settings. Both continue to resolve the same unchanged configuration
+fields and preserve all records, workflow claims and permissions. Settings edits
+do not change transport configuration or permit fallback writes to source config.
+The common conformance suite remains required; no transport/storage version changes.

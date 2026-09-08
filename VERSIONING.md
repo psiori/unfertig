@@ -343,3 +343,14 @@ The host queue and restart request are a separate schema_version:1 contract; the
 application acknowledgement carries format_version and restart protocol_version
 1.0.0. Session matching prevents stale acknowledgements from authorizing updates.
 The host rejects unknown queue schemas; future formats need sequential migrations.
+
+## Instance settings API (unchanged storage 1.20)
+
+The additive owner-service `/api/settings` view and mutation edit only existing
+`project_name`, `workflow.max_workers`, `processing.idle_seconds` and
+`processing.closed_seconds`. They introduce no stored fields, formats, permission
+grants, receipts or config mirrors. No migration or version successor is needed.
+Existing sequential migrations, compatibility guards, defaults, extension
+preservation, configuration journal/history recovery and the host partial-override
+contract remain in force. Revisions and effective values are ephemeral. Browser
+session drafts are disposable UI state, not an alternative configuration source.

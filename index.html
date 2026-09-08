@@ -17,6 +17,7 @@
   <script src="/workflow.js" defer></script>
   <script src="/maintenance.js" defer></script>
   <script src="/worker-capacity.js" defer></script>
+  <script src="/instance-settings.js" defer></script>
 </head>
 <body>
   <header class="masthead">
@@ -27,7 +28,7 @@
         <div class="history-banner"><span id="history-state"></span> <button id="history-retry" class="button small" hidden>Retry Git commit</button></div>
       </div>
     </div>
-    <div class="header-right"><span class="local-label"><span class="live-dot"></span> LOCAL & YOURS</span><form id="worker-capacity" class="local-label" aria-label="Worker capacity"><span class="live-dot" data-state="unknown" role="img" aria-label="Unknown"></span><label><span data-capacity-label>WORKERS ?/</span><input type="number" min="1" max="8" step="1" required aria-label="Maximum concurrent workers" aria-describedby="worker-capacity-message" disabled></label><button type="submit" class="button small" hidden>Save</button></form><label class="identity">Initials <input id="initials" aria-label="Your initials" title="Used for your new records and actions; existing attribution stays unchanged" placeholder="SL" maxlength="12" pattern="[A-Za-z][A-Za-z0-9]{0,11}"></label></div>
+    <div class="header-right"><span class="local-label"><span class="live-dot"></span> LOCAL & YOURS</span><form id="worker-capacity" class="local-label" aria-label="Worker capacity"><span class="live-dot" data-state="unknown" role="img" aria-label="Unknown"></span><label><span data-capacity-label>WORKERS ?/</span><input type="number" min="1" max="8" step="1" required aria-label="Maximum concurrent workers" aria-describedby="worker-capacity-message" disabled></label><button type="submit" class="button small" hidden>Save</button></form><label class="identity">Initials <input id="initials" aria-label="Your initials" title="Used for your new records and actions; existing attribution stays unchanged" placeholder="SL" maxlength="12" pattern="[A-Za-z][A-Za-z0-9]{0,11}"></label><button type="button" id="open-settings" class="icon-button" aria-label="Instance settings" title="Instance settings" aria-haspopup="dialog">⚙</button></div>
   </header>
   <p id="worker-capacity-message" class="capacity-message" role="status"></p>
   <main>
@@ -61,6 +62,17 @@
     </section>
     <footer><span><span class="live-dot"></span> <span id="board-location">Loading board location…</span> · local Git history</span><span>A small step is still a step. ✳</span></footer>
   </main>
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-heading"><div><p class="eyebrow">MAKE ROOM FOR YOUR WORK</p><h2 id="settings-title">Instance settings</h2></div><button type="button" class="icon-button" id="close-settings" aria-label="Close settings">×</button></div>
+    <p id="settings-layer" class="hint"></p>
+    <p class="hint">All four settings take effect without a restart after a successful save.</p>
+    <form id="settings-form"><div id="settings-fields"></div>
+      <p class="hint">These changes do not enable automation or authorize publication, merging or deployment.</p>
+      <p id="settings-message" role="status" aria-live="polite"></p>
+      <div id="settings-comparison" hidden><h3>Latest saved settings</h3><p class="hint">Your draft is unchanged above. Review these values before choosing to keep your draft or use the saved values.</p><dl id="settings-latest"></dl><div class="settings-review"><button type="button" class="button" id="settings-keep">Keep draft against this version</button><button type="button" class="button" id="settings-use">Use saved values</button></div></div>
+      <div class="dialog-actions"><button type="button" class="button" id="settings-refresh">Compare latest</button><button type="submit" class="button primary" id="settings-save" disabled>Save settings</button></div>
+    </form>
+  </dialog>
   <dialog id="create-dialog"><form id="create-form"><div class="dialog-heading"><div><p class="eyebrow">FROM THOUGHT TO ACTION</p><h2>A new little step</h2></div><button type="button" class="icon-button" data-close="create-dialog" aria-label="Close">×</button></div><label>Short name<input name="name" required maxlength="300" placeholder="A clear, actionable heading"></label><label>Detailed description<textarea name="description" required rows="6" placeholder="What should change? What does done look like?"></textarea></label><div class="form-grid"><label>Priority<select name="priority"><option>normal</option><option>low</option><option>high</option><option>urgent</option></select></label><label>Group<input name="group" list="groups" placeholder="e.g. City"></label></div><label>Tags <span class="hint">comma separated</span><input name="tags" placeholder="generation, visuals"></label><p id="create-source" class="hint"></p><div class="dialog-actions"><button type="button" class="button" data-close="create-dialog">Cancel</button><button type="submit" class="button primary">Create todo ↗</button></div></form></dialog>
   <dialog id="copy-dialog"><div class="dialog-heading"><div><p class="eyebrow">READY TO COPY</p><h2 id="copy-title">Your briefing</h2></div><button class="icon-button" data-close="copy-dialog" aria-label="Close">×</button></div><p id="copy-help">Copy this text and paste it into Codex, Claude, or Cursor.</p><textarea id="copy-text" rows="16" readonly aria-label="Text to copy"></textarea><div class="dialog-actions"><span id="copy-status" role="status"></span><button class="button primary" id="copy-again">Copy text</button></div></dialog>
   <datalist id="groups"></datalist>
