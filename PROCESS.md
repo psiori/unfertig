@@ -507,3 +507,14 @@ Unfertig blocks a duplicate when that worker is still alive or launch outcome is
 unknown. Do not delete evidence or take over a live worker. For an uncertain
 launch, an operator must establish that no worker remains before archiving the
 local receipt and retrying; never infer that a service restart killed its child.
+
+## Migration-aware integration
+
+Follow [DEPLOYMENT.md](DEPLOYMENT.md). The managed Unfertig coordinator assesses
+the exact tested candidate against disposable live-state copies before publication
+or shutdown. Storage changes pause at Migration review. Migrate & deploy needs
+explicit approval bound to that candidate; automatic delivery flags do not grant
+it. Recover a published deployment through the public action/host CLI, checking
+GitHub first, without remerging or rewriting claims. Report published, installed,
+migration-pending and verified deployed states separately. The wrapper owns
+startup reservation, exact backup, transactional migration and coordinated pins.

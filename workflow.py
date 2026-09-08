@@ -860,7 +860,7 @@ def deploy(payload):
         ok, message = False, str(error)
     receipt = Path(payload['receipt'])
     temporary = receipt.with_suffix('.tmp')
-    temporary.write_text(json.dumps(dict(format_version='1.5.0', commit=payload['commit'], ok=ok, message=message)))
+    temporary.write_text(json.dumps(dict(format_version='1.9.0', commit=payload['commit'], ok=ok, message=message)))
     os.replace(temporary, receipt)
 
 
