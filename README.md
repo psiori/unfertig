@@ -644,3 +644,33 @@ reports require explicit review that publication was the sole blocker. Changed
 scope, dirty work, contradictory evidence and active/uncertain workers block
 recovery. Worker tool approvals remain with the trusted execution approval service;
 a board edit cannot grant permission. See PROCESS.md and VERSIONING.md.
+
+### UM task context and multiple repositories
+
+New runs on a UM board always receive an isolated worktree for the board-owning
+UM repository. Its declared `project` or schema-2 `projects` supply code targets;
+company/client directory containers do not implicitly grant access to descendants.
+The worker is given explicit worktree mappings, including reverse metadata
+contexts. Unavailable checkouts stay unavailable; they are never cloned implicitly.
+
+Task-related design, concepts, decisions, sources and notes can be committed to
+the UM worktree. Live `state/`, `tools/` and child pins remain coordinator-owned.
+Each repository uses its own Git identity. Only repositories with meaningful
+changes get a PR; a concept-only task does not need a code commit or code PR.
+The worker reports every available repository's ID and actual commit. The
+coordinator verifies clean worktrees, publishes checkpoints and tests the result.
+
+`workflow.repository` remains the primary artifact for existing test/preview/
+restart recipes. Additional children use `workflow.repositories` keyed by their
+stable artifact IDs (`project` for a legacy singular child, `context` for the UM
+repository), with argv-array `test`, optional `preview`/`restart` and `base_branch`.
+Changed code without a test recipe is blocked. Context validation defaults to
+whitespace and changed-JSON checks; configure a context test for stronger checks.
+Only the configured primary preview is launched by Test branch.
+
+The UI lists each repository's PR and progress. Integration acquires ordered Git
+locks, tests exact candidates, reconciles already-merged PRs and publishes children
+before updating wrapper pins. Partial publication is retained and recoverable;
+GitHub does not offer an atomic transaction across independent repositories.
+Context-only work closes after publication; configured runtime restarts retain
+separate evidence. Existing single-repository runs are not silently expanded.

@@ -144,15 +144,18 @@ class Workflow:
                     run['phase'] = 'activity_unknown'
                     run.pop('resume_action', None)
                 from managed_completion import recovery_view
-                run.update(recovery_view(self, todo, run, activity))
-                run['can_complete_external'] = not activity and not run.get('foreign') and (
+                if run.get('repositories'):
+                    run['can_verify_existing']=False
+                else:
+                    run.update(recovery_view(self, todo, run, activity))
+                run['can_complete_external'] = not run.get('repositories') and not activity and not run.get('foreign') and (
                     run['phase'] in {'historical', 'superseded', 'interrupted', 'handoff_blocked', 'implementation_failed',
                                     'test_failed', 'merge_failed', 'push_failed', 'restart_failed', 'resolution_blocked', 'ready', 'tested'})
                 if todo['id'] not in self.previews or self.previews[todo['id']].poll() is not None:
                     run.pop('preview_url', None)
                 runs[todo['id']] = run
             return dict(enabled=self.options['enabled'], automatic=self.options['automatic'], repository=self.options['repository'],
-                        web_preview=bool(self.options['preview_url']), configured=bool(self.options['test'] and self.options['preview'] and self.options['restart']),
+                        web_preview=bool(self.options['preview_url']), configured=bool(self.options['test'] and self.options['preview'] and self.options['restart']) or (Path(snapshot.get('context',{}).get('repository',''))/'node.json').is_file(),
                         busy=bool(self.active_workers()), active_count=len(self.active_workers()),
                         max_workers=self.options['max_workers'], draining=self.draining(), runs=runs,
                         queue_blocked_by=blocker['id'] if blocker else None,
@@ -421,6 +424,8 @@ class Workflow:
                 raise ValueError('This ticket already has an active or queued stage.')
             if snap['revisions']['todos'][ident] != body.get('revision'):
                 raise Conflict('Todo changed. Reload and review before starting.')
+            if action == 'complete_external' and todo.get('workflow',{}).get('repositories'):
+                raise Conflict('Use multi-repository integration to verify each external PR; single-PR external completion cannot prove this entire run.')
             if action == 'complete_external':
                 if automatic:
                     raise Conflict('External completion requires an explicit owner action.')
@@ -431,7 +436,8 @@ class Workflow:
                 raise Conflict('Ticket is closed. Reopen and review it before retrying historical work.')
             if todo.get('workflow', {}).get('external_completions'):
                 raise Conflict('This attempt is superseded. Create a follow-up todo for new implementation.')
-            if not all(self.options[k] for k in ('test', 'preview', 'restart')):
+            from context_workflow import declarations
+            if declarations(self) is None and not all(self.options[k] for k in ('test', 'preview', 'restart')):
                 raise ValueError('Configure workflow.test, preview and restart commands for this project first.')
             old = todo.get('workflow')
             if old and old.get('system') != system_id():
@@ -469,6 +475,8 @@ class Workflow:
                            phase='implementing', message='Creating an isolated implementation branch…',
                            publication_authorization=dict(repository=str(repository), branch=f'codex/{ident.lower()}-{key[:8]}',
                                run_id=key, source='owner_action', request_id=request_id or key))
+                from context_workflow import plan
+                plan(self, run)
                 # The queue claim and request receipt are saved atomically below.
             else:
                 if not old:
@@ -488,12 +496,27 @@ class Workflow:
                     raise Conflict('Branch changed; review its current commit before merging.')
                 if action != 'retry' and self.git('status', '--porcelain', cwd=run['worktree']):
                     raise ValueError('Branch worktree has uncommitted changes.')
-                if action == 'verify_existing':
+                if run.get('repositories'):
+                    from context_workflow import guard
+                    guard(self, run)
+                    if action != 'retry' and body.get('repositories') != run.get('repository_heads'):
+                        raise Conflict('Review all repository commits before continuing this context run.')
+                if action == 'verify_existing' and not run.get('repositories'):
                     from managed_completion import prepare_resume
                     prepare_resume(self, todo, run, body, automatic)
                 if action == 'retry':
                     run['publication_authorization'] = dict(source='owner_action', repository=run['repository'], branch=run['branch'], run_id=run['run_id'], request_id=request_id or run['run_id'], **({'pr_url':run['pr_url']} if run.get('pr_url') else {}))
-                if action == 'retry' and run['phase'] not in ('implementation_failed', 'implementing'):
+                if action == 'retry' and not run.get('repositories'):
+                    from context_workflow import plan
+                    legacy=copy.deepcopy(run)
+                    plan(self,run)
+                    if run.get('repositories'):
+                        run['legacy_repository_attempt']=legacy
+                        primary=next(r for r in run['repositories'] if r['repository']==run['repository'])
+                        for key in ('base','pr_url','commit','kickoff_commit','publication'):
+                            if key in legacy:primary[key]=copy.deepcopy(legacy[key])
+                        if primary.get('pr_url'):primary['publication_authorization']['pr_url']=primary['pr_url']
+                if action == 'retry' and run['phase'] not in ('implementation_failed', 'implementing', 'handoff_blocked'):
                     raise ValueError('Only an interrupted or failed implementation can resume.')
                 if action == 'test' and run['phase'] not in ('ready', 'tested', 'test_failed', 'testing'):
                     raise ValueError('Implementation must complete before preview testing.')
@@ -581,6 +604,10 @@ class Workflow:
         ident = todo['id']
         failed = {'retry':'implementation_failed', 'implement':'implementation_failed', 'test':'test_failed', 'merge':'merge_failed', 'migrate':'merge_failed', 'recover':'restart_failed', 'verify_existing':'handoff_blocked'}[action]
         try:
+            if run.get('repositories'):
+                from context_workflow import execute
+                execute(self, todo, run, action)
+                return
             if action in ('implement', 'retry'):
                 Path(run['worktree']).parent.mkdir(parents=True, exist_ok=True)
                 with self.repository_lock():

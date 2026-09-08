@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.16.0`.
+`format_version` is a major.minor.build string. Current storage is `1.17.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -281,3 +281,12 @@ Older minor writers are read-only; protocol remains 2.0.0. Both adapters use
 BoardStore validation, protection, journal recovery and receipts; only the owner
 HTTP action can authorize recovery. Filesystem discovery does not migrate or
 launch workers. Normal startup applies the deterministic migration.
+
+Format **1.17.0** adds optional coordinator-owned `workflow.repositories` results
+and a frozen UM context manifest on newly authorized runs. Each repository retains
+its own branch, worktree, commit, publication grant, PR and integration evidence.
+Configuration may supply per-artifact recipes under `workflow.repositories`.
+The sequential 1.16 → 1.17 step changes only format metadata: it does not invent
+repository access or expand historical single-repository authorization. Record
+validation and HTTP/filesystem protection share the same backend. Prior minor
+writers become read-only; extensions, originals and existing runs are preserved.
