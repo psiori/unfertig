@@ -43,9 +43,8 @@ Explicit false values are never overwritten. Sources still require `data` and
 `project_id`. HTTP requires an explicit loopback `url`. Filesystem requires an
 explicit child `config` JSON file and `app_root` directory containing PROCESS.md;
 URL is optional when HTTP is disabled. These paths may be absolute or relative
-to the aggregator configuration, and are canonicalized. Directories, state roots,
-globs and URL-derived config discovery are not accepted in place of these files.
-T0025 remains separate. No service is discovered or started.
+to the aggregator configuration, and are canonicalized. Exact entries still require files, not directories, state roots or globs.
+Optional `search_paths` discovers config files as described below. No service is started.
 
 Child configuration resolves the data, project name, project ID and Git owner
 using the same resolver as its service. Data and identity must match the source
@@ -124,8 +123,8 @@ operation and is not delayed by the view's retry schedule.
 Successful refresh replaces the source view; a failure retains last successful
 records marked stale, or unavailable with no cached records. Transport and
 fallback reason are visible; inaccessible never means an empty authoritative
-board. Configuration changes require restart; each filesystem access re-resolves
-the child config. Project-aware filters/grouping use the same records in all modes.
+board. Changing the aggregator configuration requires restart; configured search paths
+are rescanned during refresh. Each filesystem access re-resolves the child config. Project-aware filters/grouping use the same records in all modes.
 Filesystem records expand in the aggregator with their data location and ID;
 opening them never launches a service or invents an HTTP link. HTTP sources keep
 their existing record links. Generated routing briefings include current source
@@ -170,3 +169,53 @@ is process evidence, not persisted record semantics; offline/filesystem snapshot
 do not claim a running service revision.
 
 Format 1.10 completion summaries use shared validation and BoardStore reopening normalization in both adapters. Legacy absence remains valid; new closures require a summary. Revision checks, receipt retry after transport switching, recovery and local history retain the same contract.
+
+
+## Config search paths (format 1.11)
+
+Optional `search_paths` is a list of config JSON path patterns, relative to the
+aggregator config directory. Each matched config must declare `data`, an explicit
+stable `project_id`, and `aggregation_source: {"app_root":"relative/app",
+"url":"http://127.0.0.1:8766"}`. Metadata paths resolve relative to the canonical
+matched config, using the same resolver and Git ownership checks as its service.
+`app_root` must contain PROCESS.md. The URL is an explicit loopback origin with a
+port, required for HTTP and optional for filesystem-only mode; if present it is
+always validated. It must describe the actual service, including any launch
+port override. A `port` or matched data file alone is insufficient metadata.
+
+`*` matches zero or more characters and `?` exactly one within a path component.
+`**`, bracket patterns and recursive traversal are unsupported. Hidden names only
+match components beginning with a dot. Absolute paths and `..` are supported.
+Traversal follows only the requested finite components, including symlinks to
+outside the starting directory; there is no implicit workspace/root sandbox.
+Config/data/app paths are canonicalized and aliases deduplicated. Matching an
+exact HTTP source may fill absent config/app metadata; common metadata must agree.
+Distinct data paths cannot share an ID, and self/nested aggregators are blocked.
+
+Bounds: 20 patterns, 64 components per absolute pattern, 10,000 directory entries
+examined and 200 matches per scan (including aliases), 1 MB per config, and 20
+unique current sources including exact entries. A scan/traversal/overall-source
+limit failure blocks membership rather than applying a truncated list. Other
+invalid configs are reported individually. Up to 200 source identities are
+retained per service session; additional identities are reported and blocked.
+Saved inbox destinations remain visible even if that retention bound is reached.
+
+Startup scans existing configs without initializing or migrating them. Aggregate
+view polling schedules one background rescan at most every four seconds; the
+cached view never waits for traversal or transport I/O. Newly matching configs
+join without restart. Removed/invalid sources retain their last successful rows
+and project filters with `removed` status, and cannot receive new operations.
+`discovery` in GET /api/aggregate reports unmatched patterns and invalid matches;
+source status reports transport unavailability separately. Restoring the exact
+source permits normal refresh/retry. Changing a retained ID/data/URL/app mapping
+blocks until reviewed; it never silently replaces a destination. The row cache
+is memory-only; saved selections and routing claims survive restart in the inbox.
+
+Membership changes serialize with routing and priority writes. A route already
+in progress finishes against its frozen source; removal blocks subsequent
+attempts while preserving its exact request/preflight. Late source-check results
+cannot resurrect removed rows. Restore the original config to retry a pending
+claim; receipt identity and transport-switch recovery remain unchanged. Discovery
+never grants write authorization, creates boards, registers repositories, starts
+services, relocates records or publishes changes. Both adapters retain their
+existing preflight/version/history checks; upgrade child storage explicitly.

@@ -21,6 +21,7 @@ from configuration import git_root
 from storage import Conflict, digest
 from versions import migrate, parse
 from transports import filesystem, preflight_context
+from discovery import discover, compatible
 
 
 class Unreachable(ValueError):
@@ -93,6 +94,80 @@ class Aggregation:
         self.entries = {s['project_id']: dict(project_id=s['project_id'],
                         name=source_repository_name(s), url=s.get('url', ''), data=None,
                         checked_at=None, status='checking', error='', transport=None, fallback_reason='') for s in self.sources}
+        self.explicit_sources = copy.deepcopy(store.context.get('explicit_sources', self.sources))
+        self.blocked_sources = {}
+        self.discovery_reports = []
+        self.discovery_inflight = False
+        self.next_discovery = 0
+        self.claimed_sources = {}
+        if store.context.get('search_paths'):
+            store.context['explicit_sources'] = copy.deepcopy(self.explicit_sources)
+            # Keep saved selections/claims visible even when their config vanished
+            # while stopped. Preflight still pins the exact routing destination.
+            for idea in store.read()[0]['ideas']:
+                route = idea.get('routing', {})
+                key = route.get('project_id') or idea.get('selected_project')
+                if route.get('request') and route.get('preflight'):
+                    preflight = route['preflight']
+                    self.claimed_sources[key] = dict(project_id=key, data=preflight['data'],
+                                                    app_root=str(Path(preflight['process']).parent))
+                if key and key not in self.entries:
+                    self.entries[key] = dict(project_id=key, name=key, url='', data=None,
+                        checked_at=None, status='removed', error='Saved destination is not currently discovered.',
+                        transport=None, fallback_reason='')
+            self.refresh_discovery()
+
+    def refresh_discovery(self):
+        """Reconcile membership atomically with routing and ordinary inbox edits."""
+        try:
+            with self.lock:
+                sources, reports = discover(self.store.context, self.explicit_sources)
+                names = {s['project_id']: source_repository_name(s) for s in sources or []
+                         if s['project_id'] not in self.entries}
+                with self.store.lock, self.view_lock:
+                    self.discovery_reports = reports
+                    known = {s['project_id']: s for s in self.sources}
+                    accepted = {}
+                    if sources is not None:
+                        for source in sources:
+                            key = source['project_id']
+                            if len(set(self.entries) | set(accepted) | {key}) > 200 and key not in self.entries:
+                                reports.append(dict(status='invalid', error='200 retained source identities reached; restart after reviewing retained destinations.'))
+                                continue
+                            prior = next((s for s in known.values() if s['project_id'] == key or s['data'] == source['data']), None)
+                            claimed = next((s for s in self.claimed_sources.values() if s['project_id'] == key or s['data'] == source['data']), None)
+                            if ((prior and not compatible(prior, source)) or
+                                    (claimed and not compatible(claimed, source))):
+                                reports.append(dict(status='invalid', config=source.get('config', ''),
+                                                    error=f'Identity/metadata changed for {key}; retained destination cannot be replaced.'))
+                                continue
+                            accepted[key] = source
+                    for key, entry in self.entries.items():
+                        if key not in accepted:
+                            self.blocked_sources[key] = 'Source removed, invalid or outside discovery bounds; cached records and routing claims are retained.'
+                            self.generations[key] = self.generations.get(key, 0) + 1
+                            self.entries[key] = dict(entry, status='removed', error=self.blocked_sources[key])
+                    for key, source in accepted.items():
+                        if key not in self.entries:
+                            self.entries[key] = dict(project_id=key, name=names[key],
+                                url=source.get('url', ''), data=None, checked_at=None, status='checking',
+                                error='', transport=None, fallback_reason='')
+                        if key in self.blocked_sources:
+                            self.blocked_sources.pop(key)
+                            self.entries[key] = dict(self.entries[key], status='checking', error='')
+                            self.next_check[key] = 0
+                        known[key] = source
+                    self.sources = list(known.values())
+                    # Context is the shared selection validator's current allowlist.
+                    self.store.context['sources'] = list(accepted.values())
+        finally:
+            with self.view_lock:
+                self.discovery_inflight = False
+                self.next_discovery = time.monotonic() + 4
+
+    def require_source(self, source):
+        if source['project_id'] in self.blocked_sources:
+            raise ValueError(self.blocked_sources[source['project_id']])
 
     def transfer(self, source, path='/api/state', body=None, token=None, expected=None):
         enabled = source.get('transports', {'http': True, 'filesystem': False})
@@ -116,6 +191,10 @@ class Aggregation:
             raise ValueError(f'Filesystem blocked: {error}' + (f' (fallback: {reason})' if reason else '')) from error
 
     def source_record(self, body):
+        with self.lock:
+            return self._source_record(body)
+
+    def _source_record(self, body):
         source = next((s for s in self.sources if s['project_id'] == body.get('project_id')), None)
         if source is None:
             raise ValueError('Unknown source project.')
@@ -130,6 +209,10 @@ class Aggregation:
                     transport=snapshot['transport'], fallback_reason=snapshot['fallback_reason'])
 
     def source_priority(self, body):
+        with self.lock:
+            return self._source_priority(body)
+
+    def _source_priority(self, body):
         """Freeze a standard child mutation; receipt retries never rebuild it."""
         source = next((s for s in self.sources if s['project_id'] == body.get('project_id')), None)
         if source is None:
@@ -170,6 +253,7 @@ class Aggregation:
                     project_id=source['project_id'], transport=result['transport'], fallback_reason=result['fallback_reason'])
 
     def inspect_source(self, source):
+        self.require_source(source)
         snapshot = self.transfer(source)
         context = snapshot['context']
         if snapshot.get('api_version') != 2 or snapshot.get('protocol_version') != '2.0.0':
@@ -186,12 +270,15 @@ class Aggregation:
     def view(self):
         # Network I/O never runs under the view lock or in the HTTP handler.
         with self.view_lock:
+            if self.store.context.get('search_paths') and not self.discovery_inflight and time.monotonic() >= self.next_discovery:
+                self.discovery_inflight = True
+                threading.Thread(target=self.refresh_discovery, daemon=True).start()
             for source in self.sources:
                 key = source['project_id']
-                if key not in self.inflight and time.monotonic() >= self.next_check.get(key, 0):
+                if key not in self.blocked_sources and key not in self.inflight and time.monotonic() >= self.next_check.get(key, 0):
                     self.inflight.add(key)
                     threading.Thread(target=self.refresh_source, args=(source,), daemon=True).start()
-            return dict(sources=[dict(self.entries[s['project_id']]) for s in self.sources])
+            return dict(sources=[dict(entry) for entry in self.entries.values()], discovery=copy.deepcopy(self.discovery_reports))
 
     def refresh_source(self, source):
         key = source['project_id']
@@ -247,9 +334,11 @@ class Aggregation:
                 idea = self.save_route(idea, dict(status='unclear', reason='Unclear: select one project or infer a single destination from the idea text.'), actor)
                 return dict(idea=idea)
             source = next((s for s in self.sources if s['project_id'] == project), None)
-            if source is None:
+            if source is None and not state.get('request'):
                 raise ValueError('Destination is not configured.')
             try:
+                if source is None:
+                    raise ValueError('Claimed destination is removed or unavailable; restore its source config and retry the retained request.')
                 snapshot = self.inspect_source(source)
                 context = snapshot['context']
                 expected = preflight_context(context)

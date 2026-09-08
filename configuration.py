@@ -28,7 +28,8 @@ def board_context(configuration, app_root):
                 process=str(app_root / 'PROCESS.md'), data=str(path), todos=str(path.parent / 'todos'),
                 repository=str(configuration['repository'] or ''), mode=configuration['mode'],
                 project_name=configuration['project_name'], project_id=configuration['project_id'],
-                sources=configuration['sources'], processing=configuration['processing'], workflow=configuration['workflow'])
+                sources=configuration['sources'], search_paths=configuration.get('search_paths', []),
+                transports=configuration.get('transports', {'http': True, 'filesystem': False}), processing=configuration['processing'], workflow=configuration['workflow'])
 
 def valid_port(value):
     if type(value) is not int or not 1 <= value <= 65535:
@@ -92,6 +93,7 @@ def configure_mode(configuration, app_root):
         settings['sources'] = json.loads(input('Sources: '))
     else:
         settings.pop('sources', None)
+        settings.pop('search_paths', None)
     if (path.read_bytes() if path.exists() else None) != before:
         raise ValueError('Configuration changed during setup; rerun.')
     # Validate the proposed file using a sibling temporary file so paths retain
@@ -194,16 +196,36 @@ def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
     if not isinstance(project_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', project_id):
         raise ValueError('project_id must contain 1–100 letters, digits, underscores or hyphens.')
     enabled = transports(settings.get('transports', {'http': True, 'filesystem': False}))
+    sources = normalize_sources(settings.get('sources', []), base, path, project_id, enabled)
+    from discovery import search_paths
+    patterns = search_paths(settings.get('search_paths', []), base)
+    if (sources or patterns) and mode != 'aggregation':
+        raise ValueError('Sources require aggregation mode.')
+    from processing import settings as processing_settings
+    processing = processing_settings(settings.get('processing', {}), base, app_root, owner)
+    from workflow import settings as workflow_settings
+    workflow = workflow_settings(settings.get('workflow', {}), base, processing, mode)
+    return dict(workflow=workflow, processing=processing, path=path, repository=owner, mode=mode, config=selected, project_name=project_name,
+                project_id=project_id, sources=sources, search_paths=patterns, transports=enabled,
+                port=valid_port(settings.get("port", DEFAULT_PORT)),
+                bootstrap=data is None and mode == 'standalone' and (selected is None or
+                    (selected == app_root / 'unfertig.json' and 'data' not in settings)))
+
+
+def normalize_sources(values, base, path, project_id, enabled):
+    """Shared exact-source validation for configuration and discovery."""
     sources, paths, identities = [], set(), set()
-    if not isinstance(settings.get('sources', []), list):
+    if not isinstance(values, list):
         raise ValueError('sources must be an explicit list.')
-    if len(settings.get('sources', [])) > 20:
+    if len(values) > 20:
         raise ValueError('At most 20 explicit sources are supported.')
-    for source in settings.get('sources', []):
+    for source in values:
         if not isinstance(source, dict) or not all(isinstance(source.get(k), str) and source[k] for k in ('data', 'project_id')):
             raise ValueError('Each source requires data (JSON file) and project_id.')
         if 'transports' in source:
             raise ValueError('Transport enablement is global; source overrides are not supported.')
+        if any(any(c in source.get(field, '') for c in '*?[]') for field in ('data', 'config', 'app_root') if isinstance(source.get(field, ''), str)):
+            raise ValueError('Exact source paths cannot contain wildcards; use search_paths for config discovery.')
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', source['project_id']):
             raise ValueError('Invalid source project_id.')
         location = (base / source['data']).resolve()
@@ -235,14 +257,4 @@ def resolve(app_root, config=None, data=None, no_git=False, state_dir=None):
             raise ValueError('Distinct boards cannot share a configured project_id.')
         paths.add(location); identities.add(source['project_id'])
         sources.append(normalized)
-    if sources and mode != 'aggregation':
-        raise ValueError('Sources require aggregation mode.')
-    from processing import settings as processing_settings
-    processing = processing_settings(settings.get('processing', {}), base, app_root, owner)
-    from workflow import settings as workflow_settings
-    workflow = workflow_settings(settings.get('workflow', {}), base, processing, mode)
-    return dict(workflow=workflow, processing=processing, path=path, repository=owner, mode=mode, config=selected, project_name=project_name,
-                project_id=project_id, sources=sources,
-                port=valid_port(settings.get("port", DEFAULT_PORT)),
-                bootstrap=data is None and mode == 'standalone' and (selected is None or
-                    (selected == app_root / 'unfertig.json' and 'data' not in settings)))
+    return sources
