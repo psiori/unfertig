@@ -362,6 +362,14 @@ for (const id of ['search','status-filter','group-filter','tag-filter','sort','g
   });
 }
 $('#show-processed').addEventListener('change', () => { if (data) renderIdeas(); });
+$('#expand-ideas').addEventListener('click', () => {
+  const button = $('#expand-ideas');
+  const enlarged = $('.scratch-grid').classList.toggle('ideas-expanded');
+  button.setAttribute('aria-expanded', String(enlarged));
+  const label = enlarged ? 'Collapse saved ideas' : 'Expand saved ideas';
+  button.setAttribute('aria-label', label);
+  button.title = label;
+});
 $('#process').addEventListener('click', () => showCopy(processBrief(data.ideas.filter(idea => idea.routing?.status !== 'routed' && !data.todos.some(todo => todo.source_ideas.includes(idea.id)))), 'Your processing briefing'));
 $('#copy-again').addEventListener('click', () => clipboard($('#copy-text').value));
 $('#reload').addEventListener('click', async () => {
