@@ -101,6 +101,9 @@
       const response = await fetch('/api/workflow', {cache:'no-store', signal:AbortSignal.timeout(activityLifetime)});
       if (!response.ok) throw new Error('Workflow activity unavailable');
       latest = await response.json();
+      for (const [id, body] of requests) {
+        if (latest.runs[id]?.action_requests?.[body.request_id]) requests.delete(id);
+      }
       verifiedAt = requestedAt;
       for (const [id, previewWindow] of previews) {
         const preview = latest.runs[id];
@@ -133,7 +136,7 @@
       if (!snapshotResponse.ok) throw new Error(snapshot.error || 'Cannot read the board.');
       const current = snapshot.data.todos.find(t => t.id === id);
       const saved = data.todos.find(t => t.id === id);
-      if (current.name !== saved.name || current.description !== saved.description) throw new Error('Task changed. Reload and review its scope first.');
+      if (['name','description','category','depends_on','source_ideas','source_refs'].some(key => JSON.stringify(current[key]) !== JSON.stringify(saved[key]))) throw new Error('Task changed. Reload and review its scope first.');
       if (!requests.has(id)) requests.set(id, {id,action,revision:snapshot.revisions.todos[id],commit:run?.commit,request_id:globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`});
       const response = await fetch('/api/workflow/action', {method:'PUT',headers:{'Content-Type':'application/json','X-Board-Token':snapshot.token},body:JSON.stringify(requests.get(id))});
       const result = await response.json();
