@@ -33,6 +33,8 @@
   function nextStep(todo, run) {
     if (!run) return todo.status !== 'closed' ? ['implement','Implement',todo.status === 'open'] : null;
     if (run.phase === 'queued' || run.phase === 'merge_queued') return ['', run.phase === 'merge_queued' ? 'Queued for integration' : 'Queued', false];
+    if (run.phase === 'migration_required') return ['migrate','Migrate & deploy',Boolean(run.deployment_review?.review_id)];
+    if (['restart_failed','restarting'].includes(run.phase) && run.published_commit) return ['recover','Recover deployment',true];
     if (run.resume_action) return [run.resume_action, {retry:'Retry implementation',test:'Preview',merge:'Merge & restart'}[run.resume_action],true];
     if (run.phase === 'implementation_failed') return ['retry','Retry implementation',true];
     if (['ready','test_failed'].includes(run.phase)) return ['test','Preview',true];
@@ -65,7 +67,7 @@
       const button = (action, label, allowed) => `<button type="button" class="button small" data-workflow-action="${action}" data-todo="${id}" ${disabled || !allowed ? 'disabled' : ''}>${label}</button>`;
       const expanded = panel.querySelector('details')?.open;
       const scroll = panel.querySelector('pre')?.scrollTop || 0;
-      const html = `<div class="workflow-actions"><strong>Implementation</strong>${button('implement','Implement with Codex', !run && todo.status === 'open' && latest.configured)}${run && (run.phase === 'implementation_failed' || run.resume_action === 'retry') ? button('retry','Retry implementation',true) : ''}${button('test','Test branch', (['ready','tested','test_failed'].includes(run?.phase) || run?.resume_action === 'test'))}${button('merge','Merge & restart', canMerge(run))}${run?.pr_url ? `<a class="button small" href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">GitHub PR ↗</a>` : ''}${run?.preview_url ? `<a class="button small" href="${escapeHTML(run.preview_url)}" target="_blank" rel="noopener">Open preview ↗</a>` : ''}</div><p class="muted">${escapeHTML(run ? ({implementing:'Implementing…',ready:'Ready to preview or merge',testing:'Preparing preview…',tested:'Ready for your review',merging:'Merging and publishing…',restarting:'Restarting artifact…',done:'Completed',interrupted:'Interrupted — review and retry'}[run.phase] || run.phase.replaceAll('_',' ')) : !latest.configured ? 'Configure project test, preview and restart commands to enable this workflow.' : latest.automatic ? 'Automatic implementation is on for new ideas captured on this system.' : 'Automatic implementation is off.')}</p>${testStatus(run) ? `<p class="muted">${testStatus(run)}</p>` : ''}${run ? `<details><summary>Progress & branch details</summary><pre>${escapeHTML(`${run.branch}\n${run.commit || ''}\n${run.worktree}\n\n${run.message}`)}</pre></details>` : ''}`;
+      const html = `<div class="workflow-actions"><strong>Implementation</strong>${button('implement','Implement with Codex', !run && todo.status === 'open' && latest.configured)}${run && (run.phase === 'implementation_failed' || run.resume_action === 'retry') ? button('retry','Retry implementation',true) : ''}${button('test','Test branch', (['ready','tested','test_failed'].includes(run?.phase) || run?.resume_action === 'test'))}${button('merge','Merge & restart', canMerge(run) || run?.phase === 'migration_required')}${run?.phase === 'migration_required' ? button('migrate','Migrate & deploy',Boolean(run.deployment_review?.review_id)) : ''}${['restart_failed','restarting'].includes(run?.phase) && run?.published_commit ? button('recover','Recover deployment',true) : ''}${run?.pr_url ? `<a class="button small" href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">GitHub PR ↗</a>` : ''}${run?.preview_url ? `<a class="button small" href="${escapeHTML(run.preview_url)}" target="_blank" rel="noopener">Open preview ↗</a>` : ''}</div><p class="muted">${escapeHTML(run ? ({implementing:'Implementing…',ready:'Ready to preview or merge',testing:'Preparing preview…',tested:'Ready for your review',merging:'Merging and publishing…',restarting:'Restarting artifact…',done:'Completed',interrupted:'Interrupted — review and retry'}[run.phase] || run.phase.replaceAll('_',' ')) : !latest.configured ? 'Configure project test, preview and restart commands to enable this workflow.' : latest.automatic ? 'Automatic implementation is on for new ideas captured on this system.' : 'Automatic implementation is off.')}</p>${testStatus(run) ? `<p class="muted">${testStatus(run)}</p>` : ''}${run ? `<details><summary>Progress & branch details</summary><pre>${escapeHTML(`${run.branch}\n${run.commit || ''}\n${run.worktree}\n\n${run.message}`)}</pre></details>` : ''}`;
       if (panel.dataset.rendered === html) return;
       panel.dataset.rendered = html; panel.innerHTML = html;
       if (expanded && panel.querySelector('details')) panel.querySelector('details').open = true;
@@ -82,7 +84,8 @@
         ['Ready', ['ready','tested']],
         ['Integration queue', ['merge_queued']],
         ['Integrating', ['merging']],
-        ['Deploying', ['restarting']],
+        ['Migration review', ['migration_required']],
+        ['Published / deploying', ['restarting']],
         ['Done', ['done']],
         ['Needs attention', ['implementation_failed','test_failed','merge_failed','push_failed','restart_failed','interrupted']]
       ];
@@ -127,6 +130,8 @@
     if (!latest?.enabled || sending.has(button.dataset.todo) || button.disabled || hasTicketDraft(button.dataset.todo)) return;
     const id = button.dataset.todo, action = button.dataset.workflowAction, run = latest.runs[id];
     if (action === 'merge' && !confirm(`Merge ${run.branch} at ${run.commit}, push it and restart the configured artifact?${testStatus(run) ? `\n\n${testStatus(run)}` : ''}`)) return;
+    if (action === 'migrate' && !confirm(`Migrate & deploy ${run.deployment_review.candidate_commit}?\n\n${run.deployment_review.message}\n\nThis publishes the reviewed candidate, stops writers, retains an exact local backup, migrates storage, commits both wrapper pins and verifies restart. Failure retains a reservation for explicit recovery.`)) return;
+    if (action === 'recover' && !confirm(`Recover the published deployment ${run.published_commit}? The host verifies existing deployment or resumes its retained migration; it does not remerge the ticket.`)) return;
     sending.add(id); button.disabled = true;
     if (action === 'test' && latest.web_preview) { const previewWindow = window.open('about:blank','_blank'); if (previewWindow) { previewWindow.opener = null; previewWindow.document.title = 'Preparing branch preview…'; previews.set(id, previewWindow); } }
     try {
@@ -137,7 +142,7 @@
       const current = snapshot.data.todos.find(t => t.id === id);
       const saved = data.todos.find(t => t.id === id);
       if (['name','description','category','depends_on','source_ideas','source_refs'].some(key => JSON.stringify(current[key]) !== JSON.stringify(saved[key]))) throw new Error('Task changed. Reload and review its scope first.');
-      if (!requests.has(id)) requests.set(id, {id,action,revision:snapshot.revisions.todos[id],commit:run?.commit,request_id:globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`});
+      if (!requests.has(id)) requests.set(id, {id,action,revision:snapshot.revisions.todos[id],commit:run?.commit,...(action === 'migrate' ? {review_id:run.deployment_review.review_id} : {}),request_id:globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`});
       const response = await fetch('/api/workflow/action', {method:'PUT',headers:{'Content-Type':'application/json','X-Board-Token':snapshot.token},body:JSON.stringify(requests.get(id))});
       const result = await response.json();
       if (!response.ok) { if (response.status < 500) requests.delete(id); throw new Error(result.error || 'Could not start the stage.'); }
