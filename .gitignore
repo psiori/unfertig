@@ -12,3 +12,6 @@ __pycache__/
 
 # Fresh-use boards are local; the development backlog is tracked separately.
 board/
+
+.local/
+.worktrees/

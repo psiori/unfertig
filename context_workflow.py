@@ -151,6 +151,7 @@ def facade(w, run, item, ident):
                      **item['recipe'], 'repository':item['repository']}
     proxy.save = lambda _ident, _item, **fields: w.save(ident, run)
     proxy.launch_deployment = lambda *args, **kwargs: None
+    proxy.complete_publication = lambda *args, **kwargs: None
     original_git = proxy.git
     def git(*args, cwd=None):
         if item['role']=='context' and args and args[0]=='status':
@@ -367,6 +368,9 @@ def update_pins(w, todo, run):
     if changed:
         p.git('commit','-m','Pin published task repositories for '+todo['id'],cwd=context['worktree'])
         context.update(commit=p.git('rev-parse','HEAD',cwd=context['worktree']),changed=True)
+        w.save(todo['id'],run)  # Save the intended pin HEAD before any network operation.
+    if context.get('changed') and not context.get('published_commit'):
+        # Resume publication even when a previous attempt already committed the pin.
         if context.get('pr_url'):p.publish_checkpoint(context)
         else:p.ensure_pr(todo,context)
         w.save(todo['id'],run)
@@ -385,8 +389,6 @@ def integrate(w, todo, run, action):
         ordered=sorted(entries,key=lambda r:w.git('rev-parse','--path-format=absolute','--git-common-dir',cwd=r['repository']))
         for item in ordered:
             locks[item['id']]=stack.enter_context(facade(w,run,item,ident).repository_lock())
-        if action=='recover' and run.get('published_commit') and run.get('deployment_commit'):
-            w.recover_deployment(ident,run,locks[primary['id']]);return
         for item in sorted(entries,key=lambda r:r['role']=='context'):
             if item['role']=='context':update_pins(w,todo,run)
             if not item.get('changed'):continue
@@ -411,21 +413,6 @@ def integrate(w, todo, run, action):
             if not item.get('published_commit'):
                 raise Conflict('Repository publication remains incomplete: '+item['id'])
             w.save(ident,run)
-        # Other child recipes run after ALL publications. Record each outcome so
-        # partial deployment is visible and a retry cannot claim total success.
-        for item in entries:
-            if item is primary or not item.get('changed') or not item['recipe'].get('restart'):continue
-            if item.get('deployment',{}).get('status')=='confirmed':continue
-            p=facade(w,run,item,ident)
-            item['deployment']=dict(status='pending');w.save(ident,run)
-            try:p.command(p.argv('restart',item),item['repository'],ident,purpose='deployment')
-            except Exception as error:
-                item['deployment']=dict(status='blocked',message=str(error));w.save(ident,run);raise
-            item['deployment']=dict(status='confirmed',commit=item['published_commit']);w.save(ident,run)
-        if primary.get('changed') and primary['recipe'].get('restart'):
-            for key in ('published_commit','merge_commit','integration_commit','integration_tested_commit','deployment_commit','deployment_review','deployment_driver'):
-                if key in primary:run[key]=copy.deepcopy(primary[key])
-            w.launch_deployment(ident,run,locks[primary['id']]);return
-        run.update(phase='done',message='All changed repositories integrated and published; no primary runtime deployment required.')
-        w.save(ident,run,status='closed',closed_by='Codex',date_closed=datetime.now(timezone.utc).isoformat(),
-               completion_summary=run.get('completion_summary','')+'\n\n'+run['message'])
+        for key in ('published_commit','merge_commit','integration_commit','integration_tested_commit'):
+            if key in primary:run[key]=copy.deepcopy(primary[key])
+        w.complete_publication(ident,run)

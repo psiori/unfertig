@@ -29,7 +29,7 @@ def deployment(workflow, commit, integration):
         workflow.git('merge-base', '--is-ancestor', commit, 'refs/remotes/origin/' + workflow.options['base_branch'])
         root = Path(workflow.processing['working_directory'])
         runtime = root / 'tools/unfertig'
-        for path in ('unfertig', 'tools/unfertig'):
+        for path in ('tools/unfertig',):
             if workflow.git('rev-parse', 'HEAD:' + path, cwd=root) != commit:
                 raise ValueError('A committed wrapper pin differs from the supplied deployment.')
         if workflow.git('rev-parse', 'HEAD', cwd=runtime) != commit or workflow.git('status', '--porcelain', cwd=runtime):
@@ -44,7 +44,7 @@ def deployment(workflow, commit, integration):
             raise ValueError('Runtime health does not match the deployment and board owner.')
         if snapshot['compatibility']['read_only'] or snapshot['history']['pending'] or not snapshot['history']['enabled']:
             raise ValueError('Runtime board is not writable with completed history.')
-        result.update(status='verified', message='Both committed wrapper pins, installed runtime, running revision and writable owner board verified.')
+        result.update(status='verified', message='Committed runtime pin, installed runtime, running revision and writable owner board verified.')
     except (OSError, ValueError, KeyError, HTTPException, subprocess.SubprocessError) as error:
         result.update(status='unverified', message=str(error))
     return result

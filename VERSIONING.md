@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.19.0`.
+`format_version` is a major.minor.build string. Current storage is `1.20.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -52,7 +52,7 @@ Configuration and board must share that owner for automatic migration commits.
 
 Supported migrations run automatically at the next startup of every updated
 instance. They are shipped Python code, never an LLM/Codex task or a separate
-routine approval. Managed hosts rehearse the candidate and back up stopped state,
+routine approval. Integration tests candidate migrations; managed hosts back up stopped state,
 then migrate shared/effective configuration before service launch. Interrupted
 work resumes forward on the next Start. Keep recovery evidence and report genuine
 validation/compatibility/history failures without starting an unsafe writer.
@@ -321,3 +321,25 @@ recategorized. Missing category still means Unclassified; configuration retains
 the existing default of four workers when its limit is absent. Older minor writers
 become read-only; protocol remains 2.0.0. Normal startup uses the existing
 sequential migration, backup and interrupted-recovery contract.
+
+## Storage 1.20.0 — publication hooks and independent maintenance
+
+Sequential 1.19→1.20 defaults missing config workflow.after_publish to an empty
+list and retains existing worker defaults. Legacy claims and deployment receipts
+are unchanged: absent post_publish means no events, never an inferred success or
+permission to replay old work. Explicit restart recipes, grants, extensions and
+values survive migration; new integration ignores restart/automatic_deploy.
+
+New completion writes completion_boundary:publication and post_publish events in
+the task-closing BoardStore transaction. Each event freezes its hook, repository,
+branch, commit and stable ID, with pending/complete/failed status and attempt number.
+The version guard protects those semantics from older writers on both transports.
+Hook receipts under BOARD/.local/post-publish use format_version and exact ID/attempt
+checks. A running receipt without its executor lock means uncertain side effects;
+mark failed and require explicit idempotent retry with the same event ID. Never
+rewrite immutable backups or treat a newer receipt as permission to execute.
+
+The host queue and restart request are a separate schema_version:1 contract; the
+application acknowledgement carries format_version and restart protocol_version
+1.0.0. Session matching prevents stale acknowledgements from authorizing updates.
+The host rejects unknown queue schemas; future formats need sequential migrations.

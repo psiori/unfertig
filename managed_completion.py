@@ -6,6 +6,7 @@ ordinary board edits and the worker-readable receipt cannot grant permission.
 import copy
 import json
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -36,6 +37,9 @@ def read_report(run):
 def validate(run):
     from context_workflow import validate as validate_context
     validate_context(run)
+    from post_publish import validate as validate_hooks
+    if 'post_publish' in run:
+        validate_hooks(run['post_publish'])
     for key in ('implementation', 'publication', 'verification', 'approval'):
         if key in run:
             value = run[key]
@@ -68,21 +72,38 @@ def publish(w, run, commit):
     state = w.pr_state(run)
     if state['state'] != 'OPEN':
         raise Conflict('PR is no longer open; review integration separately.')
-    # A prior uncertain result is inspected, never blindly retried.
-    if state['headRefOid'] != commit:
+    ref = 'refs/heads/'+run['branch']
+    remote = w.git('ls-remote', '--refs', 'origin', ref, cwd=run['worktree']).split()
+    remote = remote[0] if len(remote) == 2 and remote[1] == ref else ''
+    if remote != commit:
         if run.get('publication', {}).get('status') == 'blocked':
             raise Conflict('Publication is blocked. Review the failed/uncertain attempt and explicitly resume; no automatic retry.')
-        remote = state['headRefOid']
+        if not remote or remote != state['headRefOid']:
+            raise Conflict('Remote branch and PR disagree; inspect publication before retrying.')
         w.git('merge-base', '--is-ancestor', remote, commit, cwd=run['worktree'])
         try:
-            w.git('push', 'origin', commit+':refs/heads/'+run['branch'], cwd=run['worktree'])
+            w.git('push', 'origin', commit+':'+ref, cwd=run['worktree'])
         except Exception as error:
             run['publication'] = dict(status='blocked', commit=commit, message=str(error)[-2000:])
             receipt(w, run)
             raise
+    # GitHub may lag a successful push. Poll read-only; never push again to
+    # make its API catch up. Every read rechecks PR identity and branch ownership.
+    for delay in (0, .1, .25, .5, 1, 2, 3):
+        if delay:
+            time.sleep(delay)
         state = w.pr_state(run)
-    if state['state'] != 'OPEN' or state['headRefOid'] != commit:
-        raise Conflict('Remote PR HEAD does not match the committed implementation.')
+        observed = w.git('ls-remote', '--refs', 'origin', ref, cwd=run['worktree']).split()
+        if observed != [commit, ref] or state['state'] != 'OPEN':
+            raise Conflict('Remote publication changed while confirming the PR.')
+        if state['headRefOid'] == commit:
+            break
+        w.git('merge-base', '--is-ancestor', state['headRefOid'], commit, cwd=run['worktree'])
+    else:
+        run['publication'] = dict(status='pending', commit=commit, observed=state['headRefOid'],
+                                  message='Git branch is published; GitHub PR confirmation is delayed. Retry to confirm without another push.')
+        receipt(w, run)
+        raise Conflict(run['publication']['message'])
     run['publication'] = dict(status='confirmed', commit=commit, pr_url=run['pr_url'])
     receipt(w, run)
     return commit

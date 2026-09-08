@@ -122,7 +122,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(todo['status'],'started');self.assertFalse((self.repo/'result').exists())
         todo=self.run_stage('test');self.assertEqual(todo['workflow']['phase'],'tested',todo)
         self.assertTrue(self.workflow.status()['runs']['T0001']['preview_url'])
-        todo=self.run_stage('merge');self.assertEqual(todo['workflow']['phase'],'restarting',todo)
+        todo=self.run_stage('merge');self.assertEqual(todo['workflow']['phase'],'done',todo)
         deadline=time.monotonic()+10
         while time.monotonic()<deadline:
             self.workflow.reconcile();todo=self.store.snapshot()['data']['todos'][0]
@@ -131,7 +131,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(todo['status'],'closed',todo)
         self.assertIn('Done', todo['completion_summary'])
         self.assertIn('fake agent', todo['completion_summary'])
-        self.assertIn('Deployment verification:', todo['completion_summary'])
+        self.assertIn('merged, checked and pushed', todo['completion_summary'])
         self.assertEqual(self.git('rev-parse','HEAD'),todo['workflow']['tested_commit'])
         self.assertEqual(self.git('ls-remote','origin','refs/heads/main').split()[0],todo['commit_hash'])
         self.assertEqual((self.repo/'result').read_text(),'implemented')
@@ -160,7 +160,7 @@ class WorkflowTests(unittest.TestCase):
         todo = self.run_stage('implement')
         self.assertNotIn('tested_commit', todo['workflow'])
         todo = self.run_stage('merge')
-        self.assertEqual(todo['workflow']['phase'], 'restarting', todo)
+        self.assertEqual(todo['workflow']['phase'], 'done', todo)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             self.workflow.reconcile()
@@ -207,13 +207,13 @@ class WorkflowTests(unittest.TestCase):
         self.git('add','.');self.git('commit','-qm','Local context')
         self.run_stage('implement');self.run_stage('test')
         todo=self.run_stage('merge')
-        self.assertEqual(todo['workflow']['phase'],'restarting',todo)
+        self.assertEqual(todo['workflow']['phase'],'done',todo)
         self.assertEqual(self.git('ls-remote','origin','refs/heads/main').split()[0],todo['workflow']['commit'])
 
     def test_changed_main_is_combined_and_retested(self):
         self.run_stage('implement')
         (self.repo/'other').write_text('concurrent');self.git('add','.');self.git('commit','-qm','Other work')
-        todo=self.run_stage('merge');self.assertEqual(todo['workflow']['phase'],'restarting',todo)
+        todo=self.run_stage('merge');self.assertEqual(todo['workflow']['phase'],'done',todo)
         self.assertTrue((self.repo/'result').exists())
         self.assertEqual(todo['workflow']['integration_commit'], todo['workflow']['integration_tested_commit'])
 
@@ -225,7 +225,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse((self.repo/'result').exists())
         self.assertIn(str(self.repo), todo['workflow']['message'])
         self.assertIn('Implementation is committed', todo['workflow']['message'])
-        self.assertIn('retry Merge & restart', todo['workflow']['message'])
+        self.assertIn('retry Merge & push', todo['workflow']['message'])
         self.assertNotIn('tested_commit', todo['workflow'])
 
     def test_interrupted_claim_survives_restart_without_automatic_retry(self):
@@ -286,7 +286,7 @@ class WorkflowTests(unittest.TestCase):
         self.store.acquire();self.addCleanup(self.store.close);self.store.initialize()
         self.workflow=Workflow(self.store,self.workflow.url,self.options,self.processing);self.addCleanup(self.workflow.close)
         self.run_stage('implement');self.run_stage('test');todo=self.run_stage('merge')
-        self.assertEqual(todo['workflow']['phase'],'restarting',todo)
+        self.assertEqual(todo['workflow']['phase'],'done',todo)
         self.assertTrue((self.repo/'result').exists())
         self.assertIn('merge_commit',todo['workflow'])
 
@@ -296,7 +296,7 @@ class WorkflowTests(unittest.TestCase):
         for value in ('true', 1, None):
             with self.assertRaises(ValueError):settings({'enabled':value},self.root,self.processing,'embedded')
         migrated=migrate({'format_version':'1.5.0','workflow':{'automatic':True,'extension':42}},'config')
-        self.assertEqual(migrated['workflow'],{'enabled':False,'automatic':True,'extension':42,'max_workers':4,'automatic_merge':False,'automatic_publish':False,'automatic_deploy':False})
+        self.assertEqual(migrated['workflow'],{'enabled':False,'automatic':True,'extension':42,'max_workers':4,'automatic_merge':False,'automatic_publish':False,'automatic_deploy':False,'after_publish':[]})
         self.assertEqual(migrate(migrated,'config'),migrated)
         self.assertFalse(settings(migrated['workflow'],self.root,self.processing,'embedded')['automatic'])
         self.assertFalse(settings({'enabled':True},self.root,self.processing,'aggregation')['enabled'])
@@ -345,25 +345,18 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(todo['workflow']['phase'],'implementation_failed')
         self.assertEqual(todo['status'],'started');self.assertFalse((self.repo/'result').exists())
 
-    def test_explicit_retry_reuses_branch_and_rotates_failed_restart_receipt(self):
+    def test_explicit_retry_reuses_branch_and_legacy_restart_is_not_executed(self):
         executable=self.processing['executable'];self.processing['executable']='/usr/bin/false'
         failed=self.run_stage('implement');branch=failed['workflow']['branch']
         self.processing['executable']=executable
         ready=self.run_stage('retry');self.assertEqual(ready['workflow']['phase'],'ready',ready)
         self.assertEqual(ready['workflow']['branch'],branch)
-        self.run_stage('test');self.options['restart']=['/usr/bin/false'];self.run_stage('merge')
-        def await_phase(phase):
-            deadline=time.monotonic()+10
-            while time.monotonic()<deadline:
-                self.workflow.reconcile()
-                todo=self.store.snapshot()['data']['todos'][0]
-                if todo['workflow']['phase']==phase:return todo
-                time.sleep(.1)
-            self.fail(str(todo))
-        await_phase('restart_failed')
-        self.options['restart']=[sys.executable,'-c','print("restart recovered")']
-        self.run_stage('merge')
-        self.assertEqual(await_phase('done')['status'],'closed')
+        self.options['restart']=['/usr/bin/false']
+        with patch.object(self.workflow, 'launch_deployment') as deploy:
+            todo=self.run_stage('merge')
+            deploy.assert_not_called()
+        self.assertEqual(todo['status'],'closed')
+
 
     def test_preview_config_rejects_nonlocal_url_and_command_strings(self):
         for options in [dict(preview_url='https://evil.example'),dict(test='rm -rf /')]:
@@ -452,7 +445,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(state['active_count'], 1)
             gate.set(); self.await_workers()
         self.workflow.dispatch(); self.await_workers()
-        self.assertEqual(self.workflow.status()['runs']['T0001']['phase'], 'restarting')
+        self.assertEqual(self.workflow.status()['runs']['T0001']['phase'], 'done')
 
     def test_github_squash_merge_is_not_applied_twice(self):
         todo = self.run_stage('implement'); run = todo['workflow']
@@ -463,7 +456,7 @@ class WorkflowTests(unittest.TestCase):
         self.git('add', 'result'); self.git('commit', '-qm', 'Follow-up'); self.git('push', 'origin', 'main')
         self.prs[run['pr_url']].update(state='MERGED', mergeCommit=dict(oid=merged))
         todo = self.run_stage('merge')
-        self.assertEqual(todo['workflow']['phase'], 'restarting', todo)
+        self.assertEqual(todo['workflow']['phase'], 'done', todo)
         self.assertEqual((self.repo/'result').read_text(), 'follow-up on main')
         self.assertEqual(todo['workflow']['github_merge_commit'], merged)
 
@@ -563,12 +556,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotEqual(self.git('rev-parse','HEAD'),baseline)
         self.assertIn('advanced',todo['workflow']['message'])
 
-    def test_automatic_delivery_requires_all_three_grants(self):
+    def test_automatic_publication_requires_merge_and_push_grants(self):
         self.run_stage('implement')
-        self.options.update(automatic_merge=True,automatic_publish=True,automatic_deploy=False)
+        self.options.update(automatic_merge=True,automatic_publish=False,automatic_deploy=True)
         with patch.object(self.workflow,'start') as start:
             self.workflow.tick();start.assert_not_called()
-        self.options['automatic_deploy']=True
+        self.options.update(automatic_publish=True,automatic_deploy=False)
         with patch.object(self.workflow,'start') as start:
             self.workflow.tick();self.assertEqual(start.call_args.args[0]['action'],'merge')
 
@@ -616,38 +609,24 @@ class WorkflowTests(unittest.TestCase):
         self.workflow = Workflow(self.store, 'http://127.0.0.1:1', self.options, self.processing)
         self.addCleanup(self.workflow.close)
 
-    def test_failed_delivery_pauses_queue_across_restart_and_recovery(self):
+    def test_legacy_restart_failure_cannot_block_new_publications(self):
         ids, requests = self.queue_ready_tickets()
-        before = copy.deepcopy(self.workflow.status()['runs'])
         self.options['restart'] = ['/usr/bin/false']
-        self.workflow.dispatch(); self.await_workers(); self.await_receipt(ids[0])
-        self.restart_coordinator()
-        self.workflow.tick()
-        state = self.workflow.status()
-        self.assertEqual(state['queue_blocked_by'], ids[0])
-        self.assertEqual(state['runs'][ids[0]]['phase'], 'restart_failed')
-        for ident, request in zip(ids[1:], requests[1:]):
-            self.assertEqual(state['runs'][ident]['phase'], 'merge_queued')
-            self.assertEqual(state['runs'][ident]['waiting_for'], ids[0])
-            self.assertEqual(state['runs'][ident]['queued_at'], before[ident]['queued_at'])
-            self.workflow.start(request)  # Original request remains idempotent.
-        self.options['restart'] = [sys.executable, '-c', 'print("recovered")']
-        self.start_ticket(ids[0], 'recover'); self.await_workers(); self.await_receipt(ids[0])
-        self.workflow.reconcile()
-        for ident in ids[1:]:
-            self.workflow.dispatch(); self.await_workers(); self.await_receipt(ident)
-            self.workflow.reconcile()
+        for ident in ids:
+            self.workflow.dispatch(); self.await_workers()
             self.assertEqual(self.workflow.status()['runs'][ident]['phase'], 'done')
+        self.assertIsNone(self.workflow.status()['queue_blocked_by'])
 
-    def test_successful_supervisor_receipt_retains_subsequent_queue_after_restart(self):
+
+    def test_publication_retains_subsequent_queue_after_coordinator_restart(self):
         ids, _ = self.queue_ready_tickets()
-        self.workflow.dispatch(); self.await_workers(); self.await_receipt(ids[0])
+        self.workflow.dispatch(); self.await_workers()
         self.restart_coordinator()
         self.workflow.tick(); self.await_workers()
         self.assertEqual(self.workflow.status()['runs'][ids[0]]['phase'], 'done')
-        self.assertEqual(self.workflow.status()['runs'][ids[1]]['phase'], 'restarting')
+        self.assertEqual(self.workflow.status()['runs'][ids[1]]['phase'], 'done')
         self.assertEqual(self.workflow.status()['runs'][ids[2]]['phase'], 'merge_queued')
-        self.await_receipt(ids[1]); self.workflow.reconcile()
+
 
     def test_explicit_skip_preserves_failure_and_request_identity(self):
         ids, _ = self.queue_ready_tickets()
@@ -687,14 +666,13 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
     def test_agent_resolves_conflict_and_continues_existing_authorization(self):
         original = self.conflict_fixture()
         todo = self.run_stage('merge'); run = todo['workflow']
-        self.assertEqual(run['phase'], 'restarting', run)
+        self.assertEqual(run['phase'], 'done', run)
         self.assertEqual((self.repo/'readme').read_text(), 'main + ticket')
         self.assertEqual(self.git('rev-parse', original['branch']), original['commit'])
         self.assertEqual(run['conflicted_paths'], ['readme'])
         self.assertIn('CONFLICT', run['git_diagnostics']['stdout'])
         self.assertEqual(run['integration_tested_commit'], run['published_commit'])
         self.assertTrue(Path(run['resolution_reports'][0]).is_file())
-        self.await_receipt(todo['id'])
 
     def test_restart_during_resolution_reuses_candidate_and_waiting_entries(self):
         self.conflict_fixture()
@@ -709,9 +687,8 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
         self.restart_coordinator()
         self.workflow.dispatch(); self.await_workers()
         after = self.workflow.status()['runs']['T0001']
-        self.assertEqual(after['phase'], 'restarting', after)
+        self.assertEqual(after['phase'], 'done', after)
         self.assertEqual(after['integration_worktree'], before['integration_worktree'])
-        self.await_receipt('T0001')
 
     def test_git_diagnostics_preserve_both_streams_and_command(self):
         from integration import GitFailure
@@ -759,10 +736,14 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
 
     def test_incomplete_or_newer_receipts_keep_delivery_pending(self):
         self.run_stage('implement'); todo = self.run_stage('merge')
+        run = copy.deepcopy(todo['workflow'])
+        self.workflow.save(todo['id'], run, status='started',closed_by='',date_closed='')
+        with self.workflow.repository_lock() as lock:
+            self.workflow.launch_deployment(todo['id'], run, lock)
         path = self.await_receipt(todo['id'])
         valid = json.loads(path.read_text())
         for receipt, reason in [('interrupted JSON', 'pending'),
-                                (json.dumps(dict(valid, format_version='1.20.0')), 'too old'),
+                                (json.dumps(dict(valid, format_version='1.21.0')), 'too old'),
                                 (json.dumps(dict(valid, commit='0'*40)), 'different candidate'),
                                 (json.dumps(dict(valid, ok='true')), 'incomplete')]:
             path.write_text(receipt)
@@ -788,10 +769,9 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
         agent.write_text('#!'+sys.executable+'\nimport pathlib,subprocess,sys,json\nprompt=sys.stdin.read()\nassert "sequential registry" in prompt\npathlib.Path("versions.py").write_text('+repr(combined)+')\nsubprocess.run(["git","add","versions.py"],check=True)\nsubprocess.run(["git","commit","-qm","Serialize both migrations"],check=True)\nhead=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()\npathlib.Path(sys.argv[sys.argv.index("-o")+1]).write_text(json.dumps(dict(status="complete",commit=head,summary="Both migrations retained",tests=["supported upgrades"],attempts=["Preserved published assignment; appended effort"],blocker="")))\n')
         self.options['test'] = [sys.executable, '-B', '-c', "import versions; v={'original':'retained','extension':[42]};\nfor f in versions.MIGRATIONS.values(): v=f(v)\nassert v == {'original':'retained','extension':[42],'search_paths':[],'effort':'medium'}"]
         todo = self.run_stage('merge'); run = todo['workflow']
-        self.assertEqual(run['phase'], 'restarting', run)
+        self.assertEqual(run['phase'], 'done', run)
         self.assertEqual((self.repo/'versions.py').read_text(), combined)
         self.assertEqual(self.git('rev-parse', original['branch']), original['commit'])
-        self.await_receipt(todo['id'])
 
     def migration_review(self):
         self.run_stage('implement')
@@ -802,62 +782,47 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
         with patch.object(self.workflow,'managed_unfertig',return_value=True),patch.object(self.workflow,'deployment_review',side_effect=review):
             return self.run_stage('merge')
 
-    def test_supported_migration_publishes_and_restarts_without_approval(self):
+    def test_supported_migration_finishes_at_publication(self):
         todo=self.migration_review();run=todo['workflow']
-        self.assertEqual(run['phase'],'restarting',todo)
-        self.assertEqual(run['deployment_driver'],'startup')
+        self.assertEqual(run['phase'],'done',todo)
+        self.assertNotIn('deployment_driver', run)
         self.assertEqual(self.git('rev-parse','origin/main'),run['integration_tested_commit'])
-        self.await_receipt(todo['id'])
 
-    def test_failed_programmatic_preflight_never_publishes(self):
-        self.run_stage('implement');head=self.git('rev-parse','HEAD')
-        with patch.object(self.workflow,'managed_unfertig',return_value=True), patch.object(self.workflow,'deployment_review',side_effect=ValueError('Invalid migration')):
+
+    def test_host_preflight_is_outside_publication(self):
+        self.run_stage('implement')
+        with patch.object(self.workflow,'managed_unfertig',return_value=True), patch.object(self.workflow,'deployment_review',side_effect=AssertionError('Host preflight must not run')) as review:
             run=self.run_stage('merge')['workflow']
-        self.assertEqual(run['phase'],'merge_failed')
-        self.assertEqual(self.git('rev-parse','HEAD'),head)
-        self.assertEqual(self.git('rev-parse','origin/main'),head)
+            review.assert_not_called()
+        self.assertEqual(run['phase'],'done')
+        self.assertEqual(self.git('rev-parse','origin/main'), run['integration_tested_commit'])
 
-    def test_startup_deployment_recovery_uses_restart_without_host_review(self):
-        todo=self.migration_review();run=todo['workflow'];self.await_receipt(todo['id'])
-        self.workflow.save(todo['id'],dict(run,phase='restart_failed'))
+
+    def test_legacy_startup_deployment_recovery_uses_retained_evidence(self):
+        todo=self.migration_review();run=todo['workflow']
+        run.update(phase='restart_failed', deployment_driver='startup')
+        self.workflow.save(todo['id'],run,status='started',closed_by='',date_closed='')
         with patch.object(self.workflow,'launch_deployment') as launch:
             self.run_stage('recover')
-        self.assertIsNone(launch.call_args.args[-1])
+        launch.assert_not_called()
+        self.assertEqual(self.store.snapshot()['data']['todos'][0]['status'],'closed')
+
 
     def test_public_recovery_verifies_publication_without_new_integration(self):
         self.run_stage('implement');todo=self.run_stage('merge');run=todo['workflow']
-        # Join the detached receipt writer before simulating failed deployment.
-        receipt=Path(run['worktree']).parent/(run['run_id']+'-deployment.json')
-        for _ in range(100):
-            if receipt.exists():break
-            time.sleep(.02)
-        self.workflow.save(todo['id'],dict(run,phase='restart_failed'))
+        self.workflow.save(todo['id'],dict(run,phase='restart_failed'),status='started',closed_by='',date_closed='')
         before=self.git('rev-parse','HEAD')
         with patch.object(self.workflow,'integrate_and_deploy') as integrate,patch.object(self.workflow,'launch_deployment') as launch:
-            self.run_stage('recover');integrate.assert_not_called();launch.assert_called_once()
+            self.run_stage('recover');integrate.assert_not_called();launch.assert_not_called()
         self.assertEqual(self.git('rev-parse','HEAD'),before)
 
 
-    def test_startup_migration_drains_until_verified_receipt(self):
-        todo=self.migration_review();run=todo['workflow']
-        self.assertEqual(run['phase'],'restarting')
-        self.assertTrue(self.workflow.draining())
-        self.await_receipt(todo['id'])
-        self.workflow.reconcile()
-        current=self.store.snapshot()['data']['todos'][0]
-        self.assertEqual(current['workflow']['phase'],'done',current)
+    def test_publication_does_not_leave_instance_draining(self):
+        todo=self.migration_review()
+        self.assertEqual(todo['workflow']['phase'],'done')
         self.assertFalse(self.workflow.draining())
 
 
-
-class WorkerCapacityTests(unittest.TestCase):
-    setUp = WorkflowTests.setUp
-    git = WorkflowTests.git
-    fake_github = WorkflowTests.fake_github
-    add_ticket = WorkflowTests.add_ticket
-    start_ticket = WorkflowTests.start_ticket
-    await_workers = WorkflowTests.await_workers
-    # Use the same disposable board/repository fixture and scheduler helpers.
     def configure_capacity(self):
         from worker_capacity import WorkerSettings
         self.store.config = self.store.root / 'config.json'

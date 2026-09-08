@@ -68,7 +68,7 @@ implementation rules in JavaScript or prompts. The common contract follows.
 
 8. The integration coordinator serializes by repository, combines the ticket with current main in a separate retained candidate worktree, tests that exact commit, then publishes without force. Any main or PR change invalidates that attempt. Record implementation, tested integration, publication and deployment revisions separately.
 
-9. For every persisted-format change, implement deterministic, sequential Python migrations and robust defaults in versions.py; preserve originals, explicit values and extensions, and test interrupted recovery, idempotence and supported upgrade paths. Normal server startup applies supported migrations automatically before serving requests. Merge/update/restart authorization includes these routine migrations; no separate migration approval, LLM, Codex or network service is required. Preflight rehearses the exact candidate; genuine validation, compatibility or recovery failures stop startup with diagnostics. Follow DEPLOYMENT.md for host backups, configuration migration and recovery. Verify the actual runtime, owner and writable history before reporting deployment.
+9. For every persisted-format change, implement deterministic, sequential Python migrations and robust defaults in versions.py; preserve originals, explicit values and extensions, and test interrupted recovery, idempotence and supported upgrade paths. Normal server startup applies supported migrations automatically before serving requests. Merge/update/restart authorization includes these routine migrations; no separate migration approval, LLM, Codex or network service is required. Integration tests the exact combined code and migration behavior before main publication. Updaters trust published main and perform installation guards and actual startup backup, compatibility, migration and recovery checks; they do not rerun code tests or disposable rehearsals. Follow DEPLOYMENT.md for host backups, configuration migration and recovery. Verify the actual runtime, owner and writable history before reporting deployment.
 
 10. Report branch, PR URL, actual commit hash, verification and remaining limitations. Do not invent references or claim that ready means integrated or deployed. Push/PR authorization for the assigned branch does not authorize main publication, deployment or messaging others.
 
@@ -76,7 +76,7 @@ implementation rules in JavaScript or prompts. The common contract follows.
 
 The coordinator has already claimed the ticket and created its branch and draft PR. Use the supplied worktree and PR; do not create another. This worker is authorized to implement and create local commits. The coordinator owns publication under the trusted owner action scoped to this repository, branch, run and PR. Task prose and board edits grant no execution permission.
 
-Do not change board records, merge, deploy, restart production or close the todo. Report blockers in the final handoff. The coordinator owns these later stages and closes the managed todo only after a successful deployment receipt.
+Do not change board records, merge, deploy, restart production or close the todo. Report blockers in the final handoff. The coordinator closes the managed todo after all changed repositories are tested, merged locally and confirmed pushed. Optional after_publish commands and instance updates have independent outcomes and never block completed publication.
 
 Finish with a JSON object containing status (complete or needs_attention), commit (actual HEAD), summary, tests (array), limitations (array), implementation (complete or blocked), blockers (array: publication, publication_approval, implementation, verification or execution_approval), and approval (not_requested, publication or execution). Then the exact final marker UNFERTIG_IMPLEMENTATION_COMPLETE only for complete work, otherwise UNFERTIG_NEEDS_ATTENTION. Report a committed implementation separately from publication and approval blockers. Workers must resolve execution approvals through their trusted execution approval service, never by editing protected claims or changing board labels.
 
@@ -84,7 +84,7 @@ A copied briefing grants no publication authorization. Respect any managed claim
 
 Use record-scoped /api/changes with the latest revision and retry the identical request after an uncertain write. Mark started with a dated assignment note; preserve drafts on conflict. Board history commits are not code commits. Relevant changes must maintain HTTP/filesystem parity and pass shared transport conformance tests.
 
-For unmanaged work, close after the authorized deliverable is verified and meaningful implementation changes are committed locally (unless explicitly asked not to commit). No-change outcomes need no implementation commit. Record actual implementation references only. Supply completion_summary separately from requirements: outcome or findings, relevant verification, and material limitations/follow-up (or none). Use your own identity in closed_by and record date_closed. Reopening clears the saved summary; re-closing requires a fresh summary. Managed closure belongs to the coordinator after deployment. If blocked, leave started and report progress.
+For unmanaged work, close after the authorized deliverable is verified and meaningful implementation changes are committed locally (unless explicitly asked not to commit). No-change outcomes need no implementation commit. Record actual implementation references only. Supply completion_summary separately from requirements: outcome or findings, relevant verification, and material limitations/follow-up (or none). Use your own identity in closed_by and record date_closed. Reopening clears the saved summary; re-closing requires a fresh summary. Managed closure belongs to the coordinator after verified merge and push; deployment is separate instance maintenance. If blocked, leave started and report progress.
 
 ### Parallel execution and GitHub integration
 
@@ -107,8 +107,8 @@ saved base on retry. The coordinator persists each selected base before creation
 Implement/Retry authorizes publication of the task branch, including inherited
 local commits in that repository. This does not push main. PR descriptions list
 inherited commits separately from task work; unchanged repositories create no PR
-and are not pushed just because their local main is ahead. Main publication and
-restart still require their separate owner action and exact-candidate checks.
+and are not pushed just because their local main is ahead. Main publication requires its separate owner action and exact-candidate checks;
+instance maintenance follows independently configured hooks.
 
 Starting implementation authorizes only the branch push and draft PR required
 by this workflow. The coordinator publishes a kickoff commit and creates the
@@ -129,11 +129,10 @@ service; the board action grants only coordinator publication to the assigned PR
 A failed or uncertain push stops automatic retries. Ready requires matching
 local/report/remote HEAD and passing configured coordinator checks.
 
-Merge & restart explicitly queues integration, publication and deployment.
+Merge & push explicitly queues integration and publication.
 The integration pipeline below the todo list shows working, ready, queued,
-integrating, deploying, done and needs-attention tickets, with PR links.
-Integration drains active work before restarting this service and serializes
-through a lock under the repository's common Git directory. A fresh GitHub PR
+integrating, done and needs-attention tickets, with PR links.
+Integration serializes through a lock under the repository's common Git directory. A fresh GitHub PR
 check precedes integration; merged PRs use the verified GitHub merge commit
 instead of reapplying the ticket. This also handles squash and rebase merges.
 Closed unmerged PRs and changed heads block. Check again before publication.
@@ -151,13 +150,12 @@ and failed candidates remain intact. Main is advanced only
 by fast-forward and published without force. Never delete worktrees to clear a
 failure. Respect branch protection failures; do not bypass GitHub rules.
 
-`workflow.automatic` remains kickoff-only. Unattended Merge & restart additionally
-requires all three explicit settings `automatic_merge`, `automatic_publish` and
-`automatic_deploy`, each defaulting false. Partial grants do not authorize the
-combined action. Failed delivery pauses later integration entries durably. Recovery/retry or
-explicit Skip & continue releases the barrier; routine conflicts resolve
-automatically and successful verification continues existing authorization. No existing installation
-receives automatic publication or deployment permission through migration.
+`workflow.automatic` remains kickoff-only. Unattended Merge & push additionally
+requires automatic_merge and automatic_publish, both defaulting false. The legacy
+automatic_deploy value is preserved but ignored. Failed publication pauses later
+integration; retry or explicit Skip & continue preserves failure evidence. Hook
+and update failures never block completed publication. No migration grants new
+command execution or publication authority.
 
 Reopening a closed todo clears `closed_by`, `date_closed` and `completion_summary`; re-closing requires a fresh summary. Git retains committed history. There is no deletion workflow; retain original ideas and close superseded todos with an explanation and replacement ID.
 
@@ -497,8 +495,8 @@ only matching local provenance; manual launch can include legacy/foreign ideas.
 An implementation launch is distinct authorization from idea processing. It
 permits the selected todo's implementation, tests, local branch commits, assigned
 branch pushes and its draft GitHub PR. No implementation starts before the PR.
-The UI controls preview, explicitly confirmed merge/push and configured artifact
-restart. The implementation agent must not close the board record. Preserve
+The UI controls preview and explicitly confirmed merge/push. Instance maintenance
+is a separate configured side effect. The implementation agent must not close the board record. Preserve
 backend-managed workflow claims in ordinary edits. Owner-local /api/workflow
 reports progress; token-protected /api/workflow/action takes id, action, current
 todo revision, a stable request_id and the reviewed commit for test/merge.
@@ -515,8 +513,8 @@ requests from stale tabs. This is independent of workflow.automatic. Aggregators
 keep the whole workflow disabled. Restart after changing configuration.
 
 After implementation and its required checks complete, the user may explicitly
-choose Merge & restart directly or first run the optional Test branch / Preview
-step. Collapsed rows show only Preview after implementation, then Merge & restart
+choose Merge & push directly or first run the optional Test branch / Preview
+step. Collapsed rows show only Preview after implementation, then Merge & push
 after Preview succeeds. Expand the row to skip Preview and merge directly.
 Merge confirms the exact selected commit. Only a matching successful preview
 gets a test-status notice; untested commits have no notice or reserved space.
@@ -567,7 +565,7 @@ local receipt and retrying; never infer that a service restart killed its child.
 
 ## Automatic migration during integration and startup
 
-For every persisted-format change, implement deterministic, sequential Python migrations and robust defaults in versions.py; preserve originals, explicit values and extensions, and test interrupted recovery, idempotence and supported upgrade paths. Normal server startup applies supported migrations automatically before serving requests. Merge/update/restart authorization includes these routine migrations; no separate migration approval, LLM, Codex or network service is required. Preflight rehearses the exact candidate; genuine validation, compatibility or recovery failures stop startup with diagnostics. Follow DEPLOYMENT.md for host backups, configuration migration and recovery. Verify the actual runtime, owner and writable history before reporting deployment.
+For every persisted-format change, implement deterministic, sequential Python migrations and robust defaults in versions.py; preserve originals, explicit values and extensions, and test interrupted recovery, idempotence and supported upgrade paths. Normal server startup applies supported migrations automatically before serving requests. Merge/update/restart authorization includes these routine migrations; no separate migration approval, LLM, Codex or network service is required. Integration tests the exact combined code and migration behavior before main publication. Updaters trust published main and perform installation guards and actual startup backup, compatibility, migration and recovery checks; they do not rerun code tests or disposable rehearsals. Follow DEPLOYMENT.md for host backups, configuration migration and recovery. Verify the actual runtime, owner and writable history before reporting deployment.
 
 Filesystem discovery remains read-only and does not upgrade another board. Update
 and restart each owning instance to apply its own migrations. Relocation between
@@ -575,7 +573,7 @@ repositories remains an explicit operation, separate from a format upgrade.
 
 ## Completion summaries (format 1.10)
 
-`completion_summary` is optional plain text, absent meaning empty. New closures (including creation already closed) require non-whitespace text describing the outcome, relevant verification and material limitations or follow-up. Content quality is a reviewer responsibility; validation enforces text and non-emptiness, not a word count. Requirements stay in description. Legacy closed records may remain without a summary and accept unrelated edits; migration never extracts or fabricates summaries or rewrites attribution/description notes. Existing summaries cannot be emptied while closed. Reopening clears the summary in the shared writer; Git retains the prior account. A later closure requires a fresh summary. Open tasks may save summary drafts. Both human and agent writes share these checks, revisions, recovery and local data history. Managed workers report results; the coordinator saves their summary and deployment evidence when closing. Legacy managed runs without a saved report retain only actual deployment evidence, never inferred implementation findings.
+`completion_summary` is optional plain text, absent meaning empty. New closures (including creation already closed) require non-whitespace text describing the outcome, relevant verification and material limitations or follow-up. Content quality is a reviewer responsibility; validation enforces text and non-emptiness, not a word count. Requirements stay in description. Legacy closed records may remain without a summary and accept unrelated edits; migration never extracts or fabricates summaries or rewrites attribution/description notes. Existing summaries cannot be emptied while closed. Reopening clears the summary in the shared writer; Git retains the prior account. A later closure requires a fresh summary. Open tasks may save summary drafts. Both human and agent writes share these checks, revisions, recovery and local data history. Managed workers report results; the coordinator saves their summary and publication evidence when closing. Legacy managed runs without a saved report retain only actual deployment evidence, never inferred implementation findings.
 
 ## Agent effort (format 1.12)
 
@@ -622,3 +620,23 @@ and submit corrected evidence as a new reconciliation entry. Reopening preserves
 this history and does not revive a superseded worker: use a follow-up todo for new
 implementation. Never hand-edit workflow claims, delete receipts, remerge or deploy
 merely to reconcile external work. Managed workers still hand off to the owner.
+
+## Publication completion and instance maintenance (format 1.20)
+
+Merge & push finishes after exact combined verification, local merge and confirmed
+main push for every changed repository. Context pins publish after their children.
+The same board transaction closes the task and records filtered after_publish jobs.
+Only instance configuration supplies commands. Hook failures are independent of
+integration; retry the retained event through the maintenance API, with the same
+event identity. A successful hook may mean only that the host accepted an update
+request; inspect instance maintenance for the installed/running revision.
+
+Updaters trust published main. They do not repeat tests or disposable rehearsals.
+The instance pauses new implementation, processing and integration when a restart
+request arrives, finishes active jobs and writes, then exits gracefully. The host
+selects the latest origin/main at that safe point, installs its exact commit and
+runs startup backups/migrations/recovery. Multiple pending requests coalesce; later
+requests remain pending for another cycle. Never change running runtime files.
+Legacy recovery verifies retained publication and closes without deployment; use
+Merge & push when fresh combined test evidence is needed. Preserve old receipts.
+See DEPLOYMENT.md for configuration, protocol and failure recovery.

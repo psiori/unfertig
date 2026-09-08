@@ -416,16 +416,16 @@ action immediately; activity remains batched into the existing heartbeats.
 
 ## Implementation workflow
 
-Use **Implement with Codex → optional Test branch → Merge & restart**.
+Use **Implement with Codex → optional Test branch → Merge & push**.
 After implementation, collapsed rows show only **Preview** as the next workflow
-action. Successful Preview advances that action to **Merge & restart**. Unfold
+action. Successful Preview advances that action to **Merge & push**. Unfold
 the row to choose direct merge without Preview; expanded controls retain both choices.
 Implementation runs in a `codex/…` branch in a locally excluded
 `.worktrees/unfertig/` checkout. It receives the host's instructions, design,
 developer rules, saved context and original ideas. It uses the configured Codex
 executable with `--approve-for-me`. Progress & branch details shows live output.
 A finished agent report, new commit, clean worktree and configured checks are
-required before preview or merge. The task stays started until deployment succeeds.
+required before preview or merge. The task closes when all changed repositories have been tested, merged and pushed. Instance maintenance is shown separately.
 
 The leading todo icon shows a small rotating ring while fresh owner-local workflow
 status confirms an active implementation worker, including its required checks.
@@ -442,11 +442,12 @@ never in the live board. Stopping the board stops previews. Merge confirms the
 exact selected commit. A successful Test branch / Preview is shown only when
 it matches that commit; no notice or message space is shown for an untested commit. It
 fast-forwards a clean checkout on the configured base, pushes without force,
-then runs the configured artifact restart. A serialized integration candidate
-combines current main and the ticket, with mandatory checks of the combined commit.
-Main or PR changes during validation invalidate that attempt and require retry. A detached supervisor retains
-restart results even when Unfertig itself restarts. Failed pushes/restarts and
-interrupted stages remain visible for explicit retries. Worktrees are retained.
+then closes the task. A serialized integration candidate combines current main
+and the ticket, with mandatory checks of that exact combined commit. Main or PR
+changes invalidate the attempt. Optional post-publication commands run separately;
+their failures and pending updates never undo publication or block the task queue.
+Failed pushes and interrupted integration remain visible for explicit retries.
+Worktrees and publication evidence are retained.
 
 Configure `workflow` in the instance config and restart. `enabled` defaults to
 false: all implementation/preview/merge controls are hidden and backend workflow
@@ -466,35 +467,26 @@ without a shell. Named placeholders are `{worktree}`, `{repository}`, `{context}
   "max_workers": 4,
   "automatic_merge": false,
   "automatic_publish": false,
-  "automatic_deploy": false,
   "automatic_since": "2026-09-07T00:00:00+00:00",
   "repository": "../../../unfertig",
   "base_branch": "main",
   "test": ["uv", "run", "--no-project", "--python", "3.12", "--script", "{worktree}/workflow_support.py", "unfertig", "test", "--repository", "{worktree}", "--context", "{context}"],
   "preview": ["uv", "run", "--no-project", "--python", "3.12", "--script", "{worktree}/workflow_support.py", "unfertig", "preview", "--repository", "{worktree}", "--context", "{context}", "--data", "{data}", "--port", "{port}"],
   "preview_url": "http://127.0.0.1:{port}",
-  "restart": ["uv", "run", "--no-project", "--python", "3.12", "--script", "{repository}/workflow_support.py", "unfertig", "restart", "--repository", "{repository}", "--context", "{context}"],
+  "after_publish": [],
   "timeout_seconds": 3600
 }
 ```
 
 Paths resolve from the config file. Omit repository to use the processing
 context's node.json project.path, otherwise that context itself. Missing declared
-paths block; no recursive project discovery occurs. All three commands are
-required. The optional workflow_support.py recipes cover Unfertig, Kermit,
-Unendlich's native app and document-only contexts. Other projects supply their
-own commands. Managed Unfertig retains its normal update gate: a future storage
-migration runs automatically on restart. Unmanaged artifact processes
-are not killed; configure their owning supervisor when necessary.
-
-The Unfertig restart recipe polls supervisor status for up to 900 seconds, including
-candidate tests and storage validation. Set `--startup-timeout SECONDS` (1–3600)
-on the recipe for a different budget, keeping the outer workflow timeout larger
-than the startup budget plus shutdown time. A short supervisor client timeout does not end the deployment: the helper keeps
-polling until that same session reports the Unfertig service running, then
-verifies the installed commit. A real failure or changed session is rejected.
-If the overall budget expires, the message explicitly reports pending startup;
-inspect supervisor status before retrying.
+paths block; no recursive project discovery occurs. Test and preview commands
+are required for single-repository workflows. UM context-only work uses metadata
+checks. `after_publish` defaults to an empty list. Its commands are optional trusted
+configuration, filtered by repository and target branch; see [DEPLOYMENT.md](DEPLOYMENT.md)
+for the generic hook and cooperative restart contracts. Old `restart` recipes and
+`automatic_deploy` values remain preserved for historical evidence and are ignored
+by new integration. They are never automatically converted into executable hooks.
 
 Automatic implementation defaults **off**, separately from idea processing.
 When enabled, it selects open, unclaimed todos entered on/after automatic_since
@@ -505,7 +497,7 @@ and existing backlog todos remain manual. Aggregators never implement; open the
 source's owner link. Claims prevent automatic retries across restarts or sync.
 Explicit Retry implementation uses the retained branch. Task-scope changes
 require reviewing and reconciling that branch. Preview remains manual. Unattended
-Merge & restart requires all three explicit grants described below.
+Merge & push requires both explicit publication grants described below.
 
 These are CLI runs with output in Unfertig. A shared live Codex desktop session
 has not been demonstrated. See [Codex session interoperability](CODEX_SESSIONS.md)
@@ -520,7 +512,7 @@ GitHub CLI `gh` must be installed and authenticated for the code repository.
 Before an agent starts, Unfertig pushes its branch and creates a draft
 `[WIP] [unfertig]` PR. An empty kickoff commit establishes the PR but cannot count
 as implementation. The PR appears in the ticket and the integration pipeline
-below the todo list. Workers push coherent commits early; Unfertig also pushes
+below the todo list. The coordinator publishes coherent worker commits early; Unfertig pushes
 observed HEAD changes every two seconds and at worker exit. A publication/PR
 failure blocks launch; retries recover the existing PR rather than creating two.
 
@@ -531,17 +523,16 @@ the original ticket branch. Closed unmerged PRs and changed heads need attention
 The original branch is never rebased or force-pushed. Failed candidates remain
 available for explicit repair and retry; branch protection is never bypassed.
 
-The pipeline row shows Working → Ready → Integration queue → Integrating →
-Deploying → Done, plus Needs attention, with individual PR links. Integration
-serializes by repository and drains running workers before deployment can restart
-the service. Queued work survives restarts; running interrupted jobs require retry.
-When code and board share a repository, candidate checks include board history
-present at candidate creation; further main changes invalidate the attempt.
+The pipeline shows Working → Ready → Integration queue → Integrating → Done,
+plus Needs attention. Integration is serialized by repository. Published tasks
+leave the integration queue even when a hook fails or an instance update is waiting.
+Instance maintenance shows hook outcomes, restart blockers and the running revision.
+Queued work survives a cooperative restart; active work finishes before exit.
 
-Automatic kickoff does not authorize main publication. `automatic_merge`,
-`automatic_publish` and `automatic_deploy` each default false; all three must
-be explicitly true to enable unattended Merge & restart. Partial grants leave
-that combined action manual. Migration never turns any of these permissions on.
+Automatic kickoff does not authorize main publication. `automatic_merge` and
+`automatic_publish` default false and must both be true for unattended Merge & push.
+`automatic_deploy` is a retained legacy setting with no effect on this boundary.
+A configured hook has its own execution authorization; a task cannot supply commands.
 
 The canonical implementation advice is [agent_advice.json](agent_advice.json),
 loaded by both the browser briefings and managed worker prompts. See
@@ -631,7 +622,7 @@ GitHub's current PR identity, target, state and merge revision are checked again
 the configured repository and fetched origin branch. Squash/rebase merges use that
 merge revision; the old failed branch need not contain it or even have a completed
 commit. Integration and deployment are displayed separately as verified/unverified.
-For managed Unfertig, deployment verification checks both committed wrapper pins,
+For managed Unfertig, deployment verification checks the committed runtime pin,
 installed runtime, startup-captured running revision, owner and writable history.
 Other artifact recipes retain supplied deployment references explicitly unverified.
 No code merge, restart, deployment recovery or storage migration is invoked.
@@ -668,9 +659,9 @@ The worker reports every available repository's ID and actual commit. The
 coordinator verifies clean worktrees, publishes checkpoints and tests the result.
 
 `workflow.repository` remains the primary artifact for existing test/preview/
-restart recipes. Additional children use `workflow.repositories` keyed by their
+test and preview recipes. Additional children use `workflow.repositories` keyed by their
 stable artifact IDs (`project` for a legacy singular child, `context` for the UM
-repository), with argv-array `test`, optional `preview`/`restart` and `base_branch`.
+repository), with argv-array `test`, optional `preview` (legacy `restart` is retained but ignored) and `base_branch`.
 Changed code without a test recipe is blocked. Context validation defaults to
 whitespace and changed-JSON checks; configure a context test for stronger checks.
 Only the configured primary preview is launched by Test branch.
@@ -679,7 +670,7 @@ The UI lists each repository's PR and progress. Integration acquires ordered Git
 locks, tests exact candidates, reconciles already-merged PRs and publishes children
 before updating wrapper pins. Partial publication is retained and recoverable;
 GitHub does not offer an atomic transaction across independent repositories.
-Context-only work closes after publication; configured runtime restarts retain
+All work closes after publication; optional hooks and runtime maintenance retain
 separate evidence. Existing single-repository runs are not silently expanded.
 
 ### Header worker capacity

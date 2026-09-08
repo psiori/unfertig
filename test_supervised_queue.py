@@ -47,13 +47,10 @@ class SupervisedQueueTests(unittest.TestCase):
         failure.parent.mkdir(exist_ok=True)
         if fail_first:
             failure.touch()
-        restart = board/'restart-fixture.py'
-        restart.write_text('import subprocess,sys,pathlib\n'+
-                          f'command=[{sys.executable!r},{str(tools)!r}]\n'+
-                          'subprocess.run(command+["stop","--timeout","20","--json"],check=True)\n'+
-                          'subprocess.run(command+["start","--timeout","20","--json"],check=True)\n'+
-                          f'raise SystemExit(1 if pathlib.Path({str(failure)!r}).exists() else 0)\n')
-        settings = dict(fixture.options, restart=[sys.executable, str(restart)])
+        hook = board/'hook-fixture.py'
+        hook.write_text('import pathlib\n'+f'raise SystemExit(1 if pathlib.Path({str(failure)!r}).exists() else 0)\n')
+        settings = dict(fixture.options, restart=[], after_publish=[dict(id='maintenance',repository=str(fixture.repo),
+            branch='main',cwd=str(board),command=[sys.executable,str(hook)],timeout_seconds=10)])
         config.write_text(json.dumps(dict(format_version=fixtures.FORMAT_VERSION, mode='embedded',
             data='../../../data.json', repository='../../..', port=port,
             processing=dict(enabled=False, executable=fixture.processing['executable']), workflow=settings)))
@@ -94,22 +91,6 @@ class SupervisedQueueTests(unittest.TestCase):
                     pass  # The actual supervisor is stopping/starting the service.
                 time.sleep(.1)
             self.fail(f'Timed out waiting for {phase}: {latest}')
-        if fail_first:
-            failed = wait_for('restart_failed')
-            for before, after in zip(initial['data']['todos'][1:], failed['data']['todos'][1:]):
-                self.assertEqual(after['workflow'], before['workflow'])
-            with urllib.request.urlopen(url+'/api/workflow') as response:
-                status = json.load(response)
-            self.assertEqual(status['queue_blocked_by'], ids[0])
-            self.assertEqual(status['runs'][ids[1]]['waiting_for'], ids[0])
-            failure.unlink()
-            first = failed['data']['todos'][0]
-            request = urllib.request.Request(url+'/api/workflow/action', method='PUT',
-                headers={'Content-Type':'application/json','X-Board-Token':failed['token']},
-                data=json.dumps(dict(id=ids[0], action='recover', commit=first['workflow']['commit'],
-                    revision=failed['revisions']['todos'][ids[0]], request_id='supervised-recovery')).encode())
-            with urllib.request.urlopen(request, timeout=5) as response:
-                self.assertEqual(response.status, 200)
         wait_for('done')
         deadline = time.monotonic()+60
         while time.monotonic() < deadline:
@@ -122,14 +103,21 @@ class SupervisedQueueTests(unittest.TestCase):
             time.sleep(.1)
         else:
             self.fail('Subsequent PRs did not complete across supervisor restarts')
+        deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            result=snapshot()
+            if all(t['workflow']['post_publish'][0]['status'] != 'pending' for t in result['data']['todos']):break
+            time.sleep(.05)
+        self.assertTrue(all(t['status']=='closed' for t in result['data']['todos']))
+        self.assertTrue(all(t['workflow']['post_publish'][0]['status']==('failed' if fail_first else 'complete') for t in result['data']['todos']))
         for before, after in zip(initial['data']['todos'], result['data']['todos']):
             self.assertEqual(before['workflow']['queued_at'], after['workflow']['queued_at'])
             self.assertEqual(before['workflow']['run_id'], after['workflow']['run_id'])
             for key, value in before['workflow']['action_requests'].items():
                 self.assertEqual(after['workflow']['action_requests'][key], value)
 
-    def test_successful_delivery_drains_queue_across_actual_supervisor_restarts(self):
+    def test_successful_hooks_leave_publication_queue_running(self):
         self.exercise(False)
 
-    def test_failed_delivery_pauses_after_actual_restart_then_public_recovery_resumes(self):
+    def test_failed_hooks_do_not_block_subsequent_publication(self):
         self.exercise(True)

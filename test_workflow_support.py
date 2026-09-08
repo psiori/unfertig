@@ -8,32 +8,13 @@ import workflow_support
 
 
 class ManagedRestartTests(unittest.TestCase):
-    def restart(self, *extra, revision='a'*40, start_error=None):
-        calls = []
-        argv = ['workflow_support.py', 'unfertig', 'restart',
-                '--repository', '/tmp/artifact', '--context', '/tmp/wrapper', *extra]
-        with patch('deployment_preflight.assess', return_value={}), patch('sys.argv', argv), patch.object(workflow_support, 'run', lambda argv, cwd: calls.append(argv)), \
-             patch.object(workflow_support, 'start_managed', side_effect=start_error) as start, \
-             patch.object(workflow_support.subprocess, 'check_output', side_effect=['a'*40, revision, '']):
-            workflow_support.main()
-        return calls, start.call_args.args
-
-    def test_wait_budget_is_separate_from_stop(self):
-        calls, args = self.restart()
-        self.assertEqual(calls[0][-1], '60')
-        self.assertEqual(args, (Path('/tmp/wrapper'), 900))
-
-    def test_explicit_startup_budget(self):
-        _, args = self.restart('--startup-timeout', '1200')
-        self.assertEqual(args[1], 1200)
-
-    def test_actual_start_failure_is_not_success(self):
-        with self.assertRaises(ValueError):
-            self.restart(start_error=ValueError('start failed'))
-
-    def test_wrong_installed_revision_still_fails(self):
-        with self.assertRaisesRegex(ValueError, 'did not install'):
-            self.restart(revision='b'*40)
+    def test_legacy_recipe_refuses_before_preflight_stop_or_start(self):
+        for extra in ([], ['--startup-timeout','1200']):
+            argv=['workflow_support.py','unfertig','restart','--repository','/tmp/artifact','--context','/tmp/wrapper',*extra]
+            with patch('sys.argv',argv), patch('deployment_preflight.assess') as assess, patch.object(workflow_support,'run') as run, patch.object(workflow_support,'start_managed') as start:
+                with self.assertRaisesRegex(ValueError,'Legacy in-transaction restart is disabled'):
+                    workflow_support.main()
+                assess.assert_not_called();run.assert_not_called();start.assert_not_called()
 
     @staticmethod
     def status(phase, session='one', tools=None, code=0):

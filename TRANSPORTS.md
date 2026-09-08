@@ -260,3 +260,10 @@ Live capacity and token-protected `/api/workflow/settings` are owner-service
 operations, like workflow actions; offline/aggregate snapshots do not assert
 readiness or dispatch workers. Transport switches preserve records, claims and
 queues unchanged. See README.md for host-local persistence and effective timing.
+
+Storage 1.20 publication events are protected workflow metadata in both adapters.
+Ordinary HTTP and filesystem edits cannot forge hook commands, completion outcomes
+or retry grants. Instance maintenance and hook retries are owner-local operations
+through /api/maintenance; filesystem aggregation does not execute another board's
+hooks or request its restart. The owning server reconciles durable events after
+startup with the same version, transaction and history guards.

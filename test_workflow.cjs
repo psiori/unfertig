@@ -48,7 +48,7 @@ test('disabled or missing feature flag hides all workflow controls and blocks st
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
   await poll();assert.equal(panel.hidden,true);assert.equal(panel.innerHTML,'');
   result={enabled:true,runs:{},configured:true,automatic:false};await poll();
-  assert.equal(panel.hidden,false);assert.match(panel.innerHTML,/including inherited local commits/);assert.match(panel.innerHTML,/Implement with Codex/);assert.match(panel.innerHTML,/Test branch/);assert.match(panel.innerHTML,/Merge & restart/);
+  assert.equal(panel.hidden,false);assert.match(panel.innerHTML,/including inherited local commits/);assert.match(panel.innerHTML,/Implement with Codex/);assert.match(panel.innerHTML,/Test branch/);assert.match(panel.innerHTML,/Merge & push/);
   result={enabled:false,runs:{}};await poll();assert.equal(panel.hidden,true);assert.equal(panel.innerHTML,'');
   const before=calls.length;
   await events.click({target:{closest:()=>({dataset:{todo:'T0001',workflowAction:'implement'}})},preventDefault(){},stopPropagation(){}});
@@ -66,7 +66,7 @@ test('collapsed row follows workflow stages and respects execution guards',async
     fetch:async()=>({ok:true,json:async()=>result})};
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
   await poll(); assert.equal(slot.hidden,false); assert.match(slot.innerHTML,/including inherited local commits/); assert.match(slot.innerHTML,/data-workflow-action="implement"/);
-  for(const [phase,action,label] of [['ready','test','Preview'],['tested','merge','Merge & restart'],['implementation_failed','retry','Retry implementation'],['test_failed','test','Preview'],['push_failed','merge','Merge & restart']]) {
+  for(const [phase,action,label] of [['ready','test','Preview'],['tested','merge','Merge & push'],['implementation_failed','retry','Retry implementation'],['test_failed','test','Preview'],['push_failed','merge','Merge & push']]) {
     result.runs.T0001={phase}; await poll();
     assert.equal((slot.innerHTML.match(/<button/g)||[]).length,1);
     assert.match(slot.innerHTML,new RegExp(`data-workflow-action="${action}"`)); assert.ok(slot.innerHTML.includes(label)); assert.doesNotMatch(slot.innerHTML,/ disabled/);
@@ -108,7 +108,7 @@ test('collapsed next action and expanded optional preview retain confirmed direc
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
   for(const phase of ['ready','test_failed','tested','merge_failed','push_failed','restart_failed']){
     result.runs.T0001.phase=phase;await poll();
-    assert.match(panel.innerHTML,/data-workflow-action="merge"[^>]* >Merge & restart/);
+    assert.match(panel.innerHTML,/data-workflow-action="merge"[^>]* >Merge & push/);
     assert.equal((slot.innerHTML.match(/<button/g)||[]).length,1);
     assert.match(slot.innerHTML,new RegExp(`data-workflow-action="${['ready','test_failed'].includes(phase)?'test':'merge'}"`));
     for(const surface of [slot,panel]) {
@@ -143,11 +143,11 @@ test('parallel activity leaves another ticket actionable and pipeline links each
   await poll();assert.doesNotMatch(slot.innerHTML,/ disabled/);
   assert.match(row.innerHTML,/1\/2 workers/);assert.match(row.innerHTML,/github.com\/test\/code\/pull\/1/);
   result.runs.T0002={phase:'merge_queued',queued_at:'2026-09-08T00:00:00Z'};result.draining=true;
-  await poll();assert.match(slot.innerHTML,/Queued for integration/);assert.match(row.innerHTML,/Draining/);
+  await poll();assert.match(slot.innerHTML,/Queued for integration/);assert.match(row.innerHTML,/Waiting for active work/);
   result.enabled=false;await poll();assert.equal(row.hidden,true);
 });
 
-test('legacy migration wait resumes through ordinary merge and restart',async()=>{
+test('legacy migration wait resumes through merge and push',async()=>{
   const events={};let poll,approved=false,confirmation='',submitted;
   const todo={id:'T0001',status:'started',name:'Migration',description:'Preserve originals'};
   const slot={dataset:{workflowNext:todo.id}},row={};
@@ -162,12 +162,12 @@ test('legacy migration wait resumes through ordinary merge and restart',async()=
       return {ok:true,json:async()=>result};
     }};
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
-  await poll();assert.match(slot.innerHTML,/Merge & restart/);assert.match(row.innerHTML,/Awaiting restart/);
+  await poll();assert.match(slot.innerHTML,/Merge & push/);assert.match(row.innerHTML,/Legacy migration review/);
   const click=()=>events.click({target:{closest:()=>({dataset:{todo:todo.id,workflowAction:'merge'}})},preventDefault(){},stopPropagation(){}});
   await click();assert.equal(submitted,undefined);assert.ok(confirmation.includes(run.commit));
   approved=true;await click();assert.equal(submitted.review_id,undefined);assert.equal(submitted.action,'merge');
   run.phase='restart_failed';run.published_commit=run.deployment_review.candidate_commit;await poll();
-  assert.match(slot.innerHTML,/Recover deployment/);
+  assert.match(slot.innerHTML,/Finish published task/);
 });
 
 

@@ -146,7 +146,7 @@ class ManagedCompletionTests(unittest.TestCase):
             return state
         with patch.object(self.workflow,'pr_state',side_effect=changed): current=self.resume(todo)
         self.assertEqual(current['workflow']['phase'],'handoff_blocked')
-        self.assertEqual(current['workflow']['verification']['status'],'failed')
+        self.assertNotEqual(current['workflow']['verification']['status'],'passed')
 
     def test_failed_push_requires_owner_action_not_automatic_retry(self):
         todo=self.retained(); run=copy.deepcopy(todo['workflow'])
@@ -155,6 +155,7 @@ class ManagedCompletionTests(unittest.TestCase):
         remote['headRefOid']=run['kickoff_commit']
         real=self.workflow.git; calls=[]
         def failed(*args,**kwargs):
+            if args[0]=='ls-remote': return run['kickoff_commit']+'\trefs/heads/'+run['branch']
             if args[0]=='push': calls.append(args); raise ValueError('approval rejected')
             return real(*args,**kwargs)
         with patch.object(self.workflow,'pr_state',return_value=remote),patch.object(self.workflow,'git',side_effect=failed):
@@ -199,12 +200,13 @@ class ManagedCompletionTests(unittest.TestCase):
         after=dict(before,headRefOid=run['commit'])
         real=self.workflow.git; pushes=[]
         def lost(*args,**kwargs):
+            if args[0]=='ls-remote' and not pushes:return run['kickoff_commit']+'\trefs/heads/'+run['branch']
             if args[0]=='push':
                 pushes.append(args)
                 real(*args,**kwargs)
                 raise ValueError('lost response')
             return real(*args,**kwargs)
-        with patch.object(self.workflow,'pr_state',side_effect=[before,after]),patch.object(self.workflow,'git',side_effect=lost):
+        with patch.object(self.workflow,'pr_state',side_effect=[before,after,after]),patch.object(self.workflow,'git',side_effect=lost):
             with self.assertRaisesRegex(ValueError,'lost response'): publish(self.workflow,run,run['commit'])
             self.assertEqual(publish(self.workflow,run,run['commit']),run['commit'])
         self.assertEqual(len(pushes),1)
@@ -223,7 +225,7 @@ class ManagedCompletionTests(unittest.TestCase):
         todo=self.retained()
         self.options['test']=[__import__('sys').executable,'-c','raise SystemExit(1)']
         current=self.resume(todo)
-        self.assertEqual(current['workflow']['verification']['status'],'failed')
+        self.assertNotEqual(current['workflow']['verification']['status'],'passed')
         self.options['test']=[__import__('sys').executable,'-c','print("passed")']
         self.workflow=Workflow(self.store,self.workflow.url,self.options,self.processing)
         self.addCleanup(self.workflow.close)

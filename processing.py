@@ -84,6 +84,12 @@ def pending(snapshot, automatic=False):
             and (not automatic or (local and i.get('captured_system') == local))]
 
 
+def child_environment():
+    """Child agents/previews/hooks must not impersonate the hosted service."""
+    return {key:value for key,value in os.environ.items()
+            if not key.startswith('UM_RESTART_') and key != 'UM_UPDATE_STATUS'}
+
+
 class Processor:
     def __init__(self, store, url, options, clock=time.monotonic):
         self.store, self.url, self.options, self.clock = store, url, options, clock
@@ -97,6 +103,7 @@ class Processor:
         self.child = None
         self.worker = None
         self.stopping = False
+        self.restart_pending = False
         self.next_tick = 0
 
     def status(self):
@@ -130,6 +137,8 @@ class Processor:
 
     def start(self, automatic=False):
         with self.lock:
+            if self.restart_pending:
+                raise ValueError('Restart pending; idea processing is paused.')
             if self.stopping:
                 raise ValueError('Server is stopping.')
             if self.state['status'] == 'running':
@@ -183,7 +192,7 @@ Use uv for Python. Finish with created/updated todo IDs, local commit outcome, a
                             return
                         self.child = subprocess.Popen([executable, 'exec', '--approve-for-me',
                             '-C', self.options['working_directory'], '-o', str(final), '-'],
-                            cwd=self.options['working_directory'], stdin=subprocess.PIPE, stdout=log,
+                            cwd=self.options['working_directory'], env=child_environment(), stdin=subprocess.PIPE, stdout=log,
                             stderr=log, text=True, start_new_session=os.name != 'nt')
                         child = self.child
                     try:
@@ -238,7 +247,7 @@ Use uv for Python. Finish with created/updated todo IDs, local commit outcome, a
     def tick(self):
         with self.lock:
             now = self.clock()
-            if now < self.next_tick or self.stopping or not self.options['automatic'] or not self.seen_client:
+            if now < self.next_tick or self.stopping or self.restart_pending or not self.options['automatic'] or not self.seen_client:
                 return
             self.next_tick = now + 5
             alive = {key: value for key, value in self.clients.items() if now - value[0] < 75}

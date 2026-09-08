@@ -191,6 +191,7 @@ class ExternalCompletionTests(unittest.TestCase):
                        app_root=str(root/'tools/unfertig'), runtime_commit=commit),
                        compatibility=dict(read_only=False), history=dict(pending=False, enabled=True))
         def git(*args, **kwargs):
+            if args == ('rev-parse','HEAD:unfertig'):raise AssertionError('Development pin is independent of deployment')
             return '' if args[0] in ('merge-base','status') else commit
         with patch.object(self.workflow, 'managed_unfertig', return_value=True), patch.object(self.workflow, 'git', side_effect=git), patch('external_completion.urlopen', side_effect=lambda *a, **k: BytesIO(json.dumps(snapshot).encode())), patch.object(self.workflow, 'host_deployment') as host:
             self.assertEqual(deployment(self.workflow, commit, 'b'*40)['status'], 'verified')
@@ -211,7 +212,7 @@ class ExternalCompletionTests(unittest.TestCase):
         self.assertEqual(result, dict(old, format_version='1.15.0'))
         self.assertEqual(migrate(result, 'todo'), dict(result, format_version=FORMAT_VERSION))
         self.assertEqual(inspect(result, supported='1.14.0')[0], 'read_only')
-        self.assertEqual(inspect(dict(result, format_version='1.19.1'))[0], 'compatible')
+        self.assertEqual(inspect(dict(result, format_version='1.20.1'))[0], 'compatible')
 
     def test_public_http_action_and_token_guard(self):
         from server import Server
