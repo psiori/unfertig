@@ -149,7 +149,7 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text('Created and committed
             executable.chmod(0o755)
             options=settings({'executable':str(executable),'working_directory':str(root)},root,root,root)
             server.processing=Processor(store,url,options)
-            worker=threading.Thread(target=server.serve_forever,daemon=True);worker.start()
+            worker=threading.Thread(target=server.serve_forever,kwargs={"poll_interval": 0.01},daemon=True);worker.start()
             try:
                 request=urllib.request.Request(url+'/api/processing/start',data=b'{}',method='PUT')
                 with self.assertRaises(urllib.error.HTTPError) as rejected: urllib.request.urlopen(request)
@@ -164,4 +164,4 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text('Created and committed
                 self.assertEqual(len(store.snapshot()['data']['todos']),2)
                 self.assertFalse(store.snapshot()['history']['pending'])
             finally:
-                server.shutdown();server.server_close();store.close()
+                server.shutdown();server.server_close();worker.join();store.close()

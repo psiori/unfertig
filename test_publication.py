@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from publication import Publication, GitError
 from storage import BoardStore, Conflict, digest
+from fixture_servers import start_server
 from server import validate, Server
 from test_server import fixture, STAMP
 
@@ -259,8 +260,7 @@ class PublicationTests(unittest.TestCase):
 
     def test_http_token_and_confirmation(self):
         server = Server(('127.0.0.1', 0), self.store)
-        worker = threading.Thread(target=server.serve_forever, daemon=True); worker.start()
-        self.addCleanup(server.server_close); self.addCleanup(server.shutdown)
+        start_server(self, server)
         base = f'http://127.0.0.1:{server.server_port}'
         with urlopen(base + '/api/publication') as response: self.assertTrue(json.load(response)['available'])
         for token, expected in [('', 403), (server.token, 409)]:
