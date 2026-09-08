@@ -47,3 +47,23 @@ test('effort vocabulary, defaults, unsupported values and both fresh owner brief
     for(const render of [c.implementationBrief,c.humanBrief]) assert.throws(()=>render(todo),/Unsupported effort/);
   }
 });
+
+test('completion summaries and exact preflight locations appear in both handoffs',()=>{
+  const c=setup();
+  const todo={id:'T0018',name:'Reporting',description:'Keep requirements',completion_summary:'Verified outcome <safe>',tags:[],source_ideas:[]};
+  for (const render of [c.implementationBrief,c.humanBrief]) {
+    const text=render(todo);
+    for (const value of ['/p/PROCESS.md','/p/todos/T0018.json','/p/data.json','Keep requirements','COMPLETION SUMMARY','Verified outcome <safe>','stop dependent work','Never push','no empty commit','Never delete a pre-existing branch']) assert.ok(text.includes(value),value);
+  }
+  assert.match(app,/name="completion_summary"/);
+  assert.match(app,/escapeHTML\(todo.completion_summary/);
+  assert.match(fs.readFileSync(__dirname+'/aggregation.js','utf8'),/escapeHTML\(t.completion_summary/);
+});
+
+test('saved completion text is rendered safely in the task editor',()=>{
+  const c=setup(); Object.assign(c,{expanded:new Set(),todoSummary:()=>'',field:()=>'',options:()=>''});
+  vm.runInContext(app.slice(app.indexOf('function todoCard('),app.indexOf('function renderTodos(')),c);
+  const html=c.todoCard({id:'T0018',status:'closed',tags:[],source_ideas:[],completion_summary:'Verified <script> outcome',description:'Requirements remain separate'});
+  assert.match(html,/name="completion_summary"[^>]*>Verified &lt;script> outcome<\/textarea>/);
+  assert.match(html,/name="description"[^>]*>Requirements remain separate<\/textarea>/);
+});

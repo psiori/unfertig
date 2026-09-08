@@ -49,9 +49,9 @@ The ideas JSON, individual todos, locks, journal, receipts, and pending-history 
 
 ## Everyday use
 
-Enter your identity in **Working as**. Capture original thoughts with **Add idea** (or Cmd/Ctrl+Enter). **Make todo** refines an idea; **New todo** creates a standalone task. IDs are allocated by the server. Original wording and attribution are immutable. An idea is processed when a todo links to it.
+Enter your identity in **Working as**. Capture original thoughts with **Add idea** (or Cmd/Ctrl+Enter). **Create manually** refines one idea; **New todo** creates a standalone task. IDs are allocated by the server. Original wording and attribution are immutable. An idea is processed when a todo links to it.
 
-Expand a todo to edit its name, description, priority, group, tags, status, or implementation references. Save explicitly. Grouping, filters, sorting and folding organize the board. AI and human briefing buttons copy the saved task and workflow, and do not start work. Copy processing briefing delegates planning only.
+Expand a todo to edit its name, description, priority, group, tags, status, or implementation references. Save explicitly. Grouping, filters, sorting and folding organize the board. AI and human briefing buttons copy the saved task and workflow, and do not start work. **Copy all-pending briefing** delegates planning only. It references the authoritative board and PROCESS.md, without copying idea bodies or IDs. The agent reads all ideas still pending at execution time, including newly saved ideas, regardless of UI filters; if none remain it reports "Nothing to process" without writing. Re-read before saves and follow PROCESS.md for overlap, attribution, record revisions, processing-race conflicts and identical-request retries.
 
 One worker per task is coordinated through status/progress notes. Independent task edits do not conflict. Stale same-task edits are rejected with a copyable draft; copy your draft, reload, and reconcile only intended changes. Keep unsaved text before a browser restart. The app polls for updates and preserves drafts.
 
@@ -197,6 +197,50 @@ Set the corresponding `project_id` in each source config and restart it first;
 verify source IDs and exact data paths with `/api/state`. Configuration paths are
 relative to the config file. Up to 20 explicit JSON locations are supported.
 
+
+To discover existing boards at startup and during refresh, add `search_paths`
+alongside any exact `sources` (format 1.11):
+
+```json
+{
+  "search_paths": [
+    "../../../um-*/state/unfertig/config/config.json",
+    "../../../companies/*/projects/um-*/state/unfertig/config/config.json",
+    "../../../companies/*/clients/*/state/unfertig/config/config.json"
+  ]
+}
+```
+
+Each matched **config**, not data file, must declare its existing board's `data`
+and explicit stable `project_id`, plus service metadata such as:
+
+```json
+{
+  "aggregation_source": {
+    "app_root": "../../../tools/unfertig",
+    "url": "http://127.0.0.1:8766"
+  }
+}
+```
+
+The app path is relative to that matched config and must contain PROCESS.md.
+The loopback URL must match the actual service; discovery never infers it from
+`port`, starts services or creates boards. Filesystem-only mode can omit `url`.
+Keep machine-specific metadata in your host's supported local config and target
+that effective config when necessary; examples are not installation settings.
+
+Patterns support `*` and `?` within components, but no `**` or brackets. They
+follow directory symlinks only along those finite components, including outside
+the pattern's prefix. Canonical aliases and exact entries deduplicate when their
+metadata agrees. The limit remains 20 unique current boards. Unmatched/invalid
+patterns appear in source status; removed boards retain cached rows and project
+filters, with writes blocked. Returning matches recover without restart. Saved
+routing claims keep their destination and retry request even across restart.
+See [TRANSPORTS.md](TRANSPORTS.md#config-search-paths-format-110) for all bounds,
+refresh scheduling, identity conflicts, symlink behavior and recovery. Configure
+and migrate explicitly under [VERSIONING.md](VERSIONING.md); discovery itself
+never migrates sources or grants write authorization.
+
 An explicit `project_id` always takes precedence. If omitted, the ID is the first
 32 hexadecimal characters of SHA-256 of the resolved board data path relative to
 the enclosing Kermit workspace, using POSIX separators and UTF-8. The workspace
@@ -236,8 +280,8 @@ source says unavailable/no cached records, never "empty". Discovery never migrat
 the shared writer lock. Change config and restart to alter sources.
 
 Ideas entered here stay in this inbox. Select a project immediately before **Add
-idea**, or later on the idea. Copy its processing briefing for explicit/inferred
-routing; unclear ideas remain red and pending. See PROCESS.md for exact routing,
+idea**, or later on the idea. Use **Copy all-pending briefing** for explicit/inferred
+routing of every pending inbox idea at execution time; unclear ideas remain red and pending. See PROCESS.md for exact routing,
 provenance, retry, preflight and local-commit semantics. Routing requires source
 format 1.2, and never pushes or resolves conflicts automatically.
 
@@ -365,8 +409,9 @@ follow the existing source-link/revision conflict and routing-receipt rules.
 The scratchpad groups capture first, saved ideas and their filter second, and
 processing last. The processing area keeps the Codex action, bulk briefing and
 run status together. Expand its automatic/manual summary for timing, system scope,
-working directory and the latest result. Individual idea rows offer a briefing
-or manual todo creation. Unsaved drafts and an empty queue disable the Codex
+working directory and the latest result. Individual idea rows offer manual todo creation; the all-pending briefing lives
+in the processing area. Copied briefings use live pending state, while launched
+Codex jobs retain their explicit launch-time ID allowlist and automatic system scope. Unsaved drafts and an empty queue disable the Codex
 action immediately; activity remains batched into the existing heartbeats.
 
 ## Implementation workflow
@@ -514,6 +559,8 @@ After implementation checks pass, Unfertig updates the PR description with the
 result and verification, removes [WIP] from its title, and marks the draft ready
 for review. It remains unmerged until the integration action is authorized.
 
+Completion summaries are edited separately from task requirements in the expanded todo and included in AI/human briefings and aggregate details. Closing requires an outcome, verification and limitations/follow-up; reopening clears the summary, with its previous text retained in Git history. Legacy closed tickets stay editable without fabricated summaries. Format 1.10 requires a supported explicit migration (VERSIONING.md). Before work, locate/read the actual process, task and originals and verify the repository. Commit verified implementation changes locally; never push without explicit authorization. No-change findings require neither an empty implementation commit nor a new branch. Existing managed branches/PRs stay with the coordinator for review.
+
 ### Saved agent effort
 
 Expand a todo to select **Agent effort**, then Save. Supported values are `low`,
@@ -534,6 +581,6 @@ does not retry with a different value. Codex CLI 0.153.2 `exec --help` confirms
 documents `model_reasoning_effort` and model-dependent support (verified 2026-09-08).
 Unfertig intentionally exposes the four reasoning levels used for coding tasks.
 
-Storage 1.10 requires the explicit stopped-instance migration in
+Storage 1.12 requires the explicit stopped-instance migration in
 [VERSIONING.md](VERSIONING.md). Development tests use disposable fixtures; live
 migration and deployment remain separate coordinator actions.

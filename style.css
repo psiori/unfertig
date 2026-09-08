@@ -233,6 +233,17 @@ main { padding-top:18px; }
 .welcome { padding-bottom:20px; }
 .scratchpad .ideas { max-height:110px; }
 
+/* Enlarge the existing queue without replacing composer or list state. */
+.scratchpad .scratch-toolbar { flex-wrap:wrap; }
+.saved-idea-controls { margin-left:auto; }
+#expand-ideas { padding:7px; flex-shrink:0; }
+#expand-ideas .collapse-icon { display:none; }
+#expand-ideas[aria-expanded="true"] .expand-icon { display:none; }
+#expand-ideas[aria-expanded="true"] .collapse-icon { display:initial; }
+.scratch-grid.ideas-expanded { grid-template-columns:minmax(0,1fr); }
+.ideas-expanded .saved-column { border-left:0; padding-left:0; border-top:1px solid var(--line); padding-top:16px; }
+.scratchpad .ideas-expanded .ideas { max-height:370px; }
+
 .integration-pipeline { margin-top: 24px; padding: 18px; border: 1px solid var(--line, #d5d9d2); border-radius: 16px; }
 .pipeline-stages { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; }
 .pipeline-stage { flex: 1 0 125px; min-width: 0; padding: 12px; border: 1px solid var(--line, #d5d9d2); border-radius: 10px; }

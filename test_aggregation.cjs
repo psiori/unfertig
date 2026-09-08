@@ -38,9 +38,10 @@ test('nested view keeps projects above equal groups and source open actions',()=
   assert.equal(($('#todos').innerHTML.match(/#todo-T0001/g)||[]).length,2);
   assert.equal(c.ownerLink({status:'stale'},'todo','T0001'),'<span class="route-warning">Instance unavailable</span>');
 });
-test('routing briefing carries actual selection, retry and preflight rules',()=>{
-  const {context:c}=setup(); const text=c.aggregationBrief([{id:'SL_I0001',text:'Original',selected_project:'b'}]);
-  for(const expected of ['selected_project','PROCESS.md','process_sha256','/api/routes','source_refs','stored request','No routing step pushes']) assert.ok(text.includes(expected),expected);
+test('routing briefing reads live selection and retains retry and preflight rules',()=>{
+  const {context:c}=setup(); const text=c.aggregationBrief();
+  assert.doesNotMatch(text, /Ideas:|Sources \(configuration/);
+  for(const expected of ['all pending inbox ideas', 'Nothing to process', '/api/state', '/api/aggregate', 'selected_project','PROCESS.md','process_sha256','/api/routes','source_refs','stored request','No routing step pushes']) assert.ok(text.includes(expected),expected);
 });
 test('filesystem records retain details without a service link and briefings show transport',()=>{
   const {context:c,$}=setup();
@@ -50,4 +51,29 @@ test('filesystem records retain details without a service link and briefings sho
   assert.equal(($('#todos').innerHTML.match(/#todo-T0001/g)||[]).length,1);
   const text=c.aggregationBrief([]);
   for (const expected of ['filesystem','TRANSPORTS.md','does not migrate','same request/receipt']) assert.ok(text.includes(expected),expected);
+});
+test('discovered projects enter choices and removed cached projects retain filters',()=>{
+  const {context:c,$}=setup();
+  vm.runInContext("aggregateSources[0].status='removed'; aggregateSources[1].project_id='newly-discovered';",c);
+  const options=c.projectOptions('a');
+  assert.match(options,/value="a" selected disabled>a \(removed\)/);
+  assert.match(options,/value="newly-discovered"/);
+  c.updateChoices();
+  assert.match($('#project-filter').innerHTML,/newly-discovered/);
+  $('#project-filter').value='a';c.renderTodos();
+  assert.match($('#todos').innerHTML,/a task/);
+  assert.match($('#todos').innerHTML,/Stale cached details/);
+  assert.doesNotMatch($('#todos').innerHTML,/#todo-T0001/);
+});
+test('refresh displays discovery diagnostics and source errors',async()=>{
+  const {context:c,$}=setup();
+  c.busy=false;c.document={hidden:false};
+  c.updateChoices=()=>{};c.renderIdeas=()=>{};c.renderTodos=()=>{};
+  c.fetch=async()=>({ok:true,json:async()=>({sources:[{project_id:'a',status:'unavailable',error:'Connection refused'}],discovery:[
+    {pattern:'../missing*/config.json',status:'unmatched',error:'No existing config matches.'},
+    {config:'bad.json',status:'invalid',error:'Missing metadata.'}]})});
+  await c.refreshAggregate();
+  assert.match($('#source-status').textContent,/unmatched.*No existing config matches/);
+  assert.match($('#source-status').textContent,/bad.json: invalid.*Missing metadata/);
+  assert.match($('#source-status').textContent,/a: unavailable.*Connection refused/);
 });
