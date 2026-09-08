@@ -81,7 +81,16 @@ def validate(data, previous=None):
                 require(bool(re.fullmatch(r'[a-f0-9]{64}', run['system'])), 'Invalid workflow system.')
                 require(run['branch'] == f"codex/{ident.lower()}-{run['run_id'][:8]}", 'Invalid workflow branch.')
                 require(bool(re.fullmatch(r'[a-f0-9]{40,64}', run['base'])), 'Invalid workflow base.')
-                require(run['phase'] in {'implementing','ready','testing','tested','merging','restarting','done','implementation_failed','test_failed','merge_failed','push_failed','restart_failed'}, 'Invalid workflow phase.')
+                require(run['phase'] in {'queued','merge_queued','implementing','ready','testing','tested','merging','restarting','done','implementation_failed','test_failed','merge_failed','push_failed','restart_failed'}, 'Invalid workflow phase.')
+                if run['phase'] in ('queued', 'merge_queued'):
+                    require(run.get('queued_action') in ('implement', 'retry', 'test', 'merge'), 'Invalid queued action.')
+                    require((run['phase'] == 'merge_queued') == (run['queued_action'] == 'merge'), 'Invalid queue phase.')
+                    timestamp(run.get('queued_at'), 'workflow.queued_at')
+                if 'action_requests' in run:
+                    require(isinstance(run['action_requests'], dict) and all(isinstance(k, str) and isinstance(v, str) for k,v in run['action_requests'].items()), 'Invalid action receipts.')
+                for key in ('integration_commit', 'integration_tested_commit', 'deployment_commit', 'published_commit'):
+                    if key in run:
+                        require(isinstance(run[key], str) and bool(re.fullmatch(r'[a-f0-9]{40,64}', run[key])), 'Invalid workflow '+key)
                 if run.get('preview_url'):
                     preview = urlsplit(run['preview_url'])
                     require(preview.scheme == 'http' and preview.hostname in ('localhost','127.0.0.1') and not preview.username and not preview.password, 'Invalid workflow preview URL.')
