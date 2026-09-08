@@ -7,7 +7,7 @@
 @media(max-width:560px){.filters label:not(.search){min-width:130px;flex-basis:calc(50% - 8px)}}
 
 /* Briefing actions remain available while a todo is collapsed. */
-.summary-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.summary-actions { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
 .summary-actions .button { font-size: 10px; font-weight: 600; background: #f3f4ed; }
 .summary-actions .button:hover { background: #e7ecdd; }
 .editor-footer { justify-content: flex-end; }
@@ -142,6 +142,9 @@ main { padding-top:18px; }
 .work { margin-top:24px; }
 .work > .section-heading { margin-bottom:14px; }
 .workflow-next { display:inline-flex; }
+.implementation-label { display:inline-grid; white-space:nowrap; }
+.implementation-label > span { grid-area:1 / 1; }
+.implementation-reserve { visibility:hidden; }
 .status-icon.implementation-running { position:relative; border-color:#c99945; background:#fbf0d9; color:#9d711d; }
 .status-icon.implementation-running::after { content:''; position:absolute; inset:-2px; border:2px solid transparent; border-top-color:#9d711d; border-right-color:#9d711d; border-radius:50%; animation:implementation-working 1.6s linear infinite; }
 @keyframes implementation-working { to { transform:rotate(360deg); } }

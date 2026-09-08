@@ -66,6 +66,7 @@ test('collapsed row follows workflow stages and respects execution guards',async
     fetch:async()=>({ok:true,json:async()=>result})};
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
   await poll(); assert.equal(slot.hidden,false); assert.match(slot.innerHTML,/including inherited local commits/); assert.match(slot.innerHTML,/data-workflow-action="implement"/);
+  assert.match(slot.innerHTML,/aria-hidden="true">Implementing…/);
   for(const [phase,action,label] of [['ready','test','Preview'],['tested','merge','Merge & restart'],['implementation_failed','retry','Retry implementation'],['test_failed','test','Preview'],['push_failed','merge','Merge & restart']]) {
     result.runs.T0001={phase}; await poll();
     assert.equal((slot.innerHTML.match(/<button/g)||[]).length,1);
@@ -79,8 +80,10 @@ test('collapsed row follows workflow stages and respects execution guards',async
   for(const [object,key,value] of [[result,'configured',false],[result,'configured',false],[context.compatibility,'read_only',true],[context.history,'pending',true]]) {
     const previous=object[key];object[key]=value;await poll();assert.match(slot.innerHTML,/ disabled/);object[key]=previous;
   }
-  for(const [phase,label] of [['implementing','Implementing…'],['testing','Preparing preview…'],['merging','Merging…'],['restarting','Restarting…']]) {
+  for(const [phase,label] of [['queued','Queued'],['implementing','Implementing…'],['testing','Preparing preview…'],['merging','Merging…'],['restarting','Restarting…']]) {
     result.runs.T0001={phase};await poll();assert.ok(slot.innerHTML.includes(label));assert.match(slot.innerHTML,/ disabled/);
+    if (['queued','implementing'].includes(phase)) assert.match(slot.innerHTML,/aria-hidden="true">Implementing…/);
+    else assert.doesNotMatch(slot.innerHTML,/implementation-reserve/);
   }
   for(const action of ['retry','test','merge']) {
     result.runs.T0001={phase:'interrupted',resume_action:action};await poll();
