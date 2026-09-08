@@ -242,3 +242,13 @@ The owning HTTP service alone performs `complete_external`; filesystem discovery
 never launches it or migrates a source. Aggregate details retain the raw protected
 history and link to the owner for reconciliation. Status-derived historical versus
 active presentation is an owner-service observation, not a filesystem liveness claim.
+
+
+Format 1.16 adds protected implementation/publication/verification/approval
+outcomes, scoped publication authority, retained reports and resume reviews.
+Both adapters preserve these claims and their histories through ordinary edits,
+conflicts, interrupted journals and request retries after transport switching.
+Neither adapter permits ordinary writers to forge them. Only the token-protected
+owner workflow action can authorize Verify existing result and resume; filesystem
+access never launches work or bypasses an approval rejection. See VERSIONING.md
+for migration/defaults and PROCESS.md for publication ownership.

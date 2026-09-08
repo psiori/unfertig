@@ -434,6 +434,7 @@ class Conformance:
                          queued_at='2026-09-08T00:00:00Z', action_requests={'original':'scope'},
                          git_diagnostics=dict(stdout='CONFLICT', stderr='Recorded preimage'),
                          integration_attempt=dict(main='a'*40, remote='d'*40))
+            claim.update(implementation=dict(status='complete',commit='e'*40), publication=dict(status='blocked',commit='e'*40,message='Approval pending'), verification=dict(status='pending'), approval=dict(status='blocked',message='Owner review required'), worker_report={'status':'needs_attention'}, handoff_history=[{'message':'Original failure'}])
             claim['external_completions'] = [dict(actor='SL', reason='Replacement work', at='2026-09-08T12:00:00Z', outcome='superseded', evidence=dict(integration=dict(status='unverified', commit='', message='Missing PR'), deployment=dict(status='unverified', commit='', message='Missing deployment')))]
             self.alpha.mutate(dict(actor='Codex', request_id=uuid.uuid4().hex, changes=[dict(
                 collection='todos', id=old['id'], revision=digest(old), record=dict(old, workflow=claim))]), workflow=True)
@@ -448,7 +449,7 @@ class Conformance:
             self.assertEqual(retry['data']['todos'][0]['workflow'], claim)
             record = retry['data']['todos'][0]
             forged = dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
-                collection='todos', id=old['id'], revision=digest(record), record=dict(record, workflow=dict(claim, external_completions=[])))])
+                collection='todos', id=old['id'], revision=digest(record), record=dict(record, workflow=dict(claim, publication=dict(status='confirmed',commit='e'*40))))])
             with self.assertRaises((ValueError, Conflict)):
                 self.router.transfer(switched, '/api/changes', forged, None, expected)
 

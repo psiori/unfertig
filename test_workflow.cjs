@@ -71,6 +71,9 @@ test('collapsed row follows workflow stages and respects execution guards',async
     assert.equal((slot.innerHTML.match(/<button/g)||[]).length,1);
     assert.match(slot.innerHTML,new RegExp(`data-workflow-action="${action}"`)); assert.ok(slot.innerHTML.includes(label)); assert.doesNotMatch(slot.innerHTML,/ disabled/);
   }
+  result.runs.T0001={phase:'handoff_blocked',can_verify_existing:true}; await poll();
+  assert.match(slot.innerHTML,/Verify existing result and resume/);
+  assert.match(slot.innerHTML,/data-workflow-action="verify_existing"/);
   draft=true; events.input(); assert.match(slot.innerHTML,/ disabled/);
   draft=false; events.change(); assert.doesNotMatch(slot.innerHTML,/ disabled/);
   for(const [object,key,value] of [[result,'configured',false],[result,'configured',false],[context.compatibility,'read_only',true],[context.history,'pending',true]]) {
