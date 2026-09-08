@@ -163,12 +163,13 @@ class Conformance:
         snapshot = self.router.inspect_source(source)
         old = snapshot['data']['todos'][0]
         request = dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
-            collection='todos', id=old['id'], revision=digest(old), record=dict(old, priority='high'))])
+            collection='todos', id=old['id'], revision=digest(old), record=dict(old, priority='high', effort='xhigh'))])
         expected = preflight_context(snapshot['context'])
         self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
         switched = dict(source, transports=dict(http=False, filesystem=True))
         retry = self.router.transfer(switched, '/api/changes', request, None, expected)
         self.assertEqual(retry['data']['todos'][0]['workflow'], claim)
+        self.assertEqual(retry['data']['todos'][0]['effort'], 'xhigh')
         self.assertEqual(self.router.inspect_source(switched)['data']['todos'][0]['workflow'], claim)
 
     def test_queued_claim_evidence_survives_switch_and_cannot_be_changed(self):

@@ -1,4 +1,4 @@
-from versions import semantic, FORMAT_VERSION
+from versions import semantic, FORMAT_VERSION, migrate
 import json
 import os
 from pathlib import Path
@@ -85,7 +85,7 @@ class ConfigurationTests(unittest.TestCase):
         with patch('split_board.atomic',side_effect=interrupt):
             with self.assertRaises(OSError):split(*args)
         result=split(*args);self.assertTrue(result['complete'])
-        self.assertEqual(semantic(BoardStore(self.root/'app-board/data.json',validate,git=False).read()[0]),fixture())
+        self.assertEqual(semantic(BoardStore(self.root/'app-board/data.json',validate,git=False).read()[0]),dict(fixture(), todos=[semantic(migrate(t, 'todo')) for t in fixture()['todos']]))
         self.assertEqual(split(*args),result)
         self.assertEqual(json.loads((old/'data.json').read_text())['schema_version'],0)
 
@@ -203,7 +203,7 @@ class ProjectNameTests(unittest.TestCase):
                 except OSError:time.sleep(.05)
             else:self.fail('server did not start')
             self.assertEqual(snapshot['context']['project_name'],'<Project> & ü')
-            self.assertEqual(semantic(snapshot['data']),fixture())
+            self.assertEqual(semantic(snapshot['data']),dict(fixture(), todos=[semantic(migrate(t, 'todo')) for t in fixture()['todos']]))
             config.write_text(json.dumps({'data':str(board),'project_name':'Changed'}))
             with urlopen(f'http://127.0.0.1:{port}/api/state') as response:again=json.load(response)
             self.assertEqual(again['context']['project_name'],'<Project> & ü')
