@@ -208,7 +208,7 @@ test('closed history, external completion and uncertain activity agree across al
     assert.match(panel.innerHTML,/Completed externally/);
     assert.match(panel.innerHTML,/Original failure/);
     assert.match(pipeline.innerHTML,/Needs attention <span>0/);
-    assert.match(pipeline.innerHTML,/Historical \/ superseded <span>1/);
+    assert.doesNotMatch(pipeline.innerHTML,/Historical \/ superseded|#todo-T0001/);
   }
   run.phase='activity_unknown';run.activity_block='Worker still running';run.can_complete_external=false;
   await poll();assert.equal(slot.hidden,false);assert.match(slot.innerHTML,/disabled/);
@@ -228,4 +228,20 @@ test('context run shows separate repository results and PRs', async()=>{
     setInterval:f=>poll=f,setTimeout:()=>{},fetch:async()=>({ok:true,json:async()=>result})};
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);await poll();
   assert.match(panel.innerHTML,/UM context/);assert.match(panel.innerHTML,/No changes/);assert.match(panel.innerHTML,/Not checked out/);assert.match(panel.innerHTML,/test\/um\/pull\/1/);
+});
+
+test('Done shows local-day completions and expires them after midnight',async()=>{
+  let poll;const row={};let now=new Date(2026,8,8,23,59,59).getTime();
+  class Clock extends Date { constructor(...args){super(...(args.length?args:[now]));} static now(){return now;} }
+  const todos=[{id:'T0001',status:'closed',date_closed:new Date(now).toISOString()},
+    {id:'T0002',status:'closed',date_closed:new Date(2026,8,7,23,59).toISOString()},
+    {id:'T0003',status:'closed',date_closed:'invalid'}, {id:'T0004',status:'closed'}];
+  const result={enabled:true,runs:Object.fromEntries(todos.map(t=>[t.id,{phase:'done'}]))};
+  const context={Date:Clock,document:{querySelectorAll:s=>s==='[data-integration-pipeline]'?[row]:[],addEventListener:()=>{}},
+    AbortSignal,token:'token',data:{todos},escapeHTML:s=>s,setInterval:f=>poll=f,setTimeout:()=>{},fetch:async()=>({ok:true,json:async()=>result})};
+  vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
+  await poll();assert.match(row.innerHTML,/Done <span>1/);assert.match(row.innerHTML,/#todo-T0001/);
+  assert.doesNotMatch(row.innerHTML,/#todo-T000[234]/);
+  now=new Date(2026,8,9,0,0,1).getTime();
+  await poll();assert.match(row.innerHTML,/Done <span>0/);assert.doesNotMatch(row.innerHTML,/#todo-T0001/);
 });
