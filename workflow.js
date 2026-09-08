@@ -94,7 +94,13 @@
     for (const row of document.querySelectorAll('[data-integration-pipeline]')) {
       row.hidden = latest.enabled !== true;
       if (row.hidden) { row.innerHTML = ''; continue; }
-      const runs = Object.entries(latest.runs).sort((a,b) => (a[1].queued_at || '').localeCompare(b[1].queued_at || ''));
+      const today = new Date().toDateString();
+      const runs = Object.entries(latest.runs).filter(([id, run]) => {
+        if (run.phase !== 'done') return true;
+        const todo = data.todos.find(t => t.id === id);
+        return todo?.status === 'closed' && Boolean(todo.date_closed) &&
+          new Date(todo.date_closed).toDateString() === today;
+      }).sort((a,b) => (a[1].queued_at || '').localeCompare(b[1].queued_at || ''));
       const stages = [
         ['Working', ['queued','implementing','testing']],
         ['Ready', ['ready','tested']],
@@ -103,7 +109,6 @@
         ['Awaiting restart', ['migration_required']],
         ['Published / deploying', ['migrating','recovering','restarting']],
         ['Done', ['done']],
-        ['Historical / superseded', ['historical','superseded']],
         ['Needs attention', ['handoff_blocked','implementation_failed','test_failed','merge_failed','push_failed','restart_failed','resolution_blocked','interrupted','activity_unknown']]
       ];
       row.innerHTML = `<p><strong>Integration pipeline</strong>${latest.queue_blocked_by ? ` · Waiting for ${escapeHTML(latest.queue_blocked_by)}` : ''} · ${latest.active_count || 0}/${latest.max_workers || 1} workers${latest.draining ? ' · Draining before integration & restart' : ''}</p><div class="pipeline-stages">` + stages.map(([label, phases]) => {
