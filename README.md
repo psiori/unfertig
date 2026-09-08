@@ -514,3 +514,5 @@ migration before rollout; see [VERSIONING.md](VERSIONING.md).
 After implementation checks pass, Unfertig updates the PR description with the
 result and verification, removes [WIP] from its title, and marks the draft ready
 for review. It remains unmerged until the integration action is authorized.
+
+Completion summaries are edited separately from task requirements in the expanded todo and included in AI/human briefings and aggregate details. Closing requires an outcome, verification and limitations/follow-up; reopening clears the summary, with its previous text retained in Git history. Legacy closed tickets stay editable without fabricated summaries. Format 1.10 requires a supported explicit migration (VERSIONING.md). Before work, locate/read the actual process, task and originals and verify the repository. Commit verified implementation changes locally; never push without explicit authorization. No-change findings require neither an empty implementation commit nor a new branch. Existing managed branches/PRs stay with the coordinator for review.

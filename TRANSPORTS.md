@@ -168,3 +168,5 @@ exclusive board lease, excluding filesystem writers too. An HTTP service also
 reports its startup-captured `context.runtime_commit` for deployment health. This
 is process evidence, not persisted record semantics; offline/filesystem snapshots
 do not claim a running service revision.
+
+Format 1.10 completion summaries use shared validation and BoardStore reopening normalization in both adapters. Legacy absence remains valid; new closures require a summary. Revision checks, receipt retry after transport switching, recovery and local history retain the same contract.
