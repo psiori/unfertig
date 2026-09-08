@@ -260,3 +260,12 @@ Live capacity and token-protected `/api/workflow/settings` are owner-service
 operations, like workflow actions; offline/aggregate snapshots do not assert
 readiness or dispatch workers. Transport switches preserve records, claims and
 queues unchanged. See README.md for host-local persistence and effective timing.
+
+## Instance settings
+
+`/api/settings` is an owner-service operation, alongside worker capacity.
+Aggregation and filesystem adapters do not edit source configuration or assert
+its live settings. Both continue to resolve the same unchanged configuration
+fields and preserve all records, workflow claims and permissions. Settings edits
+do not change transport configuration or permit fallback writes to source config.
+The common conformance suite remains required; no transport/storage version changes.

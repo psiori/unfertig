@@ -281,6 +281,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, ('const agentAdvice = ' + json.dumps(advice) + ';').encode(), 'text/javascript; charset=utf-8')
             elif path == '/api/workflow' and self.server.workflow:
                 self.reply(200, self.server.workflow.status())
+            elif path == '/api/settings' and self.server.workflow and self.server.processing:
+                from instance_settings import InstanceSettings
+                self.reply(200, InstanceSettings(self.server.workflow, self.server.processing).view())
             elif path == '/api/processing' and self.server.processing:
                 self.reply(200, self.server.processing.status())
             elif path == '/api/aggregate' and self.server.aggregation:
@@ -291,7 +294,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, ('const effortDefinitions = ' + json.dumps(EFFORT_DEFINITIONS) + ';').encode(), 'text/javascript; charset=utf-8')
             elif path == '/categories-data.js':
                 self.reply(200, ('const categoryDefinitions = ' + json.dumps(DEFINITIONS) + ';').encode(), 'text/javascript; charset=utf-8')
-            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/workflow.js", "/worker-capacity.js", "/aggregation.js", "/style.css", "/favicon.svg"):
+            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/workflow.js", "/worker-capacity.js", "/instance-settings.js", "/aggregation.js", "/style.css", "/favicon.svg"):
                 name = "index.html" if path == "/" else path[1:]
                 mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}[Path(name).suffix]
                 self.reply(200, (ROOT / name).read_bytes(), mime + "; charset=utf-8")
@@ -303,7 +306,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         if not self.local_request():
             return
-        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action', '/api/workflow/settings'):
+        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action', '/api/workflow/settings', '/api/settings'):
             self.reply(404, {"error": "Not found."})
             return
         if not secrets.compare_digest(self.headers.get("X-Board-Token", ""), self.server.token):
@@ -319,6 +322,11 @@ class Handler(BaseHTTPRequestHandler):
                 protocol_state, _ = inspect(body, 'request', PROTOCOL_VERSION, 'protocol_version')
                 require(protocol_state != 'read_only', 'Newer minor request protocol: update Unfertig before writing.')
             if isinstance(self.server.store, BoardStore):
+                if self.path == '/api/settings':
+                    require(self.server.workflow is not None and self.server.processing is not None, 'Settings are unavailable.')
+                    from instance_settings import InstanceSettings
+                    self.reply(200, InstanceSettings(self.server.workflow, self.server.processing).save(body))
+                    return
                 if self.path == '/api/workflow/settings':
                     require(self.server.workflow is not None, 'Workflow is unavailable.')
                     from worker_capacity import WorkerSettings
@@ -373,7 +381,7 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, TypeError, KeyError) as error:
             self.reply(400, {"error": str(error)})
         except OSError as error:
-            self.reply(500, {"error": f"Could not save: {error}"})
+            self.reply(500, {"error": 'Could not save settings. Check storage access and board history, then compare latest settings.' if self.path == '/api/settings' else f"Could not save: {error}"})
 
 
 def main():

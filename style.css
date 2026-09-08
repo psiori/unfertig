@@ -264,3 +264,14 @@ main { padding-top:18px; }
 .capacity-message{max-width:1200px;margin:4px auto;padding:0 28px;font-size:12px;color:var(--muted)}
 .capacity-message:empty{display:none}
 @media(max-width:600px){.masthead{flex-wrap:wrap}.header-right{width:100%;gap:12px}.identity input{width:75px}}
+#open-settings{width:36px;height:36px;flex-shrink:0;font-size:23px;color:var(--green)}
+#settings-dialog{width:min(650px,calc(100vw - 24px));overflow-y:auto}
+#settings-fields{margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:0 20px}
+#settings-fields label:first-child,#settings-fields label:nth-child(2){grid-column:1/-1}
+#settings-fields .hint{line-height:1.5}
+#settings-message{font-size:12px;overflow-wrap:anywhere}
+#settings-comparison{border:1px solid var(--line);padding:14px;border-radius:10px;font-size:12px}
+#settings-comparison dt{font-weight:600}#settings-comparison dd{margin:2px 0 12px;overflow-wrap:anywhere}
+.settings-review{display:flex;flex-wrap:wrap;gap:8px}
+#settings-dialog button:focus-visible,#settings-dialog input:focus-visible,#open-settings:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+@media(max-width:560px){#settings-fields{grid-template-columns:1fr}#settings-dialog .dialog-actions{flex-wrap:wrap}#settings-dialog{padding:20px 16px}}
