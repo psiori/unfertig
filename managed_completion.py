@@ -213,7 +213,7 @@ def finish(w, todo, run):
         run['verification'] = dict(status='failed',commit=commit,message=str(error))
         raise
     body = Path(run['worktree']).parent / (run['run_id']+'-pr.md')
-    body.write_text(todo['description']+'\n\n'+run['completion_summary']+'\nConfigured implementation checks passed at '+commit+'.\n')
+    body.write_text(todo['description']+'\n\n'+run['completion_summary']+'\nConfigured implementation checks passed at '+commit+'.\n'+w.publication_context(run))
     w.github('pr','edit',run['pr_url'],'--title','[unfertig] '+ident+': '+todo['name'],'--body-file',str(body))
     if state.get('isDraft'):
         w.github('pr','ready',run['pr_url'])

@@ -208,6 +208,41 @@ class Workflow:
             raise Conflict('PR was closed without merging. Review it on GitHub before retrying.')
         return result
 
+    def startup_base(self):
+        """Select committed local/remote history under the repository lock."""
+        branch = self.options['base_branch']
+        self.git('fetch', 'origin', branch)
+        remote = self.git('rev-parse', 'refs/remotes/origin/'+branch)
+        local = self.git('rev-parse', branch)
+        def ancestor(older, newer):
+            try:
+                self.git('merge-base', '--is-ancestor', older, newer)
+                return True
+            except GitFailure as error:
+                if error.evidence['returncode'] != 1:
+                    raise
+                return False
+        if ancestor(remote, local):
+            return local
+        if ancestor(local, remote):
+            return remote
+        raise Conflict('Cannot start from diverged '+branch+' in '+self.options['repository']+
+                       ': local '+local+' and origin/'+branch+' '+remote+
+                       '. Integrate both histories and verify the result, then retry. No local commits were discarded.')
+
+    def publication_context(self, run):
+        """Describe inherited history separately from work since the frozen base."""
+        remote = self.git('rev-parse', 'refs/remotes/origin/'+self.options['base_branch'])
+        inherited = self.git('log', '--format=%H %s', remote+'..'+run['base'], cwd=run['worktree'])
+        text = '\n\nTask changes are measured from base `'+run['base']+'`.\n'
+        if inherited:
+            text += ('\nThe task branch also publishes these inherited local commits that are absent from '
+                     'the last fetched main (`'+remote+'`). They predate this task and are not task implementation:\n\n')
+            text += '\n'.join('- '+line for line in inherited.splitlines())+'\n'
+        else:
+            text += '\nNo inherited commits are absent from the last fetched main (`'+remote+'`).\n'
+        return text
+
     def ensure_pr(self, todo, run):
         """No agent starts until the branch and draft PR are confirmed on GitHub."""
         grant = run.get('publication_authorization', {})
@@ -228,7 +263,7 @@ class Workflow:
             else:
                 body = Path(run['worktree']).parent / (run['run_id']+'-pr.md')
                 body.write_text('Work in progress for '+todo['id']+': '+todo['name']+'\n\n'+todo['description']+
-                                '\n\nImplementation has not started. Commits are pushed as coherent checkpoints.\n')
+                                '\n\nCommits are pushed as coherent checkpoints.\n'+self.publication_context(run))
                 run['pr_url'] = self.github('pr', 'create', '--draft', '--base', self.options['base_branch'],
                     '--head', run['branch'], '--title', '[WIP] [unfertig] '+todo['id']+': '+todo['name'],
                     '--body-file', str(body))
@@ -627,15 +662,7 @@ class Workflow:
                         with exclude.open('a') as file:
                             file.write('\n/.worktrees/\n')
                     if not Path(run['worktree']).exists():
-                        self.git('fetch', 'origin', self.options['base_branch'])
-                        remote_base = self.git('rev-parse', 'refs/remotes/origin/'+self.options['base_branch'])
-                        local_base = self.git('rev-parse', self.options['base_branch'])
-                        try:
-                            self.git('merge-base', '--is-ancestor', remote_base, local_base)
-                            run['base'] = local_base
-                        except ValueError:
-                            self.git('merge-base', '--is-ancestor', local_base, remote_base)
-                            run['base'] = remote_base
+                        run['base'] = self.startup_base()
                         self.save(ident, run)
                         self.git('worktree', 'add', '-b', run['branch'], run['worktree'], run['base'])
                 self.ensure_pr(todo, run)

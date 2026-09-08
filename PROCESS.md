@@ -98,6 +98,18 @@ published prerequisites (or closed unmanaged work with a verified commit on orig
 ticket, then selects a fresh base. Absence means no dependencies; never infer
 dependencies from file overlap alone.
 
+New worktrees use the current local main when it contains remote main; when
+remote main is ahead, they use that remote commit. Divergence stops startup with
+an explicit integration diagnostic. Only committed history is included; original
+checkouts and uncommitted edits are preserved. Existing worktrees retain their
+saved base on retry. The coordinator persists each selected base before creation.
+
+Implement/Retry authorizes publication of the task branch, including inherited
+local commits in that repository. This does not push main. PR descriptions list
+inherited commits separately from task work; unchanged repositories create no PR
+and are not pushed just because their local main is ahead. Main publication and
+restart still require their separate owner action and exact-candidate checks.
+
 Starting implementation authorizes only the branch push and draft PR required
 by this workflow. The coordinator publishes a kickoff commit and creates the
 `[WIP] [unfertig]` draft PR before launching an agent. The coordinator alone publishes observed coherent local checkpoints and
