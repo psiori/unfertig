@@ -351,7 +351,7 @@ feature only with disposable local repositories/bare remotes, never real remotes
 ## Data and API versions
 
 [VERSIONING.md](VERSIONING.md) governs both idea processing and implementation.
-Persisted JSON uses `format_version` (currently `1.18.0`), independently of integer
+Persisted JSON uses `format_version` (currently `1.19.0`), independently of integer
 layout schema_version. Snapshots declare protocol_version `2.0.0`. Preserve these
 fields and unknown extensions in edits. Newer major versions require updating;
 newer minor versions allow inspection only; compatible builds preserve their
@@ -523,6 +523,12 @@ gets a test-status notice; untested commits have no notice or reserved space.
 Merging never supplies `tested_commit`. All other eligibility and recovery guards remain.
 
 ## Work categories (format 1.7)
+
+Use Bugfix to correct a known defect and demonstrate the correction with
+proportional regression verification within the task's authorization. Use
+Debugging for investigation and causal explanation. Both retain the canonical
+meaning, deliverable, completion conditions and instructions in `categories.json`.
+Adding Bugfix never recategorizes existing todos (storage 1.19).
 
 `category` is one optional work type, separate from module/group and lifecycle
 status. Choose ideation, research, concept, design, implementation, debugging or
