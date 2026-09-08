@@ -601,4 +601,20 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse','HEAD'),before)
 
 
+    def test_migrating_phase_drains_until_verified_receipt(self):
+        todo=self.migration_review();run=todo['workflow'];snapshot=self.store.snapshot()
+        with patch.object(self.workflow,'host_deployment',return_value={}),patch.object(self.workflow,'host_argv',return_value=[sys.executable,'-c','print("verified host deployment")']):
+            self.workflow.start(dict(id=todo['id'],action='migrate',revision=snapshot['revisions']['todos'][todo['id']],commit=run['commit'],review_id='a'*32))
+            self.workflow.workers[todo['id']].join(10)
+        self.assertEqual(self.workflow.status()['runs'][todo['id']]['phase'],'migrating')
+        self.assertTrue(self.workflow.draining())
+        for _ in range(100):
+            self.workflow.reconcile()
+            current=self.store.snapshot()['data']['todos'][0]
+            if current['status']=='closed':break
+            time.sleep(.02)
+        self.assertEqual(current['workflow']['phase'],'done',current)
+        self.assertFalse(self.workflow.draining())
+
+
 if __name__=='__main__':unittest.main()
