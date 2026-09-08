@@ -209,9 +209,9 @@ class ExternalCompletionTests(unittest.TestCase):
         old = dict(current, format_version='1.14.0', extension={'preserve':True})
         result = MIGRATIONS['1.14.0'](copy.deepcopy(old), 'todo')
         self.assertEqual(result, dict(old, format_version='1.15.0'))
-        self.assertEqual(migrate(result, 'todo'), result)
+        self.assertEqual(migrate(result, 'todo'), dict(result, format_version=FORMAT_VERSION))
         self.assertEqual(inspect(result, supported='1.14.0')[0], 'read_only')
-        self.assertEqual(inspect(dict(result, format_version='1.15.1'))[0], 'compatible')
+        self.assertEqual(inspect(dict(result, format_version='1.16.1'))[0], 'compatible')
 
     def test_public_http_action_and_token_guard(self):
         from server import Server

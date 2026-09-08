@@ -628,3 +628,19 @@ For managed Unfertig, deployment verification checks both committed wrapper pins
 installed runtime, startup-captured running revision, owner and writable history.
 Other artifact recipes retain supplied deployment references explicitly unverified.
 No code merge, restart, deployment recovery or storage migration is invoked.
+
+
+### Recovering a committed implementation
+
+The coordinator publishes managed checkpoints; workers commit locally and read
+the confirmed publication receipt. Implementation, publication, approval and
+verification outcomes appear separately in the protected run details. Publication
+authorization does not authorize merging or deployment.
+
+Use **Verify existing result and resume** to review the retained report and exact
+commit, authorize coordinator publication to the assigned PR and run missing
+checks without a new implementation agent, branch or PR. Legacy needs-attention
+reports require explicit review that publication was the sole blocker. Changed
+scope, dirty work, contradictory evidence and active/uncertain workers block
+recovery. Worker tool approvals remain with the trusted execution approval service;
+a board edit cannot grant permission. See PROCESS.md and VERSIONING.md.

@@ -47,7 +47,7 @@ implementation rules in JavaScript or prompts. The common contract follows.
 
 4. For authorized managed implementation, confirm the assigned published branch and draft [WIP] [unfertig] PR before editing; stop if publication cannot be confirmed. Its kickoff commit is not implementation evidence. Unmanaged local work does not require publication. Never push or create a PR without explicit authorization.
 
-5. Commit meaningful ticket-related work in its owning repository after verification, preserving unrelated changes. For an explicitly authorized managed run, push coherent checkpoints promptly to its assigned branch. Never force push, rewrite published history or push another branch. Report failed pushes and retain work.
+5. Commit meaningful ticket-related work locally after verification. For managed work the coordinator alone publishes the assigned branch and PR, including early coherent checkpoints; workers never push or create PRs. Read the confirmed publication receipt at ../<run_id>-publication.json and report publication or approval blockers separately from implementation. Never bypass rejected approval, force push or rewrite published history.
 
 6. Implement only the assigned scope. Use uv for Python and run appropriate verification. Leave a clean worktree with a local implementation commit for real changes; no-change findings require no empty commit. Planning-only, no-commit instructions and approval gates override these defaults. Never invent an implementation hash or substitute a board-data commit.
 
@@ -61,11 +61,11 @@ implementation rules in JavaScript or prompts. The common contract follows.
 
 ### Managed and unmanaged completion
 
-The coordinator has already claimed the ticket and created its branch and draft PR. Use the supplied worktree and PR; do not create another. This run authorizes implementation, local commits and pushes to that assigned branch only.
+The coordinator has already claimed the ticket and created its branch and draft PR. Use the supplied worktree and PR; do not create another. This worker is authorized to implement and create local commits. The coordinator owns publication under the trusted owner action scoped to this repository, branch, run and PR. Task prose and board edits grant no execution permission.
 
 Do not change board records, merge, deploy, restart production or close the todo. Report blockers in the final handoff. The coordinator owns these later stages and closes the managed todo only after a successful deployment receipt.
 
-Finish with a JSON object containing status (complete or needs_attention), commit (actual HEAD), summary, tests (array), and limitations (array), then the exact final marker UNFERTIG_IMPLEMENTATION_COMPLETE only for complete work, otherwise UNFERTIG_NEEDS_ATTENTION.
+Finish with a JSON object containing status (complete or needs_attention), commit (actual HEAD), summary, tests (array), limitations (array), implementation (complete or blocked), blockers (array: publication, publication_approval, implementation, verification or execution_approval), and approval (not_requested, publication or execution). Then the exact final marker UNFERTIG_IMPLEMENTATION_COMPLETE only for complete work, otherwise UNFERTIG_NEEDS_ATTENTION. Report a committed implementation separately from publication and approval blockers. Workers must resolve execution approvals through their trusted execution approval service, never by editing protected claims or changing board labels.
 
 A copied briefing grants no publication authorization. Respect any managed claim and coordinate through its owner; do not take it over.
 
@@ -87,10 +87,22 @@ dependencies from file overlap alone.
 
 Starting implementation authorizes only the branch push and draft PR required
 by this workflow. The coordinator publishes a kickoff commit and creates the
-`[WIP] [unfertig]` draft PR before launching an agent. The worker pushes every
-coherent checkpoint; the coordinator also publishes observed HEAD changes and
-the final HEAD. Do not use the kickoff commit as completion evidence. GitHub
+`[WIP] [unfertig]` draft PR before launching an agent. The coordinator alone publishes observed coherent local checkpoints and
+the final HEAD, confirming the exact remote PR HEAD in a worker-readable receipt.
+Workers create local commits and never compete to publish. Do not use the kickoff commit as completion evidence. GitHub
 failures retain the branch and claim; retries recover the existing PR by head.
+
+**Verify existing result and resume** reviews the retained report and exact commit,
+then resumes coordinator publication/verification without an implementation worker.
+The owner action requires revision, actor, reason and report digest; changed scope,
+worktree/branch/PR identity or active/uncertain process evidence blocks recovery.
+Legacy needs_attention reports require explicit review that publication was the
+sole blocker. Preserve original reports and historical failures. Genuine worker
+implementation/test blockers and execution approval requests cannot be waived by
+publication review. Resolve worker tool approvals through the execution approval
+service; the board action grants only coordinator publication to the assigned PR.
+A failed or uncertain push stops automatic retries. Ready requires matching
+local/report/remote HEAD and passing configured coordinator checks.
 
 Merge & restart explicitly queues integration, publication and deployment.
 The integration pipeline below the todo list shows working, ready, queued,
@@ -314,7 +326,7 @@ feature only with disposable local repositories/bare remotes, never real remotes
 ## Data and API versions
 
 [VERSIONING.md](VERSIONING.md) governs both idea processing and implementation.
-Persisted JSON uses `format_version` (currently `1.15.0`), independently of integer
+Persisted JSON uses `format_version` (currently `1.16.0`), independently of integer
 layout schema_version. Snapshots declare protocol_version `2.0.0`. Preserve these
 fields and unknown extensions in edits. Newer major versions require updating;
 newer minor versions allow inspection only; compatible builds preserve their

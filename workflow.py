@@ -143,8 +143,10 @@ class Workflow:
                 elif activity and not run['active'] and not known_stage:
                     run['phase'] = 'activity_unknown'
                     run.pop('resume_action', None)
+                from managed_completion import recovery_view
+                run.update(recovery_view(self, todo, run, activity))
                 run['can_complete_external'] = not activity and not run.get('foreign') and (
-                    run['phase'] in {'historical', 'superseded', 'interrupted', 'implementation_failed',
+                    run['phase'] in {'historical', 'superseded', 'interrupted', 'handoff_blocked', 'implementation_failed',
                                     'test_failed', 'merge_failed', 'push_failed', 'restart_failed', 'resolution_blocked', 'ready', 'tested'})
                 if todo['id'] not in self.previews or self.previews[todo['id']].poll() is not None:
                     run.pop('preview_url', None)
@@ -196,6 +198,9 @@ class Workflow:
 
     def ensure_pr(self, todo, run):
         """No agent starts until the branch and draft PR are confirmed on GitHub."""
+        grant = run.get('publication_authorization', {})
+        if grant.get('source') != 'owner_action' or any(grant.get(k) != run[k] for k in ('repository','branch','run_id')):
+            raise Conflict('Branch/PR publication requires an explicit scoped owner authorization.')
         # An empty kickoff commit gives GitHub a PR head before implementation.
         if self.git('rev-parse', 'HEAD', cwd=run['worktree']) == run['base']:
             self.git('commit', '--allow-empty', '-m', 'Start '+todo['id']+' with Unfertig', cwd=run['worktree'])
@@ -218,14 +223,18 @@ class Workflow:
         state = self.pr_state(run)
         if state['state'] != 'OPEN':
             raise Conflict('PR is already integrated; use the integration action to reconcile it, not a new worker.')
+        if not state.get('isDraft'):
+            raise Conflict('Managed implementation requires the assigned draft PR.')
+        if 'publication_authorization' in run:
+            run['publication_authorization']['pr_url'] = run['pr_url']
         self.save(todo['id'], run, pr_url=run['pr_url'])
 
     def publish_checkpoint(self, run):
         if self.git('branch', '--show-current', cwd=run['worktree']) != run['branch']:
             raise Conflict('Worker changed its assigned branch.')
         commit = self.git('rev-parse', 'HEAD', cwd=run['worktree'])
-        self.git('push', 'origin', commit+':refs/heads/'+run['branch'], cwd=run['worktree'])
-        return commit
+        from managed_completion import publish
+        return publish(self, run, commit)
 
     def process_identity(self, pid):
         """Distinguish PID reuse on Linux; other hosts conservatively retain a block."""
@@ -291,7 +300,7 @@ class Workflow:
     def inactive_history(self, todo):
         run = todo.get('workflow', {})
         historical = run.get('external_completions') or (todo['status'] == 'closed' and
-            run.get('phase') in ACTIVE | {'implementation_failed', 'test_failed', 'merge_failed',
+            run.get('phase') in ACTIVE | {'handoff_blocked', 'implementation_failed', 'test_failed', 'merge_failed',
                                          'push_failed', 'restart_failed', 'resolution_blocked'})
         return bool(historical and not self.retained_activity(todo))
 
@@ -330,7 +339,7 @@ class Workflow:
 
     def launch(self, todo, run, action):
         ident = todo['id']
-        run.update(phase={'implement':'implementing', 'retry':'implementing', 'test':'testing', 'merge':'merging', 'migrate':'merging', 'recover':'merging'}[action],
+        run.update(phase={'implement':'implementing', 'retry':'implementing', 'test':'testing', 'merge':'merging', 'migrate':'merging', 'recover':'merging', 'verify_existing':'testing'}[action],
                    message='Running '+action+'…')
         self.save(ident, run)
         self.live[ident] = dict(message=run['message'])
@@ -397,7 +406,7 @@ class Workflow:
                 raise ValueError('Cannot identify this system; workflow launch is unavailable.')
             ident, action = body.get('id'), body.get('action')
             todo = next((t for t in snap['data']['todos'] if t['id'] == ident), None)
-            if todo is None or action not in ('implement', 'retry', 'test', 'merge', 'migrate', 'recover', 'skip', 'complete_external'):
+            if todo is None or action not in ('implement', 'retry', 'test', 'merge', 'migrate', 'recover', 'skip', 'complete_external', 'verify_existing'):
                 raise ValueError('Choose a saved todo and implement, test or merge.')
             request_id = body.get('request_id')
             if request_id is not None and (not isinstance(request_id, str) or not 1 <= len(request_id) <= 128):
@@ -457,7 +466,9 @@ class Workflow:
                 worktree = repository / '.worktrees' / 'unfertig' / key
                 run = dict(scope=scope_digest(todo), run_id=key, system=system_id(), repository=str(repository), worktree=str(worktree),
                            branch=f'codex/{ident.lower()}-{key[:8]}', base=base,
-                           phase='implementing', message='Creating an isolated implementation branch…')
+                           phase='implementing', message='Creating an isolated implementation branch…',
+                           publication_authorization=dict(repository=str(repository), branch=f'codex/{ident.lower()}-{key[:8]}',
+                               run_id=key, source='owner_action', request_id=request_id or key))
                 # The queue claim and request receipt are saved atomically below.
             else:
                 if not old:
@@ -473,10 +484,15 @@ class Workflow:
                 if run['repository'] != self.options['repository']:
                     raise ValueError('Repository configuration changed. Recover this run in its original repository.')
                 head = self.git('rev-parse', run['branch']) if action != 'retry' or Path(run['worktree']).exists() else run['base']
-                if action != 'retry' and (body.get('commit') != head or run.get('commit') != head):
+                if action != 'retry' and (body.get('commit') != head or (action != 'verify_existing' and run.get('commit') != head)):
                     raise Conflict('Branch changed; review its current commit before merging.')
                 if action != 'retry' and self.git('status', '--porcelain', cwd=run['worktree']):
                     raise ValueError('Branch worktree has uncommitted changes.')
+                if action == 'verify_existing':
+                    from managed_completion import prepare_resume
+                    prepare_resume(self, todo, run, body, automatic)
+                if action == 'retry':
+                    run['publication_authorization'] = dict(source='owner_action', repository=run['repository'], branch=run['branch'], run_id=run['run_id'], request_id=request_id or run['run_id'], **({'pr_url':run['pr_url']} if run.get('pr_url') else {}))
                 if action == 'retry' and run['phase'] not in ('implementation_failed', 'implementing'):
                     raise ValueError('Only an interrupted or failed implementation can resume.')
                 if action == 'test' and run['phase'] not in ('ready', 'tested', 'test_failed', 'testing'):
@@ -505,7 +521,7 @@ class Workflow:
             self.dispatch()
             return self.status()
 
-    def command(self, argv, cwd, ident, stdin=None, timeout=None):
+    def command(self, argv, cwd, ident, stdin=None, timeout=None, purpose='worker'):
         """Stream a bounded output tail; no per-line record commits."""
         with self.lock:
             if self.stopping:
@@ -513,7 +529,7 @@ class Workflow:
             run = next(t['workflow'] for t in self.snapshot()['data']['todos'] if t['id'] == ident)
             self.guard_process(run)
             receipt_path = self.process_receipt(run)
-            receipt = dict(format_version=FORMAT_VERSION, run_id=run['run_id'], state='launching')
+            receipt = dict(format_version=FORMAT_VERSION, run_id=run['run_id'], state='launching', purpose=purpose)
             atomic(receipt_path, encode(receipt))
             try:
                 child = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
@@ -563,7 +579,7 @@ class Workflow:
 
     def run(self, todo, run, action):
         ident = todo['id']
-        failed = {'retry':'implementation_failed', 'implement':'implementation_failed', 'test':'test_failed', 'merge':'merge_failed', 'migrate':'merge_failed', 'recover':'restart_failed'}[action]
+        failed = {'retry':'implementation_failed', 'implement':'implementation_failed', 'test':'test_failed', 'merge':'merge_failed', 'migrate':'merge_failed', 'recover':'restart_failed', 'verify_existing':'handoff_blocked'}[action]
         try:
             if action in ('implement', 'retry'):
                 Path(run['worktree']).parent.mkdir(parents=True, exist_ok=True)
@@ -625,42 +641,22 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                                 last = self.publish_checkpoint(run)
                         except Exception as error:
                             with self.lock:
+                                run['publication'] = dict(status='blocked', message=str(error)[-1000:])
+                                self.save(ident, run)
                                 self.live.setdefault(ident, {})['publication_warning'] = str(error)[-1000:]
+                            return
                 publisher = threading.Thread(target=publish_progress, daemon=True)
                 publisher.start()
                 try:
                     self.command([executable, 'exec', *effort_args, '--approve-for-me', '-C', run['worktree'], '-o', str(final), '-'], run['worktree'], ident, prompt)
                 finally:
                     stopped.set(); publisher.join()
-                    self.publish_checkpoint(run)
-                if not final.is_file() or not final.read_text().rstrip().endswith('UNFERTIG_IMPLEMENTATION_COMPLETE'):
-                    raise ValueError('Agent reports incomplete work. '+(final.read_text()[-4000:] if final.is_file() else 'No completion report was written.'))
-                report_text = final.read_text().rsplit('UNFERTIG_IMPLEMENTATION_COMPLETE', 1)[0].strip()
-                try:
-                    report = json.loads(report_text)
-                except ValueError:
-                    raise ValueError('Completion report must be a JSON object followed by the completion marker.')
-                commit = self.git('rev-parse', 'HEAD', cwd=run['worktree'])
-                if not isinstance(report, dict) or report.get('status') != 'complete' or report.get('commit') != commit or not isinstance(report.get('summary'), str) or not all(isinstance(report.get(k), list) and all(isinstance(v, str) for v in report[k]) for k in ('tests', 'limitations')):
-                    raise ValueError('Completion report does not match HEAD or the required result fields.')
-                run['completion_summary'] = report['summary'].strip() + '\n\nVerification: ' + ('; '.join(report['tests']) or 'No worker checks reported') + '\nLimitations: ' + ('; '.join(report['limitations']) or 'None reported')
-                if not report['summary'].strip():
-                    raise ValueError('Completion summary must describe the outcome.')
-                if self.git('status', '--porcelain', cwd=run['worktree']):
-                    raise ValueError('Implementation needs attention: uncommitted changes remain.')
-                if commit == run.get('kickoff_commit', run['base']):
-                    raise ValueError('No implementation changes reported. Coordinator review required; retain the assigned branch/PR and findings. Do not create an empty implementation commit.')
-                run['commit'] = commit
-                self.command(self.argv('test', run), run['worktree'], ident)
-                if self.git('rev-parse', 'HEAD', cwd=run['worktree']) != commit or self.git('status', '--porcelain', cwd=run['worktree']):
-                    raise ValueError('Verification changed the reviewed worktree.')
-                body = Path(run['worktree']).parent / (run['run_id']+'-pr.md')
-                body.write_text(todo['description']+'\n\n'+report['summary']+'\n\nValidation: '+', '.join(report['tests'])+
-                                '\nConfigured implementation checks passed at '+commit+'.\n\nLimitations: '+('; '.join(report['limitations']) or 'None reported')+'\n')
-                self.github('pr', 'edit', run['pr_url'], '--title', '[unfertig] '+todo['id']+': '+todo['name'], '--body-file', str(body))
-                if self.pr_state(run).get('isDraft'):
-                    self.github('pr', 'ready', run['pr_url'])
-                run.update(phase='ready', message='Implementation committed and checks passed. Preview the branch or choose Merge & restart.')
+                from managed_completion import finish
+                failed = 'handoff_blocked'
+                finish(self, todo, run)
+            elif action == 'verify_existing':
+                from managed_completion import finish
+                finish(self, todo, run)
             elif action == 'test':
                 self.stop_preview(ident)
                 self.command(self.argv('test', run), run['worktree'], ident)
@@ -727,6 +723,8 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                               completion_summary=run.get('completion_summary', 'Legacy run: implementation report unavailable; review the PR for implementation findings and limitations.') + '\n\nDeployment verification: ' + run['message'])
             self.save(ident, run, **fields)
         except Exception as error:
+            if failed == 'handoff_blocked' and run.get('implementation', {}).get('status') == 'blocked':
+                failed = 'implementation_failed'
             if isinstance(error, GitFailure):
                 run['git_diagnostics'] = error.evidence
             if run.get('phase') in ('resolving_conflict', 'testing_resolution', 'resolution_blocked'):

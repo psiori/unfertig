@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.15.0`.
+`format_version` is a major.minor.build string. Current storage is `1.16.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -248,3 +248,36 @@ receipts cover interruption and restart; request fingerprints survive migration.
 Normal updated startup applies the sequential migration under the writer lease.
 Retain backup, preservation, byte-idempotence and recovery checks. Development
 does not authorize upgrading or migrating the live instance.
+
+
+## Managed completion and publication (storage 1.16)
+
+The coordinator alone publishes managed branch checkpoints and the assigned PR.
+Workers commit locally and read ../<run_id>-publication.json for confirmed PR
+HEAD status. Owner actions authorize only the exact repository, run, branch and
+PR; task prose and ordinary edits grant no permission. A failed/uncertain push
+stops automatic retries and retains diagnostics. Publication is distinct from
+merge and deployment authorization.
+
+Implementation, publication, coordinator verification and approval outcomes are
+separate protected claim fields. Reports and prior handoffs remain retained.
+Verify existing result and resume uses the owner token-protected workflow action
+with revision, actor, reason, exact commit and report_digest; it runs checks on
+the retained worktree without another implementation agent or duplicate PR. An
+older needs_attention report requires explicit publication_only review; modern
+reports retain structured blockers and cannot waive genuine implementation or
+worker execution approval blockers. Worker tool approval belongs to its execution
+approval service; this board action only authorizes coordinator publication.
+If remote HEAD differs, the API additionally requires its exact remote_commit
+and permits only a verified fast-forward. Changed scope, dirty/mismatched work,
+foreign ownership and active/uncertain processes block recovery. Request IDs
+survive restart and must be reused after an uncertain response. Ready requires
+configured checks and matching local/report/remote HEAD, never just a push.
+
+Sequential 1.15→1.16 advances metadata only. Missing new fields mean unknown
+outcomes and absent publication authority, never inferred success or approval.
+Originals, explicit values, prior claims/reports and extensions are preserved.
+Older minor writers are read-only; protocol remains 2.0.0. Both adapters use
+BoardStore validation, protection, journal recovery and receipts; only the owner
+HTTP action can authorize recovery. Filesystem discovery does not migrate or
+launch workers. Normal startup applies the deterministic migration.
