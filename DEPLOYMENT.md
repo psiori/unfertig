@@ -74,9 +74,12 @@ standalone instances expose hooks but do not claim a supervised restart ability.
 Integration owns code tests, combined-candidate checks and migration regression
 coverage before publication. The normal updater trusts main and runs no repeated
 code test suite or disposable host-data rehearsal. It retains installation guards:
-correct Git origin/branch, clean mounted checkout, matching committed/index pin,
+correct Git origin/branch, clean mounted checkout, preservation of separately staged pins,
 fast-forward history and no concurrent wrapper Git operation. Failed installation
 keeps the prior runtime where recovery is safe and records the failure separately.
+A clean explicitly selected checkout may differ from the recorded runtime pin;
+that bookkeeping does not block its startup migrations. The updater works from the
+actual installed revision and reconciles the pin when confirming/installing upstream.
 
 Every release changing persistence ships deterministic sequential migrations in
 versions.py, useful defaults and recovery tests. BoardStore initializes supported
@@ -87,6 +90,12 @@ or network service. Unknown/newer formats follow VERSIONING.md; never downgrade.
 For UM, scripts/startup_migration.py holds the exclusive board lease, backs up
 exact stopped board/shared/local configuration bytes, migrates in sequence and
 commits only tracked shared state. This also runs on pinned/offline startup.
+Shared settings and explicit local overrides are authoritative. Generated machine
+configuration is disposable: migrate shared state, then rebuild and normalize the
+effective configuration from those sources. Stale defaults and partially written
+caches must not block startup. Store preferences in local overrides, never in the
+generated cache. Old transactions targeting that cache recover before it is rebuilt.
+Idempotence is covered by migration regression tests, not another startup rehearsal.
 Interrupted startup retains the exact runtime and journal for forward recovery.
 Migration or history failure stops that tool before it serves; it does not undo
 published code. Fix the cause and retry maintenance. Do not clear backup/journal
