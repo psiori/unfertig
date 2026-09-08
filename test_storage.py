@@ -40,6 +40,59 @@ class RecordTests(unittest.TestCase):
         record.update(fields)
         return dict(request_id=uuid.uuid4().hex, actor='Test', changes=[dict(collection='todos', id=record['id'], revision=revision, record=record)])
 
+    def test_completion_lifecycle_and_recovery(self):
+        closure = dict(status='closed', closed_by='Test', date_closed=STAMP)
+        with self.assertRaisesRegex(ValueError, 'Completion summary'):
+            self.store.mutate(self.edit(**closure))
+        summary = 'Added closure reporting. Verified lifecycle tests. No limitations.'
+        request = self.edit(**closure, completion_summary=summary)
+        real = storage.atomic
+        def interrupted(target, content):
+            if target.name == 'T0001.json':
+                raise OSError('interrupted closure')
+            return real(target, content)
+        with patch('storage.atomic', side_effect=interrupted):
+            with self.assertRaises(OSError):
+                self.store.mutate(request)
+        self.store.recover()
+        saved = self.store.mutate(request)['data']['todos'][0]
+        self.assertEqual(saved['completion_summary'], summary)
+        self.assertEqual(saved['description'], self.original['todos'][0]['description'])
+        with self.assertRaisesRegex(ValueError, 'Completion summary'):
+            self.store.mutate(self.edit(completion_summary='  '))
+        self.store.mutate(self.edit(status='open', closed_by='', date_closed=''))
+        self.assertEqual(self.store.read()[0]['todos'][0]['completion_summary'], '')
+        with self.assertRaisesRegex(ValueError, 'Completion summary'):
+            self.store.mutate(self.edit(**closure))
+        self.store.mutate(self.edit(**closure, completion_summary='Rechecked the outcome; tests passed; no follow-up.'))
+
+    def test_new_closed_record_and_invalid_summary(self):
+        record = copy.deepcopy(self.original['todos'][0])
+        record.pop('id')
+        record.update(source_ideas=[], status='closed', closed_by='Test', date_closed=STAMP)
+        request = dict(actor='Test', request_id=uuid.uuid4().hex,
+                       changes=[dict(collection='todos', id=None, record=record)])
+        for invalid in (None, 42, [], '  '):
+            record['completion_summary'] = invalid
+            with self.assertRaisesRegex(ValueError, 'Completion summary'):
+                self.store.mutate(request)
+        record['completion_summary'] = 'Already implemented; inspected requirements and tests; no follow-up.'
+        saved = self.store.mutate(request)['data']['todos'][-1]
+        self.assertEqual(saved['completion_summary'], record['completion_summary'])
+
+    def test_legacy_closed_summary_absence_is_not_fabricated(self):
+        old = copy.deepcopy(self.original)
+        old['todos'][0].update(status='closed', closed_by='Original', date_closed=STAMP)
+        validate(old)
+        changed = copy.deepcopy(old)
+        changed['todos'][0]['priority'] = 'urgent'
+        validate(changed, old)
+        from versions import migrate
+        migrated = migrate(old['todos'][0], 'todo')
+        self.assertNotIn('completion_summary', migrated)
+        self.assertEqual(migrated['closed_by'], 'Original')
+        self.assertEqual(migrate(migrated, 'todo'), migrated)
+
     def test_migration_lossless_and_repeatable(self):
         self.assertEqual(semantic(self.store.read()[0]), self.original)
         self.assertEqual(json.loads((self.path.parent/'data.v1-backup.json').read_bytes()), self.original)
@@ -208,7 +261,7 @@ class GitTests(RecordTests):
         self.assertEqual(set(files), {'nested/data.json', 'nested/data.v1-backup.json', 'nested/todos/T0001.json'})
 
     def test_closed_status_committed(self):
-        self.store.mutate(self.edit(status='closed', closed_by='Human', date_closed=STAMP))
+        self.store.mutate(self.edit(status='closed', closed_by='Human', date_closed=STAMP, completion_summary='Verified the completed task; no follow-up required.'))
         saved=json.loads(self.git('show', 'HEAD:todos/T0001.json'))
         self.assertEqual(saved['status'], 'closed')
 

@@ -27,7 +27,7 @@ function updateTitle(context) {
 }
 function boardLocations(context = boardContext) {
   if (!context?.process || !context?.data || !context?.todos) throw new Error('Board locations unavailable. Reload before copying a briefing.');
-  return `First locate and read ${context.process}. The active ideas file is ${context.data}; task records are in ${context.todos}/<ID>.json. The owning project is ${context.repository}. Verify these locations and the intended task before starting; report missing files instead of acting on a stale snapshot.`;
+  return `First locate and read ${context.process}. The active ideas file is ${context.data}; task records are in ${context.todos}/<ID>.json. The owning project is ${context.repository}. Locate and read the authoritative task and linked originals, verify its ID and repository before starting work or changing status. If required files cannot be found, report the missing location and stop dependent work instead of acting on this copied snapshot.`;
 }
 let revisions = {ideas:{}, todos:{}}, lastAssigned = [], pendingRequest = null;
 const draftRevisions = new Map();
@@ -246,6 +246,7 @@ function todoCard(todo) {
   ${field('Short name','name',todo.name,'required maxlength="300"')}
   <label>Detailed description <textarea name="description" rows="5" required>${escapeHTML(todo.description)}</textarea></label>
   <div class="form-grid three"><label>Priority<select name="priority">${options(['low','normal','high','urgent'],todo.priority)}</select></label><label>Status<select name="status">${options(['open','started','closed'],todo.status)}</select></label>${field('Group','group',todo.group,'list="groups" placeholder="Add a group…"')}</div>
+  <label>Completion summary<textarea name="completion_summary" rows="4" placeholder="Required on closure: outcome, verification, limitations or follow-up. Reopening clears this summary.">${escapeHTML(todo.completion_summary || '')}</textarea></label>
   ${categoryEditor(todo)}
   ${field('Tags · comma separated','tags',todo.tags.join(', '),'placeholder="Add a few useful labels…"')}
   <div class="form-grid">${field('GitHub PR URL','pr_url',todo.pr_url,'type="url" placeholder="https://github.com/…/pull/…"')}${field('Implementation commit URL','commit_url',todo.commit_url,'type="url" placeholder="https://github.com/…/commit/…"')}</div>
@@ -306,12 +307,12 @@ function processBrief(ideas) {
 }
 function implementationBrief(todo, sourceData = data, context = boardContext) {
   const originals = [...sourceData.ideas.filter(idea => todo.source_ideas.includes(idea.id)), ...(todo.source_refs || []).map(ref => ({...ref.idea, id:ref.project_id + ':' + ref.idea.id}))];
-  return `Work on ${todo.id}: ${todo.name}\n\n${boardLocations(context)} Re-read ${context.todos}/${todo.id}.json and its linked ideas; this briefing is a snapshot.\n\nAuthor: ${todo.author}\nEntered: ${todo.date_entered}\nPriority: ${todo.priority}\n${categoryBrief(todo)}\nGroup: ${todo.group || 'Ungrouped'}\nTags: ${todo.tags.join(', ') || 'None'}\nStatus at briefing: ${todo.status}\nDependencies: ${(todo.depends_on || []).join(', ') || 'None'}\n\nDESCRIPTION\n${todo.description}\n\n${originals.length ? 'ORIGINAL IDEAS\n' + originals.map(idea => `${idea.id} · ${idea.author}\n${idea.text}`).join('\n\n') + '\n\n' : ''}WORKFLOW\n${[...agentAdvice.common, ...agentAdvice.manual].map(line => '- ' + line).join('\n')}\n`;
+  return `Work on ${todo.id}: ${todo.name}\n\n${boardLocations(context)} Re-read ${context.todos}/${todo.id}.json and its linked ideas; this briefing is a snapshot.\n\nAuthor: ${todo.author}\nEntered: ${todo.date_entered}\nPriority: ${todo.priority}\n${categoryBrief(todo)}\nGroup: ${todo.group || 'Ungrouped'}\nTags: ${todo.tags.join(', ') || 'None'}\nStatus at briefing: ${todo.status}\nDependencies: ${(todo.depends_on || []).join(', ') || 'None'}\n\nDESCRIPTION\n${todo.description}\n\n${todo.completion_summary ? "COMPLETION SUMMARY\n" + todo.completion_summary + "\n\n" : ""}${originals.length ? 'ORIGINAL IDEAS\n' + originals.map(idea => `${idea.id} · ${idea.author}\n${idea.text}`).join('\n\n') + '\n\n' : ''}WORKFLOW\n${[...agentAdvice.common, ...agentAdvice.manual].map(line => '- ' + line).join('\n')}\n`;
 }
 function humanBrief(todo, sourceData = data, context = boardContext) {
   const originals = [...sourceData.ideas.filter(idea => todo.source_ideas.includes(idea.id)), ...(todo.source_refs || []).map(ref => ({...ref.idea, id:ref.project_id + ':' + ref.idea.id}))];
   const references = [todo.pr_url && `Pull request: ${todo.pr_url}`, todo.commit_url && `Implementation commit: ${todo.commit_url}`, todo.commit_hash && `Commit hash: ${todo.commit_hash}`].filter(Boolean);
-  return `${todo.id} — ${todo.name}\n\nRequested by: ${todo.author}\nEntered: ${date(todo.date_entered)}\nPriority: ${todo.priority}\n${categoryBrief(todo)}\nGroup: ${todo.group || 'Ungrouped'}\nTags: ${todo.tags.join(', ') || 'None'}\nDependencies: ${(todo.depends_on || []).join(', ') || 'None'}\nCurrent status: ${todo.status}${todo.status === 'closed' ? `\nClosed by: ${todo.closed_by} on ${date(todo.date_closed)}` : ''}\n\nTHE TASK\n${todo.description}\n\n${originals.length ? 'ORIGINAL CONTEXT\n' + originals.map(idea => `${idea.id} · ${idea.author}\n${idea.text}`).join('\n\n') + '\n\n' : ''}${references.length ? 'EXISTING WORK\n' + references.join('\n') + '\n\n' : ''}WORKING ON THIS\n- ${boardLocations(context)}\n${[...agentAdvice.common, ...agentAdvice.manual].map(line => '- ' + line).join('\n')}\n`;
+  return `${todo.id} — ${todo.name}\n\nRequested by: ${todo.author}\nEntered: ${date(todo.date_entered)}\nPriority: ${todo.priority}\n${categoryBrief(todo)}\nGroup: ${todo.group || 'Ungrouped'}\nTags: ${todo.tags.join(', ') || 'None'}\nDependencies: ${(todo.depends_on || []).join(', ') || 'None'}\nCurrent status: ${todo.status}${todo.status === 'closed' ? `\nClosed by: ${todo.closed_by} on ${date(todo.date_closed)}` : ''}\n\nTHE TASK\n${todo.description}\n\n${todo.completion_summary ? "COMPLETION SUMMARY\n" + todo.completion_summary + "\n\n" : ""}${originals.length ? 'ORIGINAL CONTEXT\n' + originals.map(idea => `${idea.id} · ${idea.author}\n${idea.text}`).join('\n\n') + '\n\n' : ''}${references.length ? 'EXISTING WORK\n' + references.join('\n') + '\n\n' : ''}WORKING ON THIS\n- ${boardLocations(context)} Authoritative task: ${context.todos}/${todo.id}.json.\n${[...agentAdvice.common, ...agentAdvice.manual].map(line => '- ' + line).join('\n')}\n`;
 }
 $('#idea-form').addEventListener('submit', async event => {
   event.preventDefault(); if (!data) return;
@@ -333,9 +334,11 @@ $('#todos').addEventListener('change', event => { const form = event.target.clos
 $('#todos').addEventListener('submit', async event => {
   event.preventDefault(); const form = event.target; if (priorityDrafts.entries.has(form.dataset.id)) { toast('Resolve the pending priority draft before saving this expanded editor.'); return; } const values = Object.fromEntries(new FormData(form)), author = actor(); if (!author) return;
   const next = structuredClone(data), todo = next.todos.find(todo => todo.id === form.dataset.id), oldStatus = todo.status;
-  for (const key of ['name','description','priority','group','category','status','pr_url','commit_url','commit_hash']) todo[key] = values[key].trim();
+  for (const key of ['name','description','completion_summary','priority','group','category','status','pr_url','commit_url','commit_hash']) todo[key] = values[key].trim();
   todo.depends_on = tags(values.depends_on || ''); todo.tags = tags(values.tags); todo.updated_at = now();
   if (todo.status === 'closed' && oldStatus !== 'closed') { todo.closed_by = author; todo.date_closed = now(); }
+  if (oldStatus === 'closed' && todo.status !== 'closed') todo.completion_summary = '';
+  if (todo.status === 'closed' && oldStatus !== 'closed' && !todo.completion_summary.trim()) { toast('Add a completion summary with outcome, verification and limitations.'); return; }
   if (todo.status !== 'closed') { todo.closed_by = ''; todo.date_closed = ''; }
   if (await save(next)) { form.dataset.dirty = 'false'; draftRevisions.delete(form.dataset.id); renderPreservingDrafts(); toast(todo.status === 'closed' && oldStatus !== 'closed' ? 'One more little win. Nicely done.' : `${todo.id} saved.`); }
 });
