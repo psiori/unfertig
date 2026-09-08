@@ -144,3 +144,11 @@ class ContextWorkflowTests(unittest.TestCase):
         self.assertEqual(todo['workflow']['legacy_repository_attempt']['pr_url'],legacy['pr_url'])
         primary=next(r for r in todo['workflow']['repositories'] if r['role']=='project')
         self.assertEqual(primary['worktree'],legacy['worktree']);self.assertEqual(primary['pr_url'],legacy['pr_url'])
+
+    def test_worker_cannot_remove_a_child_pin(self):
+        self.um(pinned=True);todo=self.implement();context=todo['workflow']['repositories'][0]
+        self.workflow.git('rm','--cached','code',cwd=context['worktree'])
+        self.workflow.git('commit','-m','Remove child pin',cwd=context['worktree'])
+        from context_workflow import protected
+        with self.assertRaisesRegex(Conflict,'child pins'):
+            protected(self.workflow,context)
