@@ -17,7 +17,10 @@ class MigrationIntegrationTests(unittest.TestCase):
 
     def test_every_supported_upgrade_preserves_queue_identity_and_extensions(self):
         claim = dict(phase='merge_queued', queued_at='2026-09-08T00:00:00Z',
-                     action_requests={'request':'scope'}, scope='approved', extension=[1, 2])
+                     action_requests={'request':'scope'}, scope='approved', extension=[1, 2],
+                     deployment_driver='startup', external_completions=[dict(
+                         outcome='superseded', actor='SL', reason='Replacement implementation',
+                         at='2026-09-08T00:00:00Z', extension={'retained':True})])
         for version in MIGRATIONS:
             with self.subTest(version=version):
                 old = dict(format_version=version, workflow=claim, extension={'original':'unchanged'})

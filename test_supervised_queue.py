@@ -4,6 +4,7 @@ Set UNFERTIG_TEST_HOST_CONTEXT to a wrapper containing scripts/tools.py.
 Only its reusable scripts are copied; no host configuration or live state is used.
 """
 import json
+from http.client import IncompleteRead
 import os
 from pathlib import Path
 import shlex
@@ -89,7 +90,7 @@ class SupervisedQueueTests(unittest.TestCase):
                     latest = snapshot()
                     if latest['data']['todos'][0]['workflow']['phase'] == phase:
                         return latest
-                except OSError:
+                except (OSError, IncompleteRead):
                     pass  # The actual supervisor is stopping/starting the service.
                 time.sleep(.1)
             self.fail(f'Timed out waiting for {phase}: {latest}')
@@ -116,7 +117,7 @@ class SupervisedQueueTests(unittest.TestCase):
                 result = snapshot()
                 if all(t['workflow']['phase'] == 'done' for t in result['data']['todos']):
                     break
-            except OSError:
+            except (OSError, IncompleteRead):
                 pass
             time.sleep(.1)
         else:

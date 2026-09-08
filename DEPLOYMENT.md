@@ -104,3 +104,13 @@ UNFERTIG_TEST_HOST_CONTEXT=/absolute/wrapper uv run --no-project --python 3.12 p
 
 GitHub and the agent are deterministic fixtures; Git merges, combined checks,
 receipts, service/supervisor restarts, HTTP recovery and queue transactions are real.
+
+**Completed externally** is distinct from Recover deployment. It only gathers
+read-only evidence and appends protected reconciliation history for an old attempt,
+including replacement PRs lacking original commit/publication evidence. It never
+invokes host deploy/recover or manufactures a successful deployment receipt. A
+merged PR establishes integration only after verifying GitHub's merge revision on
+origin/main; manual closure alone establishes neither integration nor deployment.
+The managed runtime verifier checks both committed wrapper pins, installed revision,
+running startup revision and writable owner history independently. Missing or
+contradictory evidence stays unverified. See README for the API and reopening rules.

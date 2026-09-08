@@ -25,6 +25,15 @@
   function canMerge(run) {
     return ['ready','tested','test_failed','merge_failed','push_failed','restart_failed','resolution_blocked'].includes(run?.phase) || run?.resume_action === 'merge';
   }
+  function externalLink(run) {
+    const url = run?.external_completions?.at(-1)?.evidence?.pr_url;
+    return url ? `<a href="${escapeHTML(url)}" target="_blank" rel="noopener">External PR ↗</a>` : '';
+  }
+  function externalStatus(run) {
+    const last = run?.external_completions?.at(-1);
+    if (!last) return '';
+    return `Completed externally · Integration: ${last.evidence.integration.status} · Deployment: ${last.evidence.deployment.status}`;
+  }
   function testStatus(run) {
     return run?.commit && run.tested_commit === run.commit
       ? 'This commit passed Test branch / Preview.'
@@ -32,6 +41,9 @@
   }
   function nextStep(todo, run) {
     if (!run) return todo.status !== 'closed' ? ['implement','Implement',todo.status === 'open'] : null;
+    if (['historical','superseded'].includes(run.phase)) return null;
+    if (todo.status === 'closed' && !['historical','superseded','done'].includes(run.phase)) return ['', 'Closed ticket — review retained activity', false];
+    if (run.activity_block && !run.active) return ['', 'Worker activity requires review', false];
     if (run.phase === 'queued' || run.phase === 'merge_queued') return ['', run.phase === 'merge_queued' ? 'Queued for integration' : 'Queued', false];
     if (['resolving_conflict','testing_resolution'].includes(run.phase)) return ['',run.phase === 'resolving_conflict' ? 'Agent resolving merge conflict' : 'Testing resolved candidate',false];
     if (run.phase === 'resolution_blocked') return ['merge','Retry resolution',true];
@@ -65,11 +77,12 @@
       const id = panel.dataset.workflow, todo = data.todos.find(t => t.id === id);
       if (!todo) return;
       const run = latest.runs[id];
-      const disabled = sending.has(id) || !latest.configured || run?.active || compatibility.read_only || history.pending || hasTicketDraft(id) || run?.foreign;
-      const button = (action, label, allowed) => `<button type="button" class="button small" data-workflow-action="${action}" data-todo="${id}" ${disabled || !allowed ? 'disabled' : ''}>${label}</button>`;
+      const disabled = sending.has(id) || run?.activity_block || run?.active || compatibility.read_only || history.pending || hasTicketDraft(id) || run?.foreign;
+      const historical = ['historical','superseded'].includes(run?.phase);
+      const button = (action, label, allowed) => (historical && action !== 'complete_external') ? '' : `<button type="button" class="button small" data-workflow-action="${action}" data-todo="${id}" ${disabled || !allowed || (action !== 'complete_external' && (!latest.configured || todo.status === 'closed')) ? 'disabled' : ''}>${label}</button>`;
       const expanded = panel.querySelector('details')?.open;
       const scroll = panel.querySelector('pre')?.scrollTop || 0;
-      const html = `<div class="workflow-actions"><strong>Implementation</strong>${button('implement','Implement with Codex', !run && todo.status === 'open' && latest.configured)}${run && (run.phase === 'implementation_failed' || run.resume_action === 'retry') ? button('retry','Retry implementation',true) : ''}${button('test','Test branch', (['ready','tested','test_failed'].includes(run?.phase) || run?.resume_action === 'test'))}${button('merge','Merge & restart', canMerge(run) || run?.phase === 'migration_required')}${['restart_failed','restarting','migrating','recovering'].includes(run?.phase) && run?.published_commit ? button('recover','Recover deployment',true) : ''}${['merge_failed','push_failed','restart_failed','migration_required','resolution_blocked'].includes(run?.phase) && !run.queue_skip ? button('skip','Skip & continue queue',true) : ''}${run?.pr_url ? `<a class="button small" href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">GitHub PR ↗</a>` : ''}${run?.preview_url ? `<a class="button small" href="${escapeHTML(run.preview_url)}" target="_blank" rel="noopener">Open preview ↗</a>` : ''}</div><p class="muted">${escapeHTML(run ? ({implementing:'Implementing…',ready:'Ready to preview or merge',testing:'Preparing preview…',tested:'Ready for your review',resolving_conflict:'Agent resolving merge conflict',testing_resolution:'Testing resolved candidate',resolution_blocked:'Blocked — user input required',merging:'Merging and publishing…',restarting:'Restarting artifact…',migrating:'Migrating reviewed storage…',recovering:'Recovering published deployment…',done:'Completed',interrupted:'Interrupted — review and retry'}[run.phase] || run.phase.replaceAll('_',' ')) : !latest.configured ? 'Configure project test, preview and restart commands to enable this workflow.' : latest.automatic ? 'Automatic implementation is on for new ideas captured on this system.' : 'Automatic implementation is off.')}</p>${testStatus(run) ? `<p class="muted">${testStatus(run)}</p>` : ''}${run ? `<details><summary>Progress & branch details</summary><pre>${escapeHTML(`${run.branch}\n${run.commit || ''}\n${run.worktree}\nPublished: ${run.published_commit || 'pending'}\nDeployment: ${run.phase === 'done' ? 'verified' : 'unverified / pending'}\nAffected files: ${(run.conflicted_paths || []).join(', ')}\n\n${run.message}\n\nGit diagnostics: ${JSON.stringify(run.git_diagnostics || {}, null, 2)}\nResolution reports: ${(run.resolution_reports || []).join('\n')}`)}</pre></details>` : ''}`;
+      const html = `<div class="workflow-actions"><strong>Implementation</strong>${button('implement','Implement with Codex', !run && todo.status === 'open' && latest.configured)}${run && (run.phase === 'implementation_failed' || run.resume_action === 'retry') ? button('retry','Retry implementation',true) : ''}${button('test','Test branch', (['ready','tested','test_failed'].includes(run?.phase) || run?.resume_action === 'test'))}${button('merge','Merge & restart', canMerge(run) || run?.phase === 'migration_required')}${['restart_failed','restarting','migrating','recovering'].includes(run?.phase) && run?.published_commit ? button('recover','Recover deployment',true) : ''}${['merge_failed','push_failed','restart_failed','migration_required','resolution_blocked'].includes(run?.phase) && !run.queue_skip ? button('skip','Skip & continue queue',true) : ''}${run?.can_complete_external ? button('complete_external','Completed externally',true) : ''}${externalLink(run)}${run?.pr_url ? `<a class="button small" href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">GitHub PR ↗</a>` : ''}${run?.preview_url ? `<a class="button small" href="${escapeHTML(run.preview_url)}" target="_blank" rel="noopener">Open preview ↗</a>` : ''}</div><p class="muted">${escapeHTML(run ? ({implementing:'Implementing…',ready:'Ready to preview or merge',testing:'Preparing preview…',tested:'Ready for your review',resolving_conflict:'Agent resolving merge conflict',testing_resolution:'Testing resolved candidate',resolution_blocked:'Blocked — user input required',merging:'Merging and publishing…',restarting:'Restarting artifact…',migrating:'Migrating reviewed storage…',recovering:'Recovering published deployment…',historical:'Closed — historical attempt; integration and deployment unverified',superseded:'Completed externally — original attempt superseded; inspect evidence below',activity_unknown:'Worker activity requires review',done:'Completed',interrupted:'Interrupted — review and retry'}[run.phase] || run.phase.replaceAll('_',' ')) : !latest.configured ? 'Configure project test, preview and restart commands to enable this workflow.' : latest.automatic ? 'Automatic implementation is on for new ideas captured on this system.' : 'Automatic implementation is off.')}</p>${externalStatus(run) ? `<p class="muted">${escapeHTML(externalStatus(run))}</p>` : ''}${testStatus(run) ? `<p class="muted">${testStatus(run)}</p>` : ''}${run ? `<details><summary>Progress & branch details</summary><pre>${escapeHTML(`Original phase: ${run.historical_phase || run.phase}\n${run.branch}\n${run.commit || ''}\n${run.worktree}\nOriginal attempt published: ${run.published_commit || 'pending'}\nOriginal attempt deployment: ${run.phase === 'done' ? 'verified' : 'unverified / pending'}\nAffected files: ${(run.conflicted_paths || []).join(', ')}\n\n${run.message}\nOriginal saved message: ${run.original_message || run.message}\n\nGit diagnostics: ${JSON.stringify(run.git_diagnostics || {}, null, 2)}\nExternal completion history: ${JSON.stringify(run.external_completions || [], null, 2)}\nWorker activity: ${run.activity_block || 'No retained active worker detected'}\nResolution reports: ${(run.resolution_reports || []).join('\n')}\n\nSaved attempt (unchanged historical fields): ${JSON.stringify(todo.workflow || {}, null, 2)}`)}</pre></details>` : ''}`;
       if (panel.dataset.rendered === html) return;
       panel.dataset.rendered = html; panel.innerHTML = html;
       if (expanded && panel.querySelector('details')) panel.querySelector('details').open = true;
@@ -89,11 +102,12 @@
         ['Awaiting restart', ['migration_required']],
         ['Published / deploying', ['migrating','recovering','restarting']],
         ['Done', ['done']],
-        ['Needs attention', ['implementation_failed','test_failed','merge_failed','push_failed','restart_failed','resolution_blocked','interrupted']]
+        ['Historical / superseded', ['historical','superseded']],
+        ['Needs attention', ['implementation_failed','test_failed','merge_failed','push_failed','restart_failed','resolution_blocked','interrupted','activity_unknown']]
       ];
       row.innerHTML = `<p><strong>Integration pipeline</strong>${latest.queue_blocked_by ? ` · Waiting for ${escapeHTML(latest.queue_blocked_by)}` : ''} · ${latest.active_count || 0}/${latest.max_workers || 1} workers${latest.draining ? ' · Draining before integration & restart' : ''}</p><div class="pipeline-stages">` + stages.map(([label, phases]) => {
         const items = runs.filter(([,run]) => phases.includes(run.phase));
-        return `<section class="pipeline-stage"><h3>${label} <span>${items.length}</span></h3>${items.map(([id,run]) => `<div class="pipeline-ticket"><a href="#todo-${escapeHTML(id)}" title="${escapeHTML(run.message)}">${escapeHTML(id)}</a>${run.pr_url ? ` <a href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">PR ↗</a>` : ''}${run.foreign ? ' · other system' : ''}<p class="muted">${escapeHTML((run.message || '').slice(0,300))}${run.conflicted_paths?.length ? ` · ${escapeHTML(run.conflicted_paths.join(', '))}` : ''}${run.queue_skip ? ' · Skipped by explicit request' : ''}</p></div>`).join('') || '<span class="muted">—</span>'}</section>`;
+        return `<section class="pipeline-stage"><h3>${label} <span>${items.length}</span></h3>${items.map(([id,run]) => `<div class="pipeline-ticket"><a href="#todo-${escapeHTML(id)}" title="${escapeHTML(run.message)}">${escapeHTML(id)}</a>${run.pr_url ? ` <a href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">PR ↗</a>` : ''} ${externalLink(run)}${run.foreign ? ' · other system' : ''}<p class="muted">${escapeHTML(externalStatus(run) || run.activity_block || (run.message || '').slice(0,300))}${run.conflicted_paths?.length ? ` · ${escapeHTML(run.conflicted_paths.join(', '))}` : ''}${run.queue_skip ? ' · Skipped by explicit request' : ''}</p></div>`).join('') || '<span class="muted">—</span>'}</section>`;
       }).join('') + '</div>';
     }
   }
@@ -135,6 +149,19 @@
     if (action === 'merge' && !confirm(`Merge ${run.branch} at ${run.commit}, push it and restart the configured artifact?${testStatus(run) ? `\n\n${testStatus(run)}` : ''}`)) return;
     if (action === 'migrate' && !confirm(`Migrate & deploy ${run.deployment_review.candidate_commit}?\n\n${run.deployment_review.message}\n\nThis publishes the reviewed candidate, stops writers, retains an exact local backup, migrates storage, commits both wrapper pins and verifies restart. Failure retains a reservation for explicit recovery.`)) return;
     if (action === 'recover' && !confirm(`Recover the published deployment ${run.published_commit}? The host verifies existing deployment or resumes its retained migration; it does not remerge the ticket.`)) return;
+    let external = {};
+    if (action === 'complete_external' && !requests.has(id)) {
+      const who = actor(); if (!who) return;
+      const reason = prompt('Why is this attempt completed externally? Its original outcome and evidence will remain unchanged.');
+      if (!reason?.trim()) return;
+      external = {actor:who, reason};
+      for (const [key,label] of [['pr_url','Replacement or original GitHub PR URL'],['implementation_commit','Actual implementation commit'],['integration_commit','Actual integration (merge) commit'],['deployment_commit','Actual deployed runtime commit']]) {
+        const value = prompt(`${label} (leave empty if unknown):`, key === 'pr_url' ? run.pr_url || '' : '');
+        if (value === null) return;
+        external[key] = value.trim();
+      }
+      if (!confirm('Record external completion and check evidence? Missing or contradictory evidence remains unverified. This does not close the ticket, merge, deploy or start a worker.')) return;
+    }
     sending.add(id); button.disabled = true;
     if (action === 'test' && latest.web_preview) { const previewWindow = window.open('about:blank','_blank'); if (previewWindow) { previewWindow.opener = null; previewWindow.document.title = 'Preparing branch preview…'; previews.set(id, previewWindow); } }
     try {
@@ -145,7 +172,7 @@
       const current = snapshot.data.todos.find(t => t.id === id);
       const saved = data.todos.find(t => t.id === id);
       if (['name','description','category','depends_on','source_ideas','source_refs'].some(key => JSON.stringify(current[key]) !== JSON.stringify(saved[key]))) throw new Error('Task changed. Reload and review its scope first.');
-      if (!requests.has(id)) requests.set(id, {id,action,revision:snapshot.revisions.todos[id],commit:run?.commit,...(action === 'migrate' ? {review_id:run.deployment_review.review_id} : {}),request_id:globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`});
+      if (!requests.has(id)) requests.set(id, {id,action,...external,revision:snapshot.revisions.todos[id],commit:run?.commit,...(action === 'migrate' ? {review_id:run.deployment_review.review_id} : {}),request_id:globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`});
       const response = await fetch('/api/workflow/action', {method:'PUT',headers:{'Content-Type':'application/json','X-Board-Token':snapshot.token},body:JSON.stringify(requests.get(id))});
       const result = await response.json();
       if (!response.ok) { if (response.status < 500) requests.delete(id); throw new Error(result.error || 'Could not start the stage.'); }

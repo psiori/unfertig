@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.14.0`.
+`format_version` is a major.minor.build string. Current storage is `1.15.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -227,3 +227,24 @@ deployment_driver=startup so recovery retries the programmatic restart recipe.
 Legacy claims keep their original driver and reservation recovery. No originals,
 permissions, prior claims or receipt identities are rewritten. Migration code is
 mandatory in every format-changing release; normal updates never need an LLM.
+
+## Storage 1.15.0 — external completion history
+
+Sequential 1.14→1.15 advances metadata only, preserving all originals, workflow
+phases/failures, scope, attribution, references, receipts and extensions. It does
+not infer reconciliation from closure. Optional backend-owned
+`workflow.external_completions` is an append-only list of actor/reason/time,
+`outcome: superseded`, and separately labelled PR, implementation, integration and
+deployment evidence. The original attempt is never rewritten as successful.
+Evidence records capture an observation at reconciliation time, not perpetual
+proof of the current deployment. Corrections append another observation.
+
+Older minor writers become read-only; future major/minor/build guards remain.
+Protocol stays 2.0.0: the owner action and derived `historical`, `superseded` and
+`activity_unknown` views are additive. These view phases are never persisted.
+No reconciliation is inferred by migration. Ordinary HTTP/filesystem writes cannot
+alter the history. Shared validation, revision checks, transaction journals and
+receipts cover interruption and restart; request fingerprints survive migration.
+Normal updated startup applies the sequential migration under the writer lease.
+Retain backup, preservation, byte-idempotence and recovery checks. Development
+does not authorize upgrading or migrating the live instance.
