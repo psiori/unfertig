@@ -114,7 +114,7 @@ def spawn_artifact(argv, repository, marker, url=''):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('kind',choices=['unfertig','kermit','native','context'])
-    parser.add_argument('stage',choices=['test','preview','restart'])
+    parser.add_argument('stage',choices=['test','preview','restart','preflight'])
     parser.add_argument('--repository',type=Path,required=True)
     parser.add_argument('--context',type=Path,required=True)
     parser.add_argument('--data',type=Path)
@@ -125,6 +125,14 @@ def main():
     if not 0 < args.startup_timeout <= 3600:
         parser.error('--startup-timeout must be between 1 and 3600 seconds.')
     uv=shutil.which('uv') or str(Path.home()/'.local/bin/uv')
+    if args.stage == 'preflight':
+        if args.kind != 'unfertig':
+            raise ValueError('Migration preflight is specific to the managed Unfertig board.')
+        from deployment_preflight import assess
+        result = assess(repo, context)
+        result.pop('storage_digest', None)
+        print(json.dumps(result))
+        return
     if args.stage=='test':
         run(['git','diff','--check'],repo)
         if args.kind=='unfertig':
@@ -158,6 +166,8 @@ def main():
             argv=['open',str(repo)]
         os.chdir(repo);os.execvp(argv[0],argv)
     elif args.kind=='unfertig':
+        from deployment_preflight import require_unchanged
+        require_unchanged(repo, context)  # Must happen before stopping any writer.
         run(['sh',str(context/'stop_tools.sh'),'--timeout','60'],context)
         # Startup includes candidate tests and storage validation, not just the
         # server launch. A client timeout leaves that work running in background.
@@ -167,9 +177,9 @@ def main():
         expected=subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
         actual=subprocess.check_output(['git','-C',str(runtime),'rev-parse','HEAD'],text=True).strip()
         if actual!=expected:raise ValueError('Managed updater did not install this commit. Explicit migration or recovery is required.')
-        run(['git','add','tools/unfertig'],context)
-        dirty=subprocess.check_output(['git','diff','--cached','--name-only','--','tools/unfertig'],cwd=context,text=True).strip()
-        if dirty:run(['git','commit','--only','-m','Update Unfertig runtime','--','tools/unfertig'],context)
+        run(['git','add','unfertig','tools/unfertig'],context)
+        dirty=subprocess.check_output(['git','diff','--cached','--name-only','--','unfertig','tools/unfertig'],cwd=context,text=True).strip()
+        if dirty:run(['git','commit','--only','-m','Update Unfertig runtime','--','unfertig','tools/unfertig'],context)
     elif args.kind=='kermit':
         spawn_artifact([uv,'run','--locked','python',str(repo/'scripts/dashboard.py'),'--no-browser'],repo,
             context/'.local/unfertig-workflow/artifact.json','http://127.0.0.1:8766')

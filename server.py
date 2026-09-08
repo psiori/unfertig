@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import subprocess
 import tempfile
 import threading
 import webbrowser
@@ -81,10 +82,10 @@ def validate(data, previous=None):
                 require(bool(re.fullmatch(r'[a-f0-9]{64}', run['system'])), 'Invalid workflow system.')
                 require(run['branch'] == f"codex/{ident.lower()}-{run['run_id'][:8]}", 'Invalid workflow branch.')
                 require(bool(re.fullmatch(r'[a-f0-9]{40,64}', run['base'])), 'Invalid workflow base.')
-                require(run['phase'] in {'queued','merge_queued','implementing','ready','testing','tested','merging','restarting','done','implementation_failed','test_failed','merge_failed','push_failed','restart_failed'}, 'Invalid workflow phase.')
+                require(run['phase'] in {'queued','merge_queued','implementing','ready','testing','tested','merging','restarting','done','implementation_failed','test_failed','merge_failed','push_failed','restart_failed','migration_required','migrating','recovering'}, 'Invalid workflow phase.')
                 if run['phase'] in ('queued', 'merge_queued'):
-                    require(run.get('queued_action') in ('implement', 'retry', 'test', 'merge'), 'Invalid queued action.')
-                    require((run['phase'] == 'merge_queued') == (run['queued_action'] == 'merge'), 'Invalid queue phase.')
+                    require(run.get('queued_action') in ('implement', 'retry', 'test', 'merge', 'migrate', 'recover'), 'Invalid queued action.')
+                    require((run['phase'] == 'merge_queued') == (run['queued_action'] in ('merge', 'migrate', 'recover')), 'Invalid queue phase.')
                     timestamp(run.get('queued_at'), 'workflow.queued_at')
                 if 'action_requests' in run:
                     require(isinstance(run['action_requests'], dict) and all(isinstance(k, str) and isinstance(v, str) for k,v in run['action_requests'].items()), 'Invalid action receipts.')
@@ -410,6 +411,14 @@ def main():
             store.close()
             return
         if not (args.apply or args.snapshot or args.retry_history):
+            # Capture the loaded service revision once. A later checkout change
+            # must not make an old process claim to serve the new implementation.
+            try:
+                revision = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'],
+                                          capture_output=True, text=True, timeout=10)
+                store.context['runtime_commit'] = revision.stdout.strip() if revision.returncode == 0 else ''
+            except (OSError, subprocess.SubprocessError):
+                store.context['runtime_commit'] = ''  # Archive installs can serve, but cannot attest a Git deployment.
             server = Server(("127.0.0.1", port), store)
         if not store.path.exists() and not store.journal.exists():
             store.create_starter()

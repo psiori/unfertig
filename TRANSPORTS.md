@@ -160,3 +160,11 @@ optional owner-local depends_on IDs. Both transports validate dependencies and
 preserve the exact backend-owned workflow through edits and uncertain retries.
 Only the owning HTTP service launches jobs; filesystem clients cannot forge or
 advance claims. Filesystem discovery never migrates a 1.7 source implicitly.
+
+Format 1.9 adds protected migration review and recovery action evidence. Both
+transports retain the same workflow record through edits and idempotent retries;
+only the owning service may approve/advance stages. Migration itself takes the
+exclusive board lease, excluding filesystem writers too. An HTTP service also
+reports its startup-captured `context.runtime_commit` for deployment health. This
+is process evidence, not persisted record semantics; offline/filesystem snapshots
+do not claim a running service revision.
