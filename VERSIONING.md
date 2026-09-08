@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.18.0`.
+`format_version` is a major.minor.build string. Current storage is `1.19.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -311,3 +311,13 @@ Local-ahead startup uses the existing per-repository `base` and publication gran
 it adds no stored fields or format. Selection is saved before worktree creation,
 and retained worktrees keep their base. PR prose reports inherited history without
 introducing a durable publication manifest. Existing integration checks remain.
+
+## Storage 1.19.0 — shipped Bugfix category
+
+Sequential 1.18→1.19 advances format metadata to protect the new `bugfix`
+value from older writers that reject it. Existing categories, absent selections,
+originals, extensions, claims and receipt identities are preserved; no todo is
+recategorized. Missing category still means Unclassified; configuration retains
+the existing default of four workers when its limit is absent. Older minor writers
+become read-only; protocol remains 2.0.0. Normal startup uses the existing
+sequential migration, backup and interrupted-recovery contract.

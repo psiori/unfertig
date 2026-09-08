@@ -16,7 +16,7 @@ function setup() {
 }
 test('all categories have identical intent in both briefings and editor help',()=>{
   const c=setup();
-  assert.deepEqual(Object.keys(definitions.categories), ['ideation','research','concept','design','implementation','debugging','refactoring']);
+  assert.deepEqual(Object.keys(definitions.categories), ['ideation','research','concept','design','implementation','debugging','refactoring','bugfix']);
   for (const [category,d] of Object.entries(definitions.categories)) {
     const todo={id:'T0001',name:'Task',description:'Approval required',category,tags:[],source_ideas:[]};
     for (const render of [c.implementationBrief,c.humanBrief]) {
