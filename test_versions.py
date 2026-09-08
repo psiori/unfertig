@@ -75,10 +75,10 @@ class VersionTests(unittest.TestCase):
 
     def test_mixed_supported_versions_and_future_build(self):
         data = json.loads(self.todo.read_text()); data['format_version']='1.0.0'; self.write(self.todo,data)
-        header = json.loads(self.path.read_text()); header['format_version']='1.9.9'; self.write(self.path,header)
+        header = json.loads(self.path.read_text()); header['format_version']='1.10.9'; self.write(self.path,header)
         self.store.initialize()
         self.assertEqual(json.loads(self.todo.read_text())['format_version'],FORMAT_VERSION)
-        self.assertEqual(json.loads(self.path.read_text())['format_version'],'1.9.9')
+        self.assertEqual(json.loads(self.path.read_text())['format_version'],'1.10.9')
         self.assertFalse(self.store.snapshot()['compatibility']['read_only'])
         self.assertTrue(self.store.snapshot()['compatibility']['warnings'])
 
@@ -98,7 +98,7 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.files(),originals)
 
     def test_future_minor_read_only_preserves_mixed_old_bytes(self):
-        data = json.loads(self.todo.read_text()); data['format_version']='1.10.0'; self.write(self.todo,data)
+        data = json.loads(self.todo.read_text()); data['format_version']='1.11.0'; self.write(self.todo,data)
         before = self.files(); self.store.initialize()
         snap = self.store.snapshot()
         self.assertTrue(snap['compatibility']['read_only'])
@@ -107,7 +107,7 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.files(),before)
 
     def test_future_build_edit_preserves_unknown_fields_and_version(self):
-        data = json.loads(self.todo.read_text()); data.update(format_version='1.9.42', extension={'nested':[1,2]})
+        data = json.loads(self.todo.read_text()); data.update(format_version='1.10.42', extension={'nested':[1,2]})
         self.write(self.todo,data); self.store.initialize()
         request = self.edit(name='Changed')
         request['changes'][0]['record'].pop('extension')
@@ -115,9 +115,36 @@ class VersionTests(unittest.TestCase):
         self.store.mutate(request)
         saved = json.loads(self.todo.read_text())
         self.assertEqual(saved['extension'],data['extension'])
-        self.assertEqual(saved['format_version'],'1.9.42')
+        self.assertEqual(saved['format_version'],'1.10.42')
         request = self.edit(format_version='1.1.0')
         with self.assertRaisesRegex(VersionError,'downgrade'): self.store.mutate(request)
+
+    def test_effort_migration_defaults_preserves_and_recovers(self):
+        from efforts import EFFORTS
+        for effort in [None, *EFFORTS]:
+            old = dict(fixture()['todos'][0], format_version='1.9.0', extension={'keep': True})
+            if effort is not None:
+                old['effort'] = effort
+            migrated = migrate(old, 'todo')
+            self.assertEqual(semantic(migrated), dict(semantic(old), effort=effort or 'medium'))
+            self.assertEqual(migrate(migrated, 'todo'), migrated)
+        old = dict(fixture()['todos'][0], format_version='1.9.0', effort='unsupported')
+        self.write(self.todo, old); before = self.files()
+        with self.assertRaisesRegex(ValueError, 'Unsupported effort'):
+            self.store.initialize()
+        self.assertEqual(self.files(), before)
+        old['effort'] = 'xhigh'; self.write(self.todo, old)
+        real = storage.atomic
+        def interrupted(path, raw):
+            if path.resolve() == self.todo.resolve():
+                raise OSError('Interrupted effort migration')
+            return real(path, raw)
+        with patch('storage.atomic', side_effect=interrupted):
+            with self.assertRaises(OSError):
+                self.store.initialize()
+        self.store.initialize()
+        self.assertEqual(self.store.snapshot()['data']['todos'][0]['effort'], 'xhigh')
+        before = self.files(); self.store.initialize(); self.assertEqual(self.files(), before)
 
     def test_category_workflow_scope_and_prompt_vocabulary(self):
         from categories import CATEGORIES, DEFINITIONS, briefing
@@ -141,7 +168,7 @@ class VersionTests(unittest.TestCase):
             if category is not None:
                 todo['category'] = category
             migrated = migrate(todo, 'todo')
-            self.assertEqual(semantic(migrated), semantic(todo))
+            self.assertEqual(semantic(migrated), dict(semantic(todo), effort='medium'))
             self.assertEqual(migrate(migrated, 'todo'), migrated)
         self.store.initialize()
         self.store.mutate(self.edit(category='research'))

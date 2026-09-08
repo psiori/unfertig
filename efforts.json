@@ -1,0 +1,10 @@
+{
+  "default": "medium",
+  "values": [
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+  ],
+  "processing": "Select and persist effort for the task: low for straightforward bounded changes, medium for ordinary work or unclear complexity, high for complex work, xhigh for exceptionally difficult reasoning. Keep effort separate from priority and work category."
+}

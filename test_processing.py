@@ -26,6 +26,13 @@ class ProcessingTests(unittest.TestCase):
         self.processor = Processor(self.store, 'http://127.0.0.1:1234', self.options, lambda:self.now)
         self.machine = patch('processing.system_id', return_value=LOCAL); self.machine.start(); self.addCleanup(self.machine.stop)
 
+    def test_processing_prompt_uses_shared_effort_selection_and_default(self):
+        from efforts import processing_guidance
+        text = self.processor.prompt(self.snapshot, ['I0002'])
+        self.assertIn(processing_guidance(), text)
+        self.assertIn('Select and persist effort', text)
+        self.assertIn('Planning only', text)
+
     def test_only_capturing_system_and_manual_legacy(self):
         self.snapshot['data']['ideas'] += [dict(id='I0003', captured_system=OTHER), dict(id='I0004')]
         self.assertEqual([i['id'] for i in pending(self.snapshot, True)], ['I0002'])

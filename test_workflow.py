@@ -86,6 +86,37 @@ class WorkflowTests(unittest.TestCase):
         if wait:self.workflow.workers[todo['id']].join(20);self.assertFalse(self.workflow.workers[todo['id']].is_alive())
         return self.store.snapshot()['data']['todos'][0]
 
+    def test_launch_passes_latest_effort_as_actual_config_and_freezes_running_job(self):
+        from efforts import EFFORTS, launch_arguments
+        from storage import digest
+        for value in EFFORTS:
+            self.assertEqual(launch_arguments({'effort': value}), ['-c', 'model_reasoning_effort="'+value+'"'])
+        with self.assertRaisesRegex(ValueError, 'Unsupported effort'):
+            launch_arguments({'effort': 'unsupported'})
+        real_pr = self.workflow.ensure_pr
+        def edit_effort(value):
+            todo = self.store.snapshot()['data']['todos'][0]
+            self.store.mutate(dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=todo['id'], revision=digest(todo), record=dict(todo, effort=value))]))
+        def prepare(todo, run):
+            real_pr(todo, run)
+            edit_effort('xhigh')  # Saved after scheduling, before actual execution.
+        actual = self.workflow.command
+        captured = []
+        def command(argv, cwd, ident, prompt=None, **kwargs):
+            if 'exec' in argv:
+                captured.append((list(argv), prompt))
+                edit_effort('low')  # A running job keeps its captured setting.
+            return actual(argv, cwd, ident, prompt, **kwargs)
+        with patch.object(self.workflow, 'ensure_pr', side_effect=prepare), patch.object(self.workflow, 'command', side_effect=command):
+            todo = self.run_stage('implement')
+        self.assertEqual(todo['workflow']['phase'], 'ready', todo)
+        self.assertEqual(todo['effort'], 'low')
+        self.assertEqual(len(captured), 1)
+        argv, prompt = captured[0]
+        self.assertEqual(argv[argv.index('-c')+1], 'model_reasoning_effort="xhigh"')
+        self.assertIn('Agent effort: xhigh', prompt)
+
     def test_implement_preview_merge_push_and_restart_receipt(self):
         todo=self.run_stage('implement');self.assertEqual(todo['workflow']['phase'],'ready',todo)
         self.assertEqual(todo['status'],'started');self.assertFalse((self.repo/'result').exists())

@@ -513,3 +513,27 @@ migration before rollout; see [VERSIONING.md](VERSIONING.md).
 After implementation checks pass, Unfertig updates the PR description with the
 result and verification, removes [WIP] from its title, and marks the draft ready
 for review. It remains unmerged until the integration action is authorized.
+
+### Saved agent effort
+
+Expand a todo to select **Agent effort**, then Save. Supported values are `low`,
+`medium`, `high`, and `xhigh`; `medium` is the default for old/manual todos and
+unclear processing work. The single vocabulary and selection guidance are in
+[efforts.json](efforts.json). Effort describes agent reasoning, independently of
+priority and work category. Idea processing selects and saves it for ordinary and
+routed todos. Both AI and Human briefings include the current saved value, including
+owner-qualified aggregate briefings. Aggregate details show effort; edit at its owner.
+
+Implement and retry pass the latest saved value as an actual Codex configuration
+override: `codex exec -c 'model_reasoning_effort="high"' …`. Later changes affect
+subsequent launches and fresh briefings; running jobs keep their launch setting.
+Explicit unsupported values are rejected, not silently defaulted. A model that
+cannot honor the requested setting must be corrected by the operator; Unfertig
+does not retry with a different value. Codex CLI 0.153.2 `exec --help` confirms
+`-c` overrides; the [official configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
+documents `model_reasoning_effort` and model-dependent support (verified 2026-09-08).
+Unfertig intentionally exposes the four reasoning levels used for coding tasks.
+
+Storage 1.10 requires the explicit stopped-instance migration in
+[VERSIONING.md](VERSIONING.md). Development tests use disposable fixtures; live
+migration and deployment remain separate coordinator actions.

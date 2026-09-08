@@ -11,10 +11,11 @@ function setup() {
     boardContext:{mode:'aggregation',sources:[{project_id:'a'},{project_id:'b'}]},
     data:{ideas:[],todos:[]},compatibility:{read_only:false},unique:values=>[...new Set(values)],date:v=>v,
     escapeHTML:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),boardLocations:()=> 'Read PROCESS.md'};
+  context.effortDefinitions = JSON.parse(fs.readFileSync(__dirname+'/efforts.json','utf8'));
   vm.createContext(context);
   const app=fs.readFileSync(__dirname+'/app.js','utf8');
   context.categoryDefinitions = JSON.parse(fs.readFileSync(__dirname+'/categories.json','utf8'));
-  vm.runInContext(app.slice(app.indexOf('function categoryBrief('),app.indexOf('function categoryEditor(')),context);
+  vm.runInContext(app.slice(app.indexOf('function effortValue('),app.indexOf('function categoryEditor(')),context);
   vm.runInContext(app.slice(app.indexOf('function todoSummary('),app.indexOf('function todoCard(')),context);
   vm.runInContext(fs.readFileSync(__dirname+'/priority.js','utf8'),context);
   vm.runInContext(fs.readFileSync(__dirname+'/aggregation.js','utf8'),context);
