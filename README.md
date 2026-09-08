@@ -302,8 +302,8 @@ to accept separate actor identity and optional initials (empty means legacy IDs)
 No stored-format migration is needed.
 
 Format 1.3 is a storage migration. For managed existing instances follow
-VERSIONING.md's stopped-service backup, disposable rehearsal, explicit migration
-and idempotence checks. The ordinary unchanged-storage updater remains unchanged.
+VERSIONING.md's automatic startup migration, backup, disposable rehearsal
+and idempotence checks. No LLM or separate routine migration approval is required.
 
 
 ### Filesystem access and HTTP-first fallback
@@ -484,7 +484,7 @@ paths block; no recursive project discovery occurs. All three commands are
 required. The optional workflow_support.py recipes cover Unfertig, Kermit,
 Unendlich's native app and document-only contexts. Other projects supply their
 own commands. Managed Unfertig retains its normal update gate: a future storage
-migration requires an explicit stopped migration. Unmanaged artifact processes
+migration runs automatically on restart. Unmanaged artifact processes
 are not killed; configure their owning supervisor when necessary.
 
 The Unfertig restart recipe polls supervisor status for up to 900 seconds, including
@@ -559,7 +559,7 @@ After implementation checks pass, Unfertig updates the PR description with the
 result and verification, removes [WIP] from its title, and marks the draft ready
 for review. It remains unmerged until the integration action is authorized.
 
-Completion summaries are edited separately from task requirements in the expanded todo and included in AI/human briefings and aggregate details. Closing requires an outcome, verification and limitations/follow-up; reopening clears the summary, with its previous text retained in Git history. Legacy closed tickets stay editable without fabricated summaries. Format 1.10 requires a supported explicit migration (VERSIONING.md). Before work, locate/read the actual process, task and originals and verify the repository. Commit verified implementation changes locally; never push without explicit authorization. No-change findings require neither an empty implementation commit nor a new branch. Existing managed branches/PRs stay with the coordinator for review.
+Completion summaries are edited separately from task requirements in the expanded todo and included in AI/human briefings and aggregate details. Closing requires an outcome, verification and limitations/follow-up; reopening clears the summary, with its previous text retained in Git history. Legacy closed tickets stay editable without fabricated summaries. Format 1.10 migrates automatically on the owning instance’s next restart (VERSIONING.md). Before work, locate/read the actual process, task and originals and verify the repository. Commit verified implementation changes locally; never push without explicit authorization. No-change findings require neither an empty implementation commit nor a new branch. Existing managed branches/PRs stay with the coordinator for review.
 
 ### Saved agent effort
 
@@ -581,6 +581,6 @@ does not retry with a different value. Codex CLI 0.153.2 `exec --help` confirms
 documents `model_reasoning_effort` and model-dependent support (verified 2026-09-08).
 Unfertig intentionally exposes the four reasoning levels used for coding tasks.
 
-Storage 1.12 requires the explicit stopped-instance migration in
+Storage 1.12 uses automatic startup migration described in
 [VERSIONING.md](VERSIONING.md). Development tests use disposable fixtures; live
 migration and deployment remain separate coordinator actions.

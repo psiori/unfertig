@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.13.0`.
+`format_version` is a major.minor.build string. Current storage is `1.14.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -50,15 +50,13 @@ journal. Versioned history retries preserve pending commits on failure. Meaningf
 migrations commit locally through the owning repository, never push automatically.
 Configuration and board must share that owner for automatic migration commits.
 
-For a managed installation whose normal updater requires unchanged storage:
-stop the instance; preserve an exact local copy of config, data, receipts and the
-installed commit; rehearse the candidate on a disposable copy; compare normalized
-records and original ideas; check repeated startup changes no bytes; then install
-the reviewed, published commit and explicitly run its offline migration against
-the real config before restarting. Keep the backup. Do not weaken the normal
-updater or run pre-contract software against migrated state. On failure, keep the
-service stopped, inspect the journal/history, and use supported recovery; never
-blindly restore files over subsequent edits or reset unrelated repository work.
+Supported migrations run automatically at the next startup of every updated
+instance. They are shipped Python code, never an LLM/Codex task or a separate
+routine approval. Managed hosts rehearse the candidate and back up stopped state,
+then migrate shared/effective configuration before service launch. Interrupted
+work resumes forward on the next Start. Keep recovery evidence and report genuine
+validation/compatibility/history failures without starting an unsafe writer.
+See DEPLOYMENT.md for the current host contract and legacy reservation recovery.
 
 Tests must cover every migration step, mixed versions, absent optional fields,
 unknown fields, newer major/minor/build handling, malformed data, interrupted
@@ -81,7 +79,7 @@ explicit HTTP-only transport default when absent. New transport settings preserv
 unknown fields and explicit booleans. Older writers become read-only and their
 exclusive lifetime locks also exclude upgraded cooperative clients. Filesystem
 aggregation requires an already migrated source; discovery cannot perform this
-step. Stop services/clients for explicit migration and preserve all recovery
+step. Restart the updated owning instance to migrate automatically; preserve recovery
 files. See TRANSPORTS.md for the shared adapter and contributor contract.
 
 Format **1.4.0** adds processing configuration with manual-only migration defaults
@@ -156,9 +154,9 @@ Sequential 1.8→1.9 adds protected migration-review/action semantics without gr
 automatic migration permission or rewriting old claims. Existing originals and
 extensions remain intact. HTTP/filesystem readers share the same version guard
 and protected workflow records. See DEPLOYMENT.md for reviewed host deployment,
-private evidence, unchanged-storage startup and forward recovery.
+private evidence and forward recovery. Automatic startup supersedes the original review gate.
 
-Format **1.10.0** adds optional completion_summary and transition validation. The sequential 1.9 → 1.10 migration advances metadata only, preserving absent legacy summaries, descriptions, attribution, extensions and receipts. New closures require nonblank summaries; unchanged legacy closed records remain editable. Reopening clears the field and re-closing requires a fresh account. Older minor writers become read-only. Protocol stays 2.0.0; shared BoardStore transactions, history and recovery apply. Use the existing explicit stopped-instance migration procedure.
+Format **1.10.0** adds optional completion_summary and transition validation. The sequential 1.9 → 1.10 migration advances metadata only, preserving absent legacy summaries, descriptions, attribution, extensions and receipts. New closures require nonblank summaries; unchanged legacy closed records remain editable. Reopening clears the field and re-closing requires a fresh account. Older minor writers become read-only. Protocol stays 2.0.0; shared BoardStore transactions, history and recovery apply. Use automatic startup migration (DEPLOYMENT.md).
 
 
 ## Storage 1.11.0 — config source discovery
@@ -173,7 +171,7 @@ Older minor writers become read-only; newer-major refusal and newer-build
 preservation remain unchanged. API protocol stays 2.0; discovery diagnostics and
 removed status are additive read-view fields, not a durable cache. Upgrade via
 the stopped-instance migration/recovery procedure above, with disposable rehearsal
-and unchanged second startup. The normal unchanged-storage updater is retained.
+and unchanged second startup. The updater validates and permits supported automatic migrations.
 
 ## Storage 1.12.0 — saved agent effort
 
@@ -190,8 +188,8 @@ cannot be launched or copied as supported settings by this writer.
 
 Earlier minor writers become read-only. Protocol remains 2.0.0. HTTP and filesystem
 share validation, defaults, revisions, journal recovery and receipt semantics.
-Filesystem discovery still requires an explicitly migrated source. Use the separate
-stopped-instance rollout above; do not migrate a live board as part of development.
+Filesystem discovery does not migrate sources. The owning updated instance
+migrates automatically on restart; development tests use disposable boards.
 
 ## Storage 1.13.0 — integration queue recovery
 
@@ -212,8 +210,7 @@ authorized integration after combined verification and fresh main/PR checks.
 Older minor writers become read-only, including for process/deployment receipts;
 an old coordinator cannot consume newer completion evidence. HTTP/filesystem
 read and write protection share BoardStore. Protocol stays 2.0.0. Use the existing
-stopped-instance migration/preflight/recovery contract; keep unchanged-storage
-startup and exact backups.
+automatic startup migration/preflight/recovery contract and exact backups.
 
 Published main owns migration version assignments. Parallel workers may propose
 a successor but integration must assign competing unpublished steps sequentially
@@ -222,3 +219,11 @@ can overwrite duplicate keys and requires every parent migration feature to
 remain registered. The agent reconciles collisions and runs the complete combined
 suite and all supported upgrade paths, including original/extension preservation.
 This static check supplements, never replaces, migration tests and T0039 preflight.
+
+## Storage 1.14.0 — automatic startup deployment
+
+Sequential 1.13→1.14 advances metadata only. New protected workflow claims record
+deployment_driver=startup so recovery retries the programmatic restart recipe.
+Legacy claims keep their original driver and reservation recovery. No originals,
+permissions, prior claims or receipt identities are rewritten. Migration code is
+mandatory in every format-changing release; normal updates never need an LLM.

@@ -1,7 +1,7 @@
 """Read-only managed deployment assessment; candidate code sees disposable state.
 
 This deliberately does not install code, migrate a live board, or control services.
-The unchanged-storage updater remains the final authority for normal deployment.
+The updater validates supported automatic startup migrations before promotion.
 """
 from contextlib import contextmanager
 import ast
@@ -106,6 +106,28 @@ def preserve(before, after, label, metadata=True):
         raise ValueError('Migration changes original content: ' + label)
 
 
+def preserve_files(before, after):
+    """Preserve original content, including the supported monolithic-to-split step."""
+    for name, raw in before.items():
+        if name not in after:
+            raise ValueError('Migration removed recovery evidence: ' + name)
+        if raw == after[name]:
+            continue
+        old, new = json.loads(raw), json.loads(after[name])
+        if name == 'data.json' and old.get('schema_version') == 1 and new.get('schema_version') == 2:
+            header = dict(old)
+            originals = header.pop('todos')
+            header.pop('schema_version')
+            preserve(header, new, name)
+            for todo in originals:
+                path = 'todos/' + todo['id'] + '.json'
+                if path not in after:
+                    raise ValueError('Migration lost original todo: ' + path)
+                preserve(todo, json.loads(after[path]), path)
+        else:
+            preserve(old, new, name)
+
+
 def assess(candidate, context):
     candidate, context = Path(candidate).resolve(), Path(context).resolve()
     installed = context / 'tools/unfertig'
@@ -158,11 +180,7 @@ def assess(candidate, context):
         snapshots = [snapshot(candidate, path) for path in selected]
         after = files(data), files(config_dir)
         for old_files, new_files in zip(before, after):
-            for name, raw in old_files.items():
-                if name not in new_files:
-                    raise ValueError('Migration removed recovery evidence: ' + name)
-                if raw != new_files[name]:
-                    preserve(json.loads(raw), json.loads(new_files[name]), name)
+            preserve_files(old_files, new_files)
         for path in selected:
             snapshot(candidate, path)
         if (files(data), files(config_dir)) != after:
@@ -184,8 +202,7 @@ def assess(candidate, context):
                     current_formats=current, target_format=target, candidate_commit=candidate_revision,
                     installed_commit=installed_revision, storage_digest=fingerprint,
                     message=('Migration required: ' + ', '.join(current) + ' → ' + target +
-                             '. Ordinary Merge & restart cannot deploy this candidate. Follow VERSIONING.md; '
-                             'review stopped-writer backup, rehearsal, publication, offline migration and recovery.'
+                             '. Validated programmatic migration will run automatically on restart.'
                              if changed else 'Disposable validation passed with unchanged storage.'))
 
 
@@ -210,6 +227,7 @@ def review_digest(board, configs):
 
 
 def require_unchanged(candidate, context):
+    """Legacy opt-in strict audit; normal update/restart uses assess instead."""
     result = assess(candidate, context)
     if result['state'] != 'unchanged_storage':
         raise ValueError(result['message'])
