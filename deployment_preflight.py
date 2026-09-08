@@ -227,6 +227,7 @@ def review_digest(board, configs):
 
 
 def require_unchanged(candidate, context):
+    """Legacy opt-in strict audit; normal update/restart uses assess instead."""
     result = assess(candidate, context)
     if result['state'] != 'unchanged_storage':
         raise ValueError(result['message'])
