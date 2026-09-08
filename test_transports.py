@@ -41,6 +41,26 @@ class Conformance:
     test_duplicate_provenance = fixtures.AggregationTests.test_duplicate_source_provenance_rejected_with_new_request_id
     test_inbox_history_recovery = fixtures.AggregationTests.test_local_history_failure_after_destination_save
 
+    def test_completion_summary_history_and_switch_retry(self):
+        source = self.sources[0]
+        snapshot = self.router.inspect_source(source)
+        old = snapshot['data']['todos'][0]
+        closed = dict(old, status='closed', closed_by='Test', date_closed='2026-09-08T12:00:00Z')
+        request = dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
+            collection='todos', id=old['id'], revision=digest(old), record=closed)])
+        expected = preflight_context(snapshot['context'])
+        with self.assertRaises(ValueError):
+            self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
+        closed['completion_summary'] = 'Implemented reporting. Transport checks passed. No limitations.'
+        result = self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
+        switched = dict(source, transports=dict(http=False, filesystem=True))
+        retry = self.router.transfer(switched, '/api/changes', request, None, expected)
+        self.assertEqual(result['data'], retry['data'])
+        self.assertEqual(retry['data']['todos'][0]['completion_summary'], closed['completion_summary'])
+        self.assertFalse(retry['history']['pending'])
+        history = subprocess.check_output(['git', 'show', 'HEAD:todos/'+old['id']+'.json'], cwd=self.boards[1].root, text=True)
+        self.assertIn(closed['completion_summary'], history)
+
     def discovered_router(self, omit_beta=False):
         for source, board in zip(self.sources, self.boards[1:]):
             config = json.loads(board.config.read_text())
@@ -184,6 +204,36 @@ class Conformance:
         retry = self.router.transfer(source, '/api/changes', request, snapshot.get('token'), preflight_context(snapshot['context']))
         self.assertEqual(retry['assigned'], result['assigned'])
         self.assertEqual(retry['data']['ideas'][-1], idea)
+
+    def test_live_pending_processing_and_retry_after_transport_switch(self):
+        from processing import pending
+        source = self.sources[0]
+        snapshot = self.router.inspect_source(source)
+        self.assertEqual(pending(snapshot), [])
+        expected = preflight_context(snapshot['context'])
+        capture = dict(request_id=uuid.uuid4().hex, actor='Test', changes=[dict(
+            collection='ideas', id=None, record=dict(author='Requester',
+            date_entered='2026-09-07T12:00:00Z', text='Added after briefing copy'))])
+        self.router.transfer(source, '/api/changes', capture, snapshot.get('token'), expected)
+        fresh = self.router.inspect_source(source)
+        ideas = pending(fresh)
+        self.assertEqual(len(ideas), 1)
+        originals = copy.deepcopy(fresh['data']['ideas'])
+        todo = dict(fresh['data']['todos'][0])
+        todo.pop('id')
+        todo.update(source_ideas=[ideas[0]['id']], author=ideas[0]['author'], created_by='Test')
+        request = dict(request_id=uuid.uuid4().hex, actor='Test', changes=[dict(
+            collection='todos', id=None, record=todo)])
+        result = self.router.transfer(source, '/api/changes', request, fresh.get('token'), expected)
+        switched = dict(source, transports=dict(http=False, filesystem=True))
+        retry = self.router.transfer(switched, '/api/changes', request, None, expected)
+        self.assertEqual(retry['assigned'], result['assigned'])
+        with self.assertRaises((ValueError, Conflict)):
+            self.router.transfer(switched, '/api/changes', dict(request, request_id=uuid.uuid4().hex), None, expected)
+        final = self.router.inspect_source(switched)
+        self.assertEqual(pending(final), [])
+        self.assertEqual(final['data']['ideas'], originals)
+        self.assertEqual(len(final['data']['todos']), len(fresh['data']['todos']) + 1)
 
     def test_categories_save_reload_conflict_and_transport_retry(self):
         from categories import CATEGORIES
