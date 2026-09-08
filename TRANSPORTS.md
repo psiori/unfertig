@@ -168,3 +168,11 @@ exclusive board lease, excluding filesystem writers too. An HTTP service also
 reports its startup-captured `context.runtime_commit` for deployment health. This
 is process evidence, not persisted record semantics; offline/filesystem snapshots
 do not claim a running service revision.
+
+Format 1.10 adds todo effort using BoardStore for both adapters: missing creation
+values default to medium, omitted edit fields preserve saved values, and explicit
+unsupported values fail. Routed creation uses the same defaults and original
+provenance/claim preservation. The conformance matrix covers effort edits, conflict
+recovery, reload and receipt retry after transport switching. Aggregate details and
+fresh owner-qualified AI/Human briefings display the owner's effort. The expanded
+owner editor saves effort through /api/changes; aggregate effort remains read-only.

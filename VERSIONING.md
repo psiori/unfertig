@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.9.0`.
+`format_version` is a major.minor.build string. Current storage is `1.10.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -157,3 +157,21 @@ automatic migration permission or rewriting old claims. Existing originals and
 extensions remain intact. HTTP/filesystem readers share the same version guard
 and protected workflow records. See DEPLOYMENT.md for reviewed host deployment,
 private evidence, unchanged-storage startup and forward recovery.
+
+## Storage 1.10.0 — saved agent effort
+
+The sequential 1.9 → 1.10 migration inserts `effort: "medium"` only in todos
+where it is absent. Explicit values, original ideas, attribution, captured_system,
+source links, categories, extensions and workflow claims are preserved. Invalid
+explicit effort fails validation before writes. Active receipts retain request IDs,
+fingerprints and assigned IDs; nested claimed routing requests are not rewritten.
+New ordinary/routed creations default missing effort to medium, including callers
+that explicitly send the current format. Older clients omitting effort on edits
+retain the saved selection through BoardStore's merge. All supported values live
+in `efforts.json`. Future-minor values remain inspectable in read-only mode, but
+cannot be launched or copied as supported settings by this writer.
+
+Earlier minor writers become read-only. Protocol remains 2.0.0. HTTP and filesystem
+share validation, defaults, revisions, journal recovery and receipt semantics.
+Filesystem discovery still requires an explicitly migrated source. Use the separate
+stopped-instance rollout above; do not migrate a live board as part of development.

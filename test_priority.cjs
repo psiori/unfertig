@@ -5,6 +5,7 @@ const source=fs.readFileSync(__dirname+'/priority.js','utf8');
 function setup(){
   let id=0;
   const context={structuredClone,crypto:{randomUUID:()=>`request-${++id}`}};
+  context.effortDefinitions = JSON.parse(fs.readFileSync(__dirname+'/efforts.json','utf8'));
   vm.createContext(context);vm.runInContext(source.slice(0,source.indexOf('let priorityDrafts')),context);
   return new (vm.runInContext('PriorityDrafts',context))();
 }
@@ -33,10 +34,11 @@ test('recovered receipt does not claim a subsequently changed priority is the re
 test('briefings use explicit child paths and both local and foreign originals',()=>{
   const app=fs.readFileSync(__dirname+'/app.js','utf8');
   const context={boardContext:{process:'/inbox/PROCESS.md',data:'/inbox/data.json',todos:'/inbox/todos',repository:'/inbox'},data:{ideas:[]},date:v=>v};
+  context.effortDefinitions = JSON.parse(fs.readFileSync(__dirname+'/efforts.json','utf8'));
   vm.createContext(context);
   context.agentAdvice = JSON.parse(fs.readFileSync(__dirname+'/agent_advice.json','utf8'));
   context.categoryDefinitions = JSON.parse(fs.readFileSync(__dirname+'/categories.json','utf8'));
-  vm.runInContext(app.slice(app.indexOf('function categoryBrief('),app.indexOf('function categoryEditor(')),context);
+  vm.runInContext(app.slice(app.indexOf('function effortValue('),app.indexOf('function categoryEditor(')),context);
   vm.runInContext(app.slice(app.indexOf('function boardLocations('),app.indexOf('let revisions')),context);
   vm.runInContext(app.slice(app.indexOf('function implementationBrief('),app.indexOf("$('#idea-form')")),context);
   const child={process:'/child/PROCESS.md',data:'/child/data.json',todos:'/child/todos',repository:'/child'};

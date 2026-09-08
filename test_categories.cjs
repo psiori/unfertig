@@ -7,8 +7,9 @@ function setup() {
   const context = {agentAdvice:JSON.parse(fs.readFileSync(__dirname+'/agent_advice.json','utf8')),categoryDefinitions:definitions, escapeHTML:s=>String(s).replaceAll('<','&lt;'),
     boardContext:{process:'/p/PROCESS.md',data:'/p/data.json',todos:'/p/todos',repository:'/p'},
     data:{ideas:[]}, date:s=>s};
+  context.effortDefinitions = JSON.parse(fs.readFileSync(__dirname+'/efforts.json','utf8'));
   vm.createContext(context);
-  vm.runInContext(app.slice(app.indexOf('function categoryBrief('),app.indexOf("document.addEventListener('change'")),context);
+  vm.runInContext(app.slice(app.indexOf('function effortValue('),app.indexOf("document.addEventListener('change'")),context);
   vm.runInContext(app.slice(app.indexOf('function boardLocations('),app.indexOf('let revisions')),context);
   vm.runInContext(app.slice(app.indexOf('function implementationBrief('),app.indexOf("$('#idea-form')")),context);
   return context;
