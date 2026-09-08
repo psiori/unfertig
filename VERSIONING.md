@@ -144,3 +144,8 @@ Deployment receipts identify the actual integration commit, with fallback for
 legacy receipts. API protocol remains 2.0; new fields/actions are additive.
 Use the stopped-instance migration and recovery procedure above. The unchanged-
 storage updater gate remains; installing feature code does not migrate live data.
+
+Format 1.8 also versions per-run local process receipts (launching, running,
+exited). Recovery blocks uncertain launches or a still-live worker before retry;
+Linux process start identity distinguishes PID reuse. Other hosts conservatively
+block a live PID when identity is unavailable. Preserve receipts during recovery.

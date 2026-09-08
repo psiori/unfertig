@@ -469,7 +469,7 @@ for the checked interfaces, reproduction procedure, and sequential handoff.
 Parallel execution defaults to two workers (`max_workers`, range 1–8), with a
 durable queue for additional tickets. Dependencies can be entered as ticket IDs
 in the expanded editor; dependent work waits until prerequisites are published
-(or closed for unmanaged work). Cycles and unknown dependencies are rejected.
+(or closed unmanaged work whose commit is on origin/main). Cycles and unknown dependencies are rejected.
 
 GitHub CLI `gh` must be installed and authenticated for the code repository.
 Before an agent starts, Unfertig pushes its branch and creates a draft
@@ -509,3 +509,7 @@ included in human and AI handoffs. Search includes the selected category. See
 [PROCESS.md](PROCESS.md#work-categories-format-17) and the canonical
 [categories.json](categories.json). Format 1.7 requires an explicit supported
 migration before rollout; see [VERSIONING.md](VERSIONING.md).
+
+After implementation checks pass, Unfertig updates the PR description with the
+result and verification, removes [WIP] from its title, and marks the draft ready
+for review. It remains unmerged until the integration action is authorized.

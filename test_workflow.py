@@ -448,7 +448,7 @@ class WorkflowTests(unittest.TestCase):
             self.store.mutate(dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(collection='todos', id=first['id'], revision=snap['revisions']['todos'][first['id']], record=dict(first, depends_on=[second]))]))
         with self.assertRaisesRegex(ValueError, 'Unknown'):
             self.add_ticket(depends_on=['T9999'])
-        self.store.mutate(dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(collection='todos', id=first['id'], revision=snap['revisions']['todos'][first['id']], record=dict(first, status='closed', closed_by='Test', date_closed=datetime.now(timezone.utc).isoformat()))]))
+        self.store.mutate(dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(collection='todos', id=first['id'], revision=snap['revisions']['todos'][first['id']], record=dict(first, status='closed', commit_hash=self.git('rev-parse','origin/main'), closed_by='Test', date_closed=datetime.now(timezone.utc).isoformat()))]))
         self.workflow.dispatch(); self.await_workers()
         self.assertEqual(self.workflow.status()['runs'][second]['phase'], 'ready')
 
@@ -524,6 +524,23 @@ class WorkflowTests(unittest.TestCase):
         self.options['automatic_deploy']=True
         with patch.object(self.workflow,'start') as start:
             self.workflow.tick();self.assertEqual(start.call_args.args[0]['action'],'merge')
+
+
+    def test_live_retained_process_blocks_duplicate_after_service_restart(self):
+        from storage import atomic, encode
+        todo=self.run_stage('implement');run=todo['workflow']
+        receipt=self.workflow.process_receipt(run)
+        atomic(receipt,encode(dict(format_version=FORMAT_VERSION,run_id=run['run_id'],state='running',pid=os.getpid(),identity=self.workflow.process_identity(os.getpid()))))
+        resumed=Workflow(self.store,self.workflow.url,self.options,self.processing)
+        self.addCleanup(resumed.close)
+        snapshot=self.store.snapshot()
+        with self.assertRaisesRegex(Conflict,'still running'):
+            resumed.start(dict(id=todo['id'],action='test',revision=snapshot['revisions']['todos'][todo['id']],commit=run['commit']))
+        atomic(receipt,encode(dict(format_version=FORMAT_VERSION,run_id=run['run_id'],state='launching')))
+        with self.assertRaisesRegex(Conflict,'unknown'):
+            resumed.guard_process(run)
+        atomic(receipt,encode(dict(format_version=FORMAT_VERSION,run_id=run['run_id'],state='exited')))
+        resumed.guard_process(run)
 
 
 

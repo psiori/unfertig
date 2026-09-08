@@ -77,7 +77,7 @@ return the same durable claim. Queued jobs survive restart; interrupted running
 jobs need explicit retry. Never steal a foreign-system claim. Independent work
 can proceed in parallel. Optional `depends_on` contains owner-local ticket IDs;
 cycles, self references and unknown IDs are rejected. The scheduler waits for
-published prerequisites (or closed unmanaged work) before starting a dependent
+published prerequisites (or closed unmanaged work with a verified commit on origin/main) before starting a dependent
 ticket, then selects a fresh base. Absence means no dependencies; never infer
 dependencies from file overlap alone.
 
@@ -497,3 +497,13 @@ Existing group/tag filters and status sorting retain their meanings. Aggregated
 records use their owning board for category edits. Unsaved category edits follow
 the same draft, revision-conflict and save-before-briefing rules as other edits.
 See VERSIONING.md for migration, compatibility and recovery.
+
+After implementation checks pass, Unfertig updates the PR description with the
+result and verification, removes [WIP] from its title, and marks the draft ready
+for review. It remains unmerged until the integration action is authorized.
+
+Before retrying an interrupted stage, inspect its retained process receipt.
+Unfertig blocks a duplicate when that worker is still alive or launch outcome is
+unknown. Do not delete evidence or take over a live worker. For an uncertain
+launch, an operator must establish that no worker remains before archiving the
+local receipt and retrying; never infer that a service restart killed its child.

@@ -235,7 +235,7 @@ main { padding-top:18px; }
 
 .integration-pipeline { margin-top: 24px; padding: 18px; border: 1px solid var(--line, #d5d9d2); border-radius: 16px; }
 .pipeline-stages { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; }
-.pipeline-stage { flex: 1 0 145px; min-width: 0; padding: 12px; border: 1px solid var(--line, #d5d9d2); border-radius: 10px; }
+.pipeline-stage { flex: 1 0 125px; min-width: 0; padding: 12px; border: 1px solid var(--line, #d5d9d2); border-radius: 10px; }
 .pipeline-stage h3 { font-size: 13px; margin: 0 0 10px; }
 .pipeline-stage h3 span { opacity: .6; }
 .pipeline-ticket { font-size: 13px; margin: 6px 0; }
