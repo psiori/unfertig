@@ -314,7 +314,7 @@ feature only with disposable local repositories/bare remotes, never real remotes
 ## Data and API versions
 
 [VERSIONING.md](VERSIONING.md) governs both idea processing and implementation.
-Persisted JSON uses `format_version` (currently `1.12.0`), independently of integer
+Persisted JSON uses `format_version` (currently `1.15.0`), independently of integer
 layout schema_version. Snapshots declare protocol_version `2.0.0`. Preserve these
 fields and unknown extensions in edits. Newer major versions require updating;
 newer minor versions allow inspection only; compatible builds preserve their
@@ -561,3 +561,24 @@ retry with a substitute effort after a launcher failure. Configure a Codex model
 that supports the selected effort; model availability remains a launcher concern.
 The planning agent's own execution setting is unchanged; it selects effort for
 its output todos using the shared processing guidance.
+
+## Work completed outside its original attempt (format 1.15)
+
+An inactive closed failed/interrupted attempt appears under **Historical / superseded**,
+with its original phase, branch, failure and receipts retained. Manual closure is
+not verification of integration or deployment and does not stop a worker. Live or
+uncertain retained workers remain visible and block reconciliation. Closed tasks
+cannot be retried; reopening an unreconciled task restores its original recovery
+controls (subject to scope and process guards).
+
+After replacement or manual implementation, the owner explicitly chooses
+**Completed externally** in ticket details, supplies their actual actor identity,
+a reason and available PR/commit references. Agents follow the same canonical
+advice through the supported owner API. The action records the old attempt as
+superseded, without changing its original outcome, ticket scope, attribution or
+lifecycle. It checks GitHub and integration evidence and verifies deployment
+separately. Missing or contradictory evidence remains visibly unverified; review
+and submit corrected evidence as a new reconciliation entry. Reopening preserves
+this history and does not revive a superseded worker: use a follow-up todo for new
+implementation. Never hand-edit workflow claims, delete receipts, remerge or deploy
+merely to reconcile external work. Managed workers still hand off to the owner.

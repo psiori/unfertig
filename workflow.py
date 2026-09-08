@@ -19,6 +19,7 @@ from processing import Processor, system_id
 from codex_runtime import resolve_executable
 from storage import Conflict, digest, OperationLock, atomic, encode
 from integration import GitFailure, StaleCandidate, migration_issues
+from versions import FORMAT_VERSION
 
 ACTIVE = {'implementing', 'testing', 'merging'}
 DELIVERY_BLOCKS = {'merge_failed', 'push_failed', 'restart_failed', 'migration_required', 'resolution_blocked'}
@@ -113,6 +114,8 @@ class Workflow:
                 if 'workflow' not in todo:
                     continue
                 run = copy.deepcopy(todo['workflow'])
+                run['historical_phase'] = run['phase']
+                run['original_message'] = run['message']
                 if run.get('system') != system_id():
                     run['message'] = 'This run belongs to another system. Open its owning instance.'
                     run['foreign'] = True
@@ -126,6 +129,23 @@ class Workflow:
                     run['message'] = 'Waiting for '+blocker['id']+': '+blocker['workflow']['message']
                 run['active'] = todo['id'] in self.active_workers()
                 run.update(self.live.get(todo['id'], {}))
+                # Ticket lifecycle is independent of the historical attempt.
+                # Retained live/uncertain processes must remain visible after closure.
+                activity = self.retained_activity(todo)
+                known_stage = run['phase'] in {'queued', 'merge_queued', 'restarting', 'migrating',
+                                               'recovering', 'resolving_conflict', 'testing_resolution'}
+                run['activity_block'] = activity if not known_stage else ''
+                historical = self.inactive_history(todo)
+                if historical:
+                    run['historical_phase'] = todo['workflow']['phase']
+                    run['phase'] = 'superseded' if run.get('external_completions') else 'historical'
+                    run.pop('resume_action', None)
+                elif activity and not run['active'] and not known_stage:
+                    run['phase'] = 'activity_unknown'
+                    run.pop('resume_action', None)
+                run['can_complete_external'] = not activity and not run.get('foreign') and (
+                    run['phase'] in {'historical', 'superseded', 'interrupted', 'implementation_failed',
+                                    'test_failed', 'merge_failed', 'push_failed', 'restart_failed', 'resolution_blocked', 'ready', 'tested'})
                 if todo['id'] not in self.previews or self.previews[todo['id']].poll() is not None:
                     run.pop('preview_url', None)
                 runs[todo['id']] = run
@@ -247,10 +267,33 @@ class Workflow:
     def active_workers(self):
         return {key: worker for key, worker in self.workers.items() if worker.is_alive()}
 
+    def retained_activity(self, todo):
+        run = todo.get('workflow', {})
+        if todo['id'] in self.active_workers():
+            return 'Worker is active.'
+        if run.get('phase') in {'queued', 'merge_queued', 'restarting', 'migrating', 'recovering',
+                                'resolving_conflict', 'testing_resolution'}:
+            return 'A queued or delivery stage still requires recovery.'
+        if run.get('system') != system_id():
+            return 'Worker activity must be checked on the owning system.'
+        try:
+            self.guard_process(run)
+        except (OSError, ValueError, Conflict, KeyError) as error:
+            return str(error)
+        return ''
+
     def draining(self):
         return any(t.get('workflow', {}).get('phase') in DELIVERY_ACTIVE | {'merge_queued'}
                    and t['workflow'].get('system') == system_id()
+                   and not self.inactive_history(t)
                    for t in self.store.snapshot()['data']['todos'])
+
+    def inactive_history(self, todo):
+        run = todo.get('workflow', {})
+        historical = run.get('external_completions') or (todo['status'] == 'closed' and
+            run.get('phase') in ACTIVE | {'implementation_failed', 'test_failed', 'merge_failed',
+                                         'push_failed', 'restart_failed', 'resolution_blocked'})
+        return bool(historical and not self.retained_activity(todo))
 
     def queue_blocker(self, snapshot):
         # Derive the durable barrier from the protected claim, including legacy
@@ -259,6 +302,7 @@ class Workflow:
                    if t.get('status') != 'closed'
                    and t.get('workflow', {}).get('system') == system_id()
                    and not t['workflow'].get('queue_skip')
+                   and not t['workflow'].get('external_completions')
                    and t['workflow'].get('phase') in DELIVERY_ACTIVE | DELIVERY_BLOCKS]
         return min(entries, key=lambda t: (t['workflow'].get('queued_at', ''), t['id'])) if entries else None
 
@@ -312,6 +356,7 @@ class Workflow:
                     self.launch(todo, copy.deepcopy(run), 'merge')
                     return
             if any(t.get('workflow', {}).get('phase') in DELIVERY_ACTIVE
+                   and not self.inactive_history(t)
                    and t['workflow']['system'] == system_id() for t in snap['data']['todos']):
                 return
             merges = [t for t in queued if t['workflow']['phase'] == 'merge_queued']
@@ -352,7 +397,7 @@ class Workflow:
                 raise ValueError('Cannot identify this system; workflow launch is unavailable.')
             ident, action = body.get('id'), body.get('action')
             todo = next((t for t in snap['data']['todos'] if t['id'] == ident), None)
-            if todo is None or action not in ('implement', 'retry', 'test', 'merge', 'migrate', 'recover', 'skip'):
+            if todo is None or action not in ('implement', 'retry', 'test', 'merge', 'migrate', 'recover', 'skip', 'complete_external'):
                 raise ValueError('Choose a saved todo and implement, test or merge.')
             request_id = body.get('request_id')
             if request_id is not None and (not isinstance(request_id, str) or not 1 <= len(request_id) <= 128):
@@ -367,6 +412,16 @@ class Workflow:
                 raise ValueError('This ticket already has an active or queued stage.')
             if snap['revisions']['todos'][ident] != body.get('revision'):
                 raise Conflict('Todo changed. Reload and review before starting.')
+            if action == 'complete_external':
+                if automatic:
+                    raise Conflict('External completion requires an explicit owner action.')
+                from external_completion import complete
+                complete(self, todo, body)
+                return self.status()
+            if todo['status'] == 'closed':
+                raise Conflict('Ticket is closed. Reopen and review it before retrying historical work.')
+            if todo.get('workflow', {}).get('external_completions'):
+                raise Conflict('This attempt is superseded. Create a follow-up todo for new implementation.')
             if not all(self.options[k] for k in ('test', 'preview', 'restart')):
                 raise ValueError('Configure workflow.test, preview and restart commands for this project first.')
             old = todo.get('workflow')
@@ -458,7 +513,7 @@ class Workflow:
             run = next(t['workflow'] for t in self.snapshot()['data']['todos'] if t['id'] == ident)
             self.guard_process(run)
             receipt_path = self.process_receipt(run)
-            receipt = dict(format_version='1.13.0', run_id=run['run_id'], state='launching')
+            receipt = dict(format_version=FORMAT_VERSION, run_id=run['run_id'], state='launching')
             atomic(receipt_path, encode(receipt))
             try:
                 child = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
@@ -1029,7 +1084,7 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
                 snap = self.snapshot()
                 for todo in snap['data']['todos']:
                     run = todo.get('workflow', {})
-                    if run.get('phase') == 'ready' and run.get('system') == system_id():
+                    if run.get('phase') == 'ready' and run.get('system') == system_id() and not run.get('external_completions') and todo['status'] != 'closed':
                         self.start(dict(id=todo['id'], action='merge', revision=snap['revisions']['todos'][todo['id']], commit=run['commit']))
                         break
             except (OSError, ValueError, Conflict):
@@ -1063,7 +1118,7 @@ def deploy(payload):
         ok, message = False, str(error)
     receipt = Path(payload['receipt'])
     temporary = receipt.with_suffix('.tmp')
-    temporary.write_text(json.dumps(dict(format_version='1.13.0', commit=payload['commit'], ok=ok, message=message)))
+    temporary.write_text(json.dumps(dict(format_version=FORMAT_VERSION, commit=payload['commit'], ok=ok, message=message)))
     os.replace(temporary, receipt)
 
 
