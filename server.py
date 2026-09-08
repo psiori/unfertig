@@ -218,10 +218,10 @@ class Server(ThreadingHTTPServer):
     def __init__(self, address, store):
         super().__init__(address, Handler)
         from instance_maintenance import Maintenance
+        self.store = store
         self.maintenance = Maintenance(self)
         self.processing = None
         self.workflow = None
-        self.store = store
         self.token = secrets.token_urlsafe(32)
         self.publication = Publication(store) if isinstance(store, BoardStore) else None
         from aggregation import Aggregation
