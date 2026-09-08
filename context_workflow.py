@@ -186,7 +186,7 @@ def protected(w, item):
             if name == 'state' or name.startswith(('state/','tools/','.local/','.worktrees/')):
                 raise Conflict('Worker changed protected UM board/tool state: '+name)
         links = w.git('diff','--raw',item['base'],'HEAD',cwd=item['worktree'])
-        if any(line.startswith(':') and ('160000' in line.split()[:2]) for line in links.splitlines()):
+        if any(line.startswith(':') and any(mode.lstrip(':')=='160000' for mode in line.split()[:2]) for line in links.splitlines()):
             raise Conflict('UM child pins are updated by integration after child publication, not by workers.')
 
 
