@@ -705,3 +705,23 @@ block editing. Other explicit instance configs use the BoardStore transaction
 and local history recovery. No-config launches display capacity but cannot save.
 This narrow allowlist is the shared foundation for the future SL_I0037 settings
 panel; there is no separate concurrency preference or generic config editor.
+
+## Application build in the header
+
+The header's `build <12 hex digits>` identifies the running application's source
+build, not a semantic release number. `application_version.application_build` is
+the authoritative source: SHA-256 over sorted top-level runtime `.py`, `.js`,
+`.css`, `.html` and `.svg` files plus `agent_advice.json`, `categories.json`
+and `efforts.json`, excluding `test_*` files.
+Names and lengths delimit each input. Git metadata, local board subdirectories,
+configuration, documentation and tests do not affect it; source archives work without Git.
+
+The server calculates this value once at startup and renders it into the header
+for both normal and aggregation boards. Update the application files together
+and restart the server, then reload the page; the new source build automatically
+gets a new identifier without a manual version bump. Do not edit a running
+installation in place: its imported Python code remains the startup build.
+Keep the input suffix list current if runtime assets in new languages or
+subdirectories are introduced. This identifier is independent of persisted
+`format_version`, API `protocol_version`, and board-content revisions. No board
+records or configuration are changed to display it.

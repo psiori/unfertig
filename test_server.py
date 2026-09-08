@@ -160,6 +160,15 @@ class ApiTests(unittest.TestCase):
         except HTTPError as error:
             return error.code, error.read(), error.headers
 
+    def test_header_renders_startup_application_build(self):
+        from server import APPLICATION_BUILD
+        for path in ('/', '/index.html'):
+            status, raw, headers = self.request(path)
+            self.assertEqual(status, 200)
+            self.assertIn(('build ' + APPLICATION_BUILD).encode(), raw)
+            self.assertNotIn(b'__APPLICATION_BUILD__', raw)
+            self.assertEqual(headers['Cache-Control'], 'no-store')
+
     def test_category_definitions_are_served_before_app(self):
         from categories import DEFINITIONS
         status, raw, headers = self.request('/categories-data.js')
