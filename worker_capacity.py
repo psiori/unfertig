@@ -22,6 +22,8 @@ class WorkerSettings:
         path = self.store.config
         if not path or not path.is_file():
             raise ValueError('An explicit instance configuration is required to edit workers.')
+        if any(p.is_symlink() for p in (path, *path.parents)):
+            raise ValueError('Configuration paths cannot contain symlinks.')
         generated = path.name == 'machine.local.json'
         root = path.parents[3] if len(path.parents) > 3 else None
         local = generated or (root is not None and path == root / 'state/unfertig/config/config.json')
@@ -53,10 +55,20 @@ class WorkerSettings:
             raise ValueError('workflow must be an object.')
         return path, value, local
 
+    def revision(self, value):
+        # Include upstream inputs too: a host/shared edit must invalidate both
+        # the compact control and the panel, even when the local file is absent.
+        path = self.store.config
+        inputs = [value, path.read_bytes().hex()]
+        if path.name == 'machine.local.json':
+            shared = path.with_name('config.json')
+            inputs.append(shared.read_bytes().hex() if shared.exists() else None)
+        return digest(inputs)
+
     def view(self):
         try:
             _, value, local = self.source()
-            return dict(editable=True, revision=digest(value), layer='local' if local else 'instance')
+            return dict(editable=True, revision=self.revision(value), layer='local' if local else 'instance')
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             return dict(editable=False, error=str(error))
 
@@ -67,7 +79,7 @@ class WorkerSettings:
         with self.workflow.lock, self.store.lock:
             self.workflow.snapshot()  # Same compatibility/history guard as dispatch.
             path, value, local = self.source()
-            if digest(value) != body['revision']:
+            if self.revision(value) != body['revision']:
                 raise Conflict('Configuration changed. Reload settings and review your draft before saving again.')
             updated = copy.deepcopy(value)
             updated.setdefault('workflow', {})['max_workers'] = limit

@@ -723,3 +723,74 @@ Keep the input suffix list current if runtime assets in new languages or
 subdirectories are introduced. This identifier is independent of persisted
 `format_version`, API `protocol_version`, and board-content revisions. No board
 records or configuration are changed to display it.
+
+## Instance settings
+
+The gear beside Initials opens the keyboard-accessible settings dialog. Escape
+or Close retains unsaved edits in this tab; tab reload restores them for review.
+**Compare latest** shows saved values alongside the retained draft. **Keep draft
+against this version** rebases only your edited fields; **Use saved values**
+explicitly discards the draft. Drafts use session storage scoped to the board
+identity; they are not retained after closing the tab. Storage failures leave an
+in-memory draft and a message. Another tab or the compact worker control can
+change configuration; a stale save returns a conflict without overwriting it.
+
+| API field | Purpose and validation | Applies |
+| --- | --- | --- |
+| `project_name` | Board title, 0–120 characters, no control characters; empty hides it | Immediately in service context, next refresh in other open pages |
+| `max_workers` | Existing `workflow.max_workers`, integer 1–8 | Next dispatch; active work finishes and queued jobs remain |
+| `idle_seconds` | Existing `processing.idle_seconds`, integer 60–86400 | Next automatic-processing check |
+| `closed_seconds` | Existing `processing.closed_seconds`, integer 30–86400 | Next automatic-processing check after browsers close |
+
+Successful saves need no restart. The timing fields only affect automation that
+the operator has already enabled. They do not enable processing or workflow.
+Workflow permission switches (including automatic publication/merge/deployment),
+commands, executable paths, credentials, connections, ports, repository and data
+locations are excluded. Settings saves neither create workflow grants nor alter
+existing ones. Category definitions remain in the existing category system;
+category customization can extend this configuration boundary separately without
+duplicating the generic editor. No category fields are accepted by this release.
+
+On supported UM hosts, **all four fields are machine-local preferences** in
+ignored, untracked `state/local/unfertig/config/config.json`. They override shared
+defaults. The panel does not edit shared `state/unfertig/config/config.json`, the
+generated `machine.local.json`, or `machine-baseline.local.json`. Normal supervisor
+startup merges the durable override again; it cannot silently overwrite these
+preferences. Shared defaults remain operator-maintained. This uses the existing
+worker-capacity host contract and needs no supervisor change. Unsupported generated
+locations, symlinks, tracked local overrides, modified effective files and incompatible
+formats are read-only. Run normal host startup through its supervisor.
+
+For standalone/other explicit instance configs, edits use the existing BoardStore
+configuration transaction and local Git history in the board owner. Such settings
+are shared if the configuration is shared. No-config and no-Git instances remain
+readable but are not editable. Configure an explicit supported owner before editing.
+Only changed allowlisted keys are replaced; other fields and extensions survive.
+
+`GET /api/settings` returns `fields` (labels, types, bounds and help), `values`
+(currently effective), `saved_values` (durable configuration), `editable`, `layer`
+(`local` or `instance`), and an opaque `revision`. Read-only responses contain a
+bounded explanatory `error` and effective values, without source documents or paths.
+The owner-only endpoint is additive to protocol 2. Save with the current board
+session `X-Board-Token`, same-origin checks and exactly this body:
+
+```json
+{"revision":"revision-from-GET","changes":{"project_name":"Our ideas","max_workers":3}}
+```
+
+`PUT /api/settings` returns the updated view. Unknown fields and invalid values
+return 400, an invalid session or origin returns 403, and concurrent configuration
+or pending-history conflicts return 409. Storage errors return 500. The revision
+covers the destination and active/upstream config, and is shared with the compact
+`/api/workflow/settings` control. Requests contain at least one changed field;
+partial edits preserve omitted fields. A save serializes with dispatch, processing
+and board writes. Local writes replace one file atomically; standalone writes use
+the existing journal/history recovery. Neither mechanism pushes configuration.
+
+After a timeout or lost response, keep the draft and compare current saved values
+before retrying; a stale repeat conflicts harmlessly rather than overwriting a
+subsequent edit. Reopen the dialog after service restart to renew the session token.
+If local history is pending, retry history through the board before another edit.
+An interruption after persistence but before live application can leave effective
+and saved values different; normal restart applies the durable values. Recovery
+does not require an LLM and never restores a stale whole configuration.
