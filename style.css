@@ -319,3 +319,5 @@ main { padding-top:18px; }
 .settings-review{display:flex;flex-wrap:wrap;gap:8px}
 #settings-dialog button:focus-visible,#settings-dialog input:focus-visible,#open-settings:focus-visible{outline:2px solid var(--green);outline-offset:3px}
 @media(max-width:560px){#settings-fields{grid-template-columns:1fr}#settings-dialog .dialog-actions{flex-wrap:wrap}#settings-dialog{padding:20px 16px}}
+
+#workflow-merge-all-state { white-space: pre-wrap; max-height: 22rem; overflow: auto; }

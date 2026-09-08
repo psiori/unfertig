@@ -48,7 +48,7 @@ test('disabled or missing feature flag hides all workflow controls and blocks st
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
   await poll();assert.equal(panel.hidden,true);assert.equal(panel.innerHTML,'');
   result={enabled:true,runs:{},configured:true,automatic:false};await poll();
-  assert.equal(panel.hidden,false);assert.match(panel.innerHTML,/including inherited local commits/);assert.match(panel.innerHTML,/Implement with Codex/);assert.match(panel.innerHTML,/Test branch/);assert.match(panel.innerHTML,/Merge & push/);
+  assert.equal(panel.hidden,false);assert.match(panel.innerHTML,/including inherited local commits/);assert.match(panel.innerHTML,/Implement with Codex/);assert.match(panel.innerHTML,/Preview \(optional\)/);assert.match(panel.innerHTML,/Merge & push/);
   result={enabled:false,runs:{}};await poll();assert.equal(panel.hidden,true);assert.equal(panel.innerHTML,'');
   const before=calls.length;
   await events.click({target:{closest:()=>({dataset:{todo:'T0001',workflowAction:'implement'}})},preventDefault(){},stopPropagation(){}});
@@ -67,7 +67,7 @@ test('collapsed row follows workflow stages and respects execution guards',async
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
   await poll(); assert.equal(slot.hidden,false); assert.match(slot.innerHTML,/including inherited local commits/); assert.match(slot.innerHTML,/data-workflow-action="implement"/);
   assert.match(slot.innerHTML,/aria-hidden="true">Implementing…/);
-  for(const [phase,action,label] of [['ready','test','Preview'],['tested','merge','Merge & push'],['implementation_failed','retry','Retry implementation'],['test_failed','test','Preview'],['push_failed','merge','Merge & push']]) {
+  for(const [phase,action,label] of [['ready','merge','Merge & push'],['tested','merge','Merge & push'],['implementation_failed','retry','Retry implementation'],['test_failed','merge','Merge & push'],['push_failed','merge','Merge & push']]) {
     result.runs.T0001={phase}; await poll();
     assert.equal((slot.innerHTML.match(/<button/g)||[]).length,1);
     assert.match(slot.innerHTML,new RegExp(`data-workflow-action="${action}"`)); assert.ok(slot.innerHTML.includes(label)); assert.doesNotMatch(slot.innerHTML,/ disabled/);
@@ -113,14 +113,16 @@ test('collapsed next action and expanded optional preview retain confirmed direc
     result.runs.T0001.phase=phase;await poll();
     assert.match(panel.innerHTML,/data-workflow-action="merge"[^>]* >Merge & push/);
     assert.equal((slot.innerHTML.match(/<button/g)||[]).length,1);
-    assert.match(slot.innerHTML,new RegExp(`data-workflow-action="${['ready','test_failed'].includes(phase)?'test':'merge'}"`));
+    assert.match(slot.innerHTML,new RegExp(`data-workflow-action="merge"`));
     for(const surface of [slot,panel]) {
       assert.doesNotMatch(surface.innerHTML,/has not passed|<p class="muted"><\/p>|<span class="muted">/);
     }
   }
   result.runs.T0001.phase='ready';await poll();
-  assert.match(slot.innerHTML,/data-workflow-action="test"/);
-  assert.doesNotMatch(slot.innerHTML,/data-workflow-action="merge"/);
+  assert.match(slot.innerHTML,/data-workflow-action="merge"/);
+  assert.doesNotMatch(slot.innerHTML,/data-workflow-action="test"/);
+  assert.ok(panel.innerHTML.indexOf('data-workflow-action="merge"') < panel.innerHTML.indexOf('data-workflow-action="test"'));
+  assert.match(panel.innerHTML,/Preview \(optional\)/);
   const click=()=>events.click({target:{closest:()=>({dataset:{todo:todo.id,workflowAction:'merge'}})},preventDefault(){},stopPropagation(){}});
   await click();assert.equal(submitted,undefined);assert.ok(confirmation.includes(commit));assert.doesNotMatch(confirmation,/has not passed|\n\n$/);
   approved=true;await click();assert.equal(submitted.commit,commit);assert.equal(submitted.revision,'revision');

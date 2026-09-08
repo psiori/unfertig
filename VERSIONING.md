@@ -354,3 +354,13 @@ Existing sequential migrations, compatibility guards, defaults, extension
 preservation, configuration journal/history recovery and the host partial-override
 contract remain in force. Revisions and effective values are ephemeral. Browser
 session drafts are disposable UI state, not an alternative configuration source.
+
+## Bulk integration actions (unchanged storage 1.20)
+
+The additive owner-local merge-review/merge-batch API reuses ordinary merge
+action bodies, workflow.action_requests fingerprints and merge_queued claims.
+It adds no persisted board fields, defaults or migration step. Protocol remains
+2.0.0; old readers/writers retain the same durable per-todo recovery semantics.
+Browser recovery is disposable sessionStorage under a versioned `merge-batch.v1`
+key; board receipts remain authoritative. HTTP and filesystem record writers
+continue to protect claims identically; aggregation cannot launch source work.

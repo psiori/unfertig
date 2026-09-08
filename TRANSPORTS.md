@@ -276,3 +276,8 @@ its live settings. Both continue to resolve the same unchanged configuration
 fields and preserve all records, workflow claims and permissions. Settings edits
 do not change transport configuration or permit fallback writes to source config.
 The common conformance suite remains required; no transport/storage version changes.
+
+Owner-local bulk integration uses `/api/workflow/merge-review` and token-protected
+`/api/workflow/merge-batch`; aggregation never forwards these actions to a source.
+Both record adapters preserve the existing protected queue claims and action
+receipts. There is no filesystem batch writer or new stored record contract.

@@ -514,8 +514,9 @@ keep the whole workflow disabled. Restart after changing configuration.
 
 After implementation and its required checks complete, the user may explicitly
 choose Merge & push directly or first run the optional Test branch / Preview
-step. Collapsed rows show only Preview after implementation, then Merge & push
-after Preview succeeds. Expand the row to skip Preview and merge directly.
+step. Collapsed rows show Merge & push after implementation, including after an
+optional Preview failure. Preview is available only in expanded details, after
+the merge action. This supersedes the earlier Preview-first collapsed row.
 Merge confirms the exact selected commit. Only a matching successful preview
 gets a test-status notice; untested commits have no notice or reserved space.
 Merging never supplies `tested_commit`. All other eligibility and recovery guards remain.
@@ -640,3 +641,19 @@ requests remain pending for another cycle. Never change running runtime files.
 Legacy recovery verifies retained publication and closes without deployment; use
 Merge & push when fresh combined test evidence is needed. Preserve old receipts.
 See DEPLOYMENT.md for configuration, protocol and failure recovery.
+
+## Owner-local bulk integration review
+
+**Merge all PRs & push** reviews all currently eligible finished todos from
+the owner board, independently of UI filters. Confirm the concrete per-repository
+commits and PRs returned by `/api/workflow/merge-review`; submit its exact actions
+to token-protected `/api/workflow/merge-batch`. This is equivalent to separate
+Merge & push actions, with per-entry rejection and durable receipts. It never
+merges every open PR, substitutes changed heads, fabricates Preview evidence or
+bypasses handoff, combined tests, migration preflight or queue recovery.
+
+Retain the same actions/request IDs after an uncertain response or restart.
+Accepted entries stay queued; rejected or stale entries require fresh review.
+Delivery failures and already merged PRs use the existing individual recovery
+controls, and pause/skip semantics remain owned by the integration coordinator.
+No worker may use these endpoints without separate explicit merge authorization.
