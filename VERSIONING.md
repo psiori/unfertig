@@ -130,3 +130,17 @@ in read-only mode; older writers cannot ignore the new semantics. Protocol stays
 journal and receipt recovery. Filesystem discovery still requires explicit prior
 migration. Use the stopped-instance upgrade procedure above; this change does
 not authorize upgrading the live board.
+
+
+Format **1.8.0** adds parallel workflow queues, per-action idempotency fingerprints,
+GitHub PR and integration evidence, and optional todo `depends_on` IDs. The
+sequential 1.7 → 1.8 migration adds config defaults `max_workers:2`,
+`automatic_merge:false`, `automatic_publish:false`, `automatic_deploy:false`.
+It invents no claims, PRs or dependencies and preserves explicit settings,
+originals, extension fields and receipts. Older minor writers become read-only.
+Queued stages recover after restart; interrupted active stages require explicit
+retry. Claims remain backend-managed in both HTTP and filesystem transports.
+Deployment receipts identify the actual integration commit, with fallback for
+legacy receipts. API protocol remains 2.0; new fields/actions are additive.
+Use the stopped-instance migration and recovery procedure above. The unchanged-
+storage updater gate remains; installing feature code does not migrate live data.

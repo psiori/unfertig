@@ -8,6 +8,7 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
   <script src="/categories-data.js" defer></script>
+  <script src="/agent-advice.js" defer></script>
   <script src="/app.js" defer></script>
   <script src="/priority.js" defer></script>
   <script src="/aggregation.js" defer></script>
@@ -46,6 +47,7 @@
       <p id="source-status" class="notice" hidden></p><div class="filters"><label id="project-filter-label" hidden>Project<select id="project-filter"><option value="">All projects</option></select></label><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Find a todo…" aria-label="Search todos"></label><label>Status<select id="status-filter"><option value="active">Open + started</option><option value="all">All statuses</option><option value="open">Open</option><option value="started">Started</option><option value="closed">Closed</option></select></label><label>Group<select id="group-filter"><option value="">All groups</option></select></label><label>Tag<select id="tag-filter"><option value="">All tags</option></select></label><label>Sort<select id="sort"><option value="priority">Priority ↓</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name A–Z</option></select></label></div>
       <div class="view-options"><span id="result-count">0 todos</span><div><label class="check"><input type="checkbox" id="group-by"> Group by module</label><button class="text-button" id="fold-all">Collapse all</button><button class="text-button" id="unfold-all">Expand all</button></div></div>
       <div id="todos"></div>
+      <section class="integration-pipeline" data-integration-pipeline aria-label="Integration pipeline" hidden></section>
     </section>
     <footer><span><span class="live-dot"></span> <span id="board-location">Loading board location…</span> · local Git history</span><span>A small step is still a step. ✳</span></footer>
   </main>
