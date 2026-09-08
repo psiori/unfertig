@@ -291,7 +291,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, ('const effortDefinitions = ' + json.dumps(EFFORT_DEFINITIONS) + ';').encode(), 'text/javascript; charset=utf-8')
             elif path == '/categories-data.js':
                 self.reply(200, ('const categoryDefinitions = ' + json.dumps(DEFINITIONS) + ';').encode(), 'text/javascript; charset=utf-8')
-            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/workflow.js", "/aggregation.js", "/style.css", "/favicon.svg"):
+            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/workflow.js", "/worker-capacity.js", "/aggregation.js", "/style.css", "/favicon.svg"):
                 name = "index.html" if path == "/" else path[1:]
                 mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}[Path(name).suffix]
                 self.reply(200, (ROOT / name).read_bytes(), mime + "; charset=utf-8")
@@ -303,7 +303,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         if not self.local_request():
             return
-        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action'):
+        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action', '/api/workflow/settings'):
             self.reply(404, {"error": "Not found."})
             return
         if not secrets.compare_digest(self.headers.get("X-Board-Token", ""), self.server.token):
@@ -319,6 +319,11 @@ class Handler(BaseHTTPRequestHandler):
                 protocol_state, _ = inspect(body, 'request', PROTOCOL_VERSION, 'protocol_version')
                 require(protocol_state != 'read_only', 'Newer minor request protocol: update Unfertig before writing.')
             if isinstance(self.server.store, BoardStore):
+                if self.path == '/api/workflow/settings':
+                    require(self.server.workflow is not None, 'Workflow is unavailable.')
+                    from worker_capacity import WorkerSettings
+                    self.reply(200, WorkerSettings(self.server.workflow).save(body))
+                    return
                 if self.path == '/api/workflow/action':
                     require(self.server.workflow is not None, 'Workflow is unavailable.')
                     if not self.server.workflow.options['enabled']:

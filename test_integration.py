@@ -31,6 +31,21 @@ class MigrationIntegrationTests(unittest.TestCase):
                 self.assertEqual(migrate(result, 'todo'), result)
         self.assertEqual(inspect({'format_version':FORMAT_VERSION}, supported='1.12.0')[0], 'read_only')
 
+    def test_published_steps_precede_worker_capacity_successor(self):
+        self.assertEqual(MIGRATIONS['1.15.0'].__name__, 'managed_completion_format')
+        self.assertEqual(MIGRATIONS['1.16.0'].__name__, 'context_repositories_format')
+        self.assertEqual(MIGRATIONS['1.17.0'].__name__, 'worker_capacity_format')
+        for kind in ('config', 'todo', 'ideas', 'receipt', 'journal'):
+            original = dict(format_version='1.15.0', extension={'keep': [1, 2]})
+            current = original.copy()
+            for source, target in (('1.15.0', '1.16.0'), ('1.16.0', '1.17.0'), ('1.17.0', '1.18.0')):
+                current = MIGRATIONS[source](current, kind)
+                expected = dict(original, format_version=target)
+                if kind == 'config' and target == '1.18.0':
+                    expected['workflow'] = {'max_workers': 4}
+                self.assertEqual(current, expected)
+            self.assertEqual(inspect(current, supported='1.17.0')[0], 'read_only')
+
     def test_actual_registry_has_no_duplicate_successors(self):
         parsed = registry(Path(__file__).with_name('versions.py').read_text())
         self.assertEqual(set(parsed), set(MIGRATIONS))

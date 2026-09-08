@@ -296,7 +296,7 @@ class WorkflowTests(unittest.TestCase):
         for value in ('true', 1, None):
             with self.assertRaises(ValueError):settings({'enabled':value},self.root,self.processing,'embedded')
         migrated=migrate({'format_version':'1.5.0','workflow':{'automatic':True,'extension':42}},'config')
-        self.assertEqual(migrated['workflow'],{'enabled':False,'automatic':True,'extension':42,'max_workers':2,'automatic_merge':False,'automatic_publish':False,'automatic_deploy':False})
+        self.assertEqual(migrated['workflow'],{'enabled':False,'automatic':True,'extension':42,'max_workers':4,'automatic_merge':False,'automatic_publish':False,'automatic_deploy':False})
         self.assertEqual(migrate(migrated,'config'),migrated)
         self.assertFalse(settings(migrated['workflow'],self.root,self.processing,'embedded')['automatic'])
         self.assertFalse(settings({'enabled':True},self.root,self.processing,'aggregation')['enabled'])
@@ -391,6 +391,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertFalse(worker.is_alive())
 
     def test_two_workers_capacity_queue_and_idempotent_restart(self):
+        self.options['max_workers'] = 2
         import threading
         gate = threading.Event()
         self.addCleanup(gate.set)
@@ -761,7 +762,7 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
         path = self.await_receipt(todo['id'])
         valid = json.loads(path.read_text())
         for receipt, reason in [('interrupted JSON', 'pending'),
-                                (json.dumps(dict(valid, format_version='1.18.0')), 'too old'),
+                                (json.dumps(dict(valid, format_version='1.19.0')), 'too old'),
                                 (json.dumps(dict(valid, commit='0'*40)), 'different candidate'),
                                 (json.dumps(dict(valid, ok='true')), 'incomplete')]:
             path.write_text(receipt)
@@ -846,6 +847,157 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
         current=self.store.snapshot()['data']['todos'][0]
         self.assertEqual(current['workflow']['phase'],'done',current)
         self.assertFalse(self.workflow.draining())
+
+
+
+class WorkerCapacityTests(unittest.TestCase):
+    setUp = WorkflowTests.setUp
+    git = WorkflowTests.git
+    fake_github = WorkflowTests.fake_github
+    add_ticket = WorkflowTests.add_ticket
+    start_ticket = WorkflowTests.start_ticket
+    await_workers = WorkflowTests.await_workers
+    # Use the same disposable board/repository fixture and scheduler helpers.
+    def configure_capacity(self):
+        from worker_capacity import WorkerSettings
+        self.store.config = self.store.root / 'config.json'
+        self.store.config.write_text(json.dumps(dict(format_version=FORMAT_VERSION, workflow={'max_workers':4}, extension={'keep':42})))
+        return WorkerSettings(self.workflow)
+
+    def test_capacity_edit_validation_conflict_and_reload(self):
+        from configuration import resolve
+        editor = self.configure_capacity()
+        revision = editor.view()['revision']
+        for value in (True, 0, 9, 2.5, '4', None):
+            with self.assertRaises(ValueError):
+                editor.save(dict(max_workers=value, revision=revision))
+        editor.save(dict(max_workers=2, revision=revision))
+        self.assertEqual(self.options['max_workers'], 2)
+        saved = json.loads(self.store.config.read_text())
+        self.assertEqual(saved['extension'], {'keep':42})
+        self.assertEqual(resolve(self.repo, config=self.store.config)['workflow']['max_workers'], 2)
+        with self.assertRaises(Conflict):
+            editor.save(dict(max_workers=3, revision=revision))
+        self.assertFalse(self.store.pending.exists())
+
+    def test_um_capacity_readiness_without_legacy_recipes(self):
+        self.configure_capacity()
+        for key in ('test', 'preview', 'restart'):
+            self.options[key] = []
+        self.assertEqual(self.workflow.status()['capacity_state'], 'unavailable')
+        owner = Path(self.store.context['repository'])
+        (owner / 'node.json').write_text(json.dumps({'kind': 'project-wrapper'}))
+        status = self.workflow.status()
+        self.assertTrue(status['configured'])
+        self.assertEqual(status['capacity_state'], 'ready')
+        with patch('workflow.resolve_executable', return_value=None):
+            self.assertEqual(self.workflow.status()['capacity_state'], 'unavailable')
+
+    def test_capacity_states_and_limits_under_load(self):
+        import threading
+        editor = self.configure_capacity()
+        gate = threading.Event(); self.addCleanup(gate.set)
+        self.assertEqual(self.workflow.status()['capacity_state'], 'ready')
+        self.options['enabled'] = False
+        self.assertEqual(self.workflow.status()['capacity_state'], 'inactive')
+        self.options['enabled'] = True
+        with patch('workflow.resolve_executable', return_value=None):
+            self.assertEqual(self.workflow.status()['capacity_state'], 'unavailable')
+        ids = ['T0001'] + [self.add_ticket() for _ in range(4)]
+        with patch.object(self.workflow, 'run', side_effect=lambda *args: gate.wait(10)):
+            self.start_ticket(ids[0])
+            self.assertEqual(self.workflow.status()['capacity_state'], 'occupied')
+            for ident in ids[1:]: self.start_ticket(ident)
+            status = self.workflow.status()
+            self.assertEqual(status['active_count'], 4)
+            self.assertEqual(status['capacity_state'], 'full')
+            self.assertEqual(status['runs'][ids[-1]]['phase'], 'queued')
+            editor.save(dict(max_workers=1, revision=editor.view()['revision']))
+            self.workflow.dispatch()
+            self.assertEqual(len(self.workflow.active_workers()), 4)
+            self.assertEqual(self.workflow.status()['runs'][ids[-1]]['phase'], 'queued')
+            editor.save(dict(max_workers=5, revision=editor.view()['revision']))
+            self.workflow.dispatch()
+            self.assertEqual(len(self.workflow.active_workers()), 5)
+            gate.set(); self.await_workers()
+        with patch.object(self.workflow, 'guard_process', side_effect=Conflict('Unknown launch')):
+            self.assertEqual(self.workflow.status()['capacity_state'], 'unknown')
+
+    def test_host_override_survives_restart_without_touching_effective(self):
+        from worker_capacity import WorkerSettings
+        root = self.store.root
+        config = root / 'state/unfertig/config/machine.local.json'
+        config.parent.mkdir(parents=True)
+        config.write_text(json.dumps(dict(format_version=FORMAT_VERSION, workflow={'max_workers':2})))
+        baseline = config.with_name('machine-baseline.local.json'); baseline.write_bytes(config.read_bytes())
+        (root/'.gitignore').write_text((root/'.gitignore').read_text()+'state/local/\nstate/unfertig/config/*.local.json\n')
+        self.store.config = config
+        editor = WorkerSettings(self.workflow)
+        before = config.read_bytes()
+        editor.save(dict(max_workers=6, revision=editor.view()['revision']))
+        override = root/'state/local/unfertig/config/config.json'
+        self.assertEqual(json.loads(override.read_text()), {'workflow':{'max_workers':6}})
+        self.assertEqual(config.read_bytes(), before)
+        self.assertEqual(baseline.read_bytes(), before)
+        # Supervisor merges durable local fields over the unchanged effective base.
+        merged = json.loads(before); merged['workflow'].update(json.loads(override.read_text())['workflow'])
+        self.assertEqual(settings(merged['workflow'], root, self.processing, 'embedded')['max_workers'],6)
+        self.assertFalse(subprocess.check_output(['git','-C',str(root),'ls-files','--',str(override)],text=True))
+        config.write_text('{}')
+        self.assertFalse(editor.view()['editable'])
+
+    def test_worker_settings_http_token_validation_and_conflict(self):
+        from server import Server
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+        import threading
+        editor = self.configure_capacity()
+        server = Server(('127.0.0.1', 0), self.store); server.workflow = self.workflow
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        try:
+            revision = editor.view()['revision']
+            def send(token, value, revision=revision):
+                request = Request(f'http://127.0.0.1:{server.server_port}/api/workflow/settings',
+                    data=json.dumps(dict(max_workers=value, revision=revision)).encode(), method='PUT',
+                    headers={'X-Board-Token':token,'Content-Type':'application/json'})
+                return urlopen(request)
+            for token, value, code in [('wrong',3,403),(server.token,9,400)]:
+                with self.assertRaises(HTTPError) as caught: send(token,value)
+                self.assertEqual(caught.exception.code,code); caught.exception.close()
+            with send(server.token,3) as response:
+                self.assertEqual(json.load(response)['max_workers'],3)
+            with self.assertRaises(HTTPError) as caught: send(server.token,5)
+            self.assertEqual(caught.exception.code,409); caught.exception.close()
+            self.assertEqual(self.options['max_workers'],3)
+        finally:
+            server.shutdown(); server.server_close(); thread.join()
+
+    def test_config_transaction_interruption_recovers_limit(self):
+        import storage
+        editor = self.configure_capacity()
+        original = storage.atomic
+        def interrupted(path, content):
+            if path == self.store.config:
+                raise OSError('Interrupted before config replacement')
+            original(path, content)
+        with patch('storage.atomic', side_effect=interrupted):
+            with self.assertRaises(OSError):
+                editor.save(dict(max_workers=7, revision=editor.view()['revision']))
+        self.assertTrue(self.store.journal.exists())
+        self.store.initialize()
+        self.assertEqual(json.loads(self.store.config.read_text())['workflow']['max_workers'],7)
+        before = self.store.config.read_bytes()
+        self.store.initialize()
+        self.assertEqual(self.store.config.read_bytes(),before)
+        self.assertFalse(self.store.journal.exists())
+
+    def test_unsupported_generated_config_fails_clearly(self):
+        from worker_capacity import WorkerSettings
+        self.store.config = self.root / 'machine.local.json'
+        self.store.config.write_text('{}')
+        result = WorkerSettings(self.workflow).view()
+        self.assertFalse(result['editable'])
+        self.assertIn('Unsupported generated configuration location', result['error'])
 
 
 if __name__=='__main__':unittest.main()

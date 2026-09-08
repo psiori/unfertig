@@ -41,6 +41,21 @@ class Conformance:
     test_duplicate_provenance = fixtures.AggregationTests.test_duplicate_source_provenance_rejected_with_new_request_id
     test_inbox_history_recovery = fixtures.AggregationTests.test_local_history_failure_after_destination_save
 
+    def test_worker_config_defaults_and_explicit_limits_share_transports(self):
+        source = self.sources[0]
+        config = self.boards[1].config
+        before = self.boards[1].path.read_bytes()
+        for limit in (None, 2, 4, 8):
+            value = json.loads(config.read_text())
+            value['workflow'] = {} if limit is None else {'max_workers':limit}
+            config.write_text(json.dumps(value))
+            resolved = board_context(resolve(self.boards[1].root, config=config), self.boards[1].root)
+            self.boards[1].context = resolved
+            snapshot = exchange(source)
+            self.assertEqual(snapshot['context']['workflow']['max_workers'], 4 if limit is None else limit)
+            self.assertNotIn('capacity_state', snapshot)
+            self.assertEqual(self.boards[1].path.read_bytes(), before)
+
     def test_completion_summary_history_and_switch_retry(self):
         source = self.sources[0]
         snapshot = self.router.inspect_source(source)

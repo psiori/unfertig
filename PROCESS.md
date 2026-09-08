@@ -88,7 +88,7 @@ For unmanaged work, close after the authorized deliverable is verified and meani
 
 ### Parallel execution and GitHub integration
 
-`workflow.max_workers` defaults to 2 (range 1–8). Jobs beyond capacity wait in
+`workflow.max_workers` defaults to 4 (range 1–8). Jobs beyond capacity wait in
 versioned per-ticket queues. One worker owns each ticket; duplicate action IDs
 return the same durable claim. Queued jobs survive restart; interrupted running
 jobs need explicit retry. Never steal a foreign-system claim. Independent work
@@ -339,7 +339,7 @@ feature only with disposable local repositories/bare remotes, never real remotes
 ## Data and API versions
 
 [VERSIONING.md](VERSIONING.md) governs both idea processing and implementation.
-Persisted JSON uses `format_version` (currently `1.16.0`), independently of integer
+Persisted JSON uses `format_version` (currently `1.18.0`), independently of integer
 layout schema_version. Snapshots declare protocol_version `2.0.0`. Preserve these
 fields and unknown extensions in edits. Newer major versions require updating;
 newer minor versions allow inspection only; compatible builds preserve their
