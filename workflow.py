@@ -266,7 +266,7 @@ class Workflow:
 
     def launch(self, todo, run, action):
         ident = todo['id']
-        run.update(phase={'implement':'implementing', 'retry':'implementing', 'test':'testing', 'merge':'merging'}[action],
+        run.update(phase={'implement':'implementing', 'retry':'implementing', 'test':'testing', 'merge':'merging', 'migrate':'merging', 'recover':'merging'}[action],
                    message='Running '+action+'…')
         self.save(ident, run)
         self.live[ident] = dict(message=run['message'])
@@ -320,7 +320,7 @@ class Workflow:
                 raise ValueError('Cannot identify this system; workflow launch is unavailable.')
             ident, action = body.get('id'), body.get('action')
             todo = next((t for t in snap['data']['todos'] if t['id'] == ident), None)
-            if todo is None or action not in ('implement', 'retry', 'test', 'merge'):
+            if todo is None or action not in ('implement', 'retry', 'test', 'merge', 'migrate', 'recover'):
                 raise ValueError('Choose a saved todo and implement, test or merge.')
             request_id = body.get('request_id')
             if request_id is not None and (not isinstance(request_id, str) or not 1 <= len(request_id) <= 128):
@@ -331,7 +331,7 @@ class Workflow:
                 if previous[request_id] != fingerprint:
                     raise Conflict('Workflow request ID reused for different input.')
                 return self.status()
-            if ident in self.active_workers() or todo.get('workflow', {}).get('phase') in ('queued', 'merge_queued', 'restarting'):
+            if ident in self.active_workers() or todo.get('workflow', {}).get('phase') in ('queued', 'merge_queued') or (todo.get('workflow', {}).get('phase') == 'restarting' and action != 'recover'):
                 raise ValueError('This ticket already has an active or queued stage.')
             if snap['revisions']['todos'][ident] != body.get('revision'):
                 raise Conflict('Todo changed. Reload and review before starting.')
@@ -383,15 +383,21 @@ class Workflow:
                     raise ValueError('Only an interrupted or failed implementation can resume.')
                 if action == 'test' and run['phase'] not in ('ready', 'tested', 'test_failed', 'testing'):
                     raise ValueError('Implementation must complete before preview testing.')
-                if action == 'merge' and run['phase'] not in ('ready', 'tested', 'test_failed', 'merge_failed', 'push_failed', 'restart_failed', 'merging'):
+                if action == 'merge' and run['phase'] not in ('ready', 'tested', 'test_failed', 'merge_failed', 'push_failed', 'restart_failed', 'merging', 'migration_required'):
                     raise ValueError('Implementation must complete before merging.')
+                if action == 'migrate':
+                    review = run.get('deployment_review', {})
+                    if automatic or run['phase'] != 'migration_required' or not review.get('review_id') or body.get('review_id') != review['review_id']:
+                        raise Conflict('Review the exact migration candidate and submit its review_id explicitly.')
+                if action == 'recover' and (run['phase'] not in ('restart_failed', 'restarting', 'merge_failed') or not run.get('published_commit')):
+                    raise ValueError('Recovery requires retained publication evidence.')
                 run.update(phase='implementing' if action == 'retry' else 'testing' if action == 'test' else 'merging', message='Running '+action+'…')
             requests = dict(run.get('action_requests', {}))
             if request_id:
                 requests[request_id] = fingerprint
-            run.update(phase='merge_queued' if action == 'merge' else 'queued', queued_action=action,
+            run.update(phase='merge_queued' if action in ('merge', 'migrate', 'recover') else 'queued', queued_action=action,
                        queued_at=datetime.now(timezone.utc).isoformat(), action_requests=requests,
-                       message='Queued for integration; draining active jobs.' if action == 'merge' else 'Queued for an available worker.')
+                       message='Queued for integration; draining active jobs.' if action in ('merge', 'migrate', 'recover') else 'Queued for an available worker.')
             self.save(ident, run, status='started')
             self.dispatch()
             return self.status()
@@ -454,7 +460,7 @@ class Workflow:
 
     def run(self, todo, run, action):
         ident = todo['id']
-        failed = {'retry':'implementation_failed', 'implement':'implementation_failed', 'test':'test_failed', 'merge':'merge_failed'}[action]
+        failed = {'retry':'implementation_failed', 'implement':'implementation_failed', 'test':'test_failed', 'merge':'merge_failed', 'migrate':'merge_failed', 'recover':'restart_failed'}[action]
         try:
             if action in ('implement', 'retry'):
                 Path(run['worktree']).parent.mkdir(parents=True, exist_ok=True)
@@ -581,7 +587,10 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                            message='Checks passed. Inspect the launched branch before choosing Merge & restart.')
             else:
                 with self.repository_lock() as integration_lock:
-                    self.integrate_and_deploy(ident, run, integration_lock)
+                    if action == 'recover':
+                        self.recover_deployment(ident, run, integration_lock)
+                    else:
+                        self.integrate_and_deploy(ident, run, integration_lock, migrate=action == 'migrate')
                 return
             fields = dict(commit_hash=run.get('commit', ''))
             if run['phase'] == 'done':
@@ -600,7 +609,7 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                 if self.live.get(ident, {}).get('phase') != 'interrupted':
                     self.live.pop(ident, None)
 
-    def integrate_and_deploy(self, ident, run, integration_lock):
+    def integrate_and_deploy(self, ident, run, integration_lock, migrate=False):
         """Repository lock spans candidate validation, exact publication and launch."""
         if not run.get('pr_url'):
             todo = next(t for t in self.snapshot()['data']['todos'] if t['id'] == ident)
@@ -632,24 +641,42 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
             return absolute == self.store.path or (absolute.parent == self.store.root / 'todos' and absolute.suffix == '.json')
         if shared and any(board_path(path) for path in self.git('diff', '--name-only', run['base'], run['commit']).splitlines()):
             raise ValueError('Implementation changed board files. Recover through the board API first.')
-        # A new disposable candidate preserves the original ticket branch and failed attempts.
-        attempt = uuid.uuid4().hex
-        candidate = Path(run['worktree']).parent / (run['run_id']+'-integration-'+attempt[:8])
-        candidate_branch = 'codex/integration-'+attempt
-        run.update(integration_worktree=str(candidate), integration_branch=candidate_branch)
-        self.save(ident, run)
-        head = self.git('rev-parse', 'HEAD')
-        self.git('worktree', 'add', '-b', candidate_branch, str(candidate), head)
-        # Fast-forward when possible; divergent tickets create an ordinary merge commit.
-        self.git('merge', '--no-edit', remote, cwd=candidate)
-        if not integrated:
-            self.git('merge', '--no-edit', run['commit'], cwd=candidate)
-        commit = self.git('rev-parse', 'HEAD', cwd=candidate)
-        check_run = dict(run, worktree=str(candidate))
-        self.command(self.argv('test', check_run), candidate, ident)
-        if self.git('rev-parse', 'HEAD', cwd=candidate) != commit or self.git('status', '--porcelain', cwd=candidate):
-            raise ValueError('Integration checks changed the candidate. Review the retained worktree.')
-        run.update(integration_commit=commit, integration_tested_commit=commit)
+        if migrate:
+            review = run['deployment_review']
+            if head != run['review_main'] or remote != run['review_remote'] or pr['state'] != run['review_pr_state']:
+                raise Conflict('Main or PR changed since migration review. Run Merge & restart for a fresh assessment.')
+            candidate = Path(run['integration_worktree'])
+            commit = self.git('rev-parse', 'HEAD', cwd=candidate)
+            if commit != review['candidate_commit'] or commit != run['integration_tested_commit'] or self.git('status', '--porcelain', cwd=candidate):
+                raise Conflict('Reviewed integration candidate changed; request a fresh assessment.')
+            self.host_deployment('check', '--review', review['review_id'])
+        else:
+            # A new disposable candidate preserves the original ticket branch and failed attempts.
+            attempt = uuid.uuid4().hex
+            candidate = Path(run['worktree']).parent / (run['run_id']+'-integration-'+attempt[:8])
+            candidate_branch = 'codex/integration-'+attempt
+            run.update(integration_worktree=str(candidate), integration_branch=candidate_branch)
+            self.save(ident, run)
+            head = self.git('rev-parse', 'HEAD')
+            self.git('worktree', 'add', '-b', candidate_branch, str(candidate), head)
+            # Fast-forward when possible; divergent tickets create an ordinary merge commit.
+            self.git('merge', '--no-edit', remote, cwd=candidate)
+            if not integrated:
+                self.git('merge', '--no-edit', run['commit'], cwd=candidate)
+            commit = self.git('rev-parse', 'HEAD', cwd=candidate)
+            check_run = dict(run, worktree=str(candidate))
+            self.command(self.argv('test', check_run), candidate, ident)
+            if self.git('rev-parse', 'HEAD', cwd=candidate) != commit or self.git('status', '--porcelain', cwd=candidate):
+                raise ValueError('Integration checks changed the candidate. Review the retained worktree.')
+            run.update(integration_commit=commit, integration_tested_commit=commit)
+            if self.managed_unfertig():
+                review = self.deployment_review(candidate)
+                run['deployment_review'] = review
+                if review['state'] == 'migration_required':
+                    run.update(phase='migration_required', message=review['message'],
+                               review_main=head, review_remote=remote, review_pr_state=pr['state'])
+                    self.save(ident, run)
+                    return
         # No claim of test evidence for an untested commit. Concurrent board
         # history also invalidates the candidate; retry rebuilds from fresh main.
         latest_pr = self.pr_state(run)
@@ -678,20 +705,70 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
             return
         run.update(published_commit=publish)
         self.save(ident, run)
+        self.launch_deployment(ident, run, integration_lock, 'deploy' if migrate else None)
+
+    def launch_deployment(self, ident, run, integration_lock, host_action=None):
         self.stop_preview(ident)
         receipt = Path(run['worktree']).parent / (run['run_id']+'-deployment.json')
         if receipt.exists():
             receipt.rename(receipt.with_name(receipt.name+'.previous-'+uuid.uuid4().hex))
         run.update(phase='restarting', message='Published; deployment supervisor is restarting the artifact…')
         self.save(ident, run)
-        payload = dict(argv=self.argv('restart', run), cwd=run['repository'], receipt=str(receipt),
-                       commit=commit, timeout=self.options['timeout_seconds'])
+        argv = self.host_argv(host_action, '--review', run['deployment_review']['review_id']) if host_action else self.argv('restart', run)
+        payload = dict(argv=argv, cwd=run['repository'], receipt=str(receipt),
+                       commit=run['deployment_commit'], timeout=self.options['timeout_seconds'])
         # On POSIX the detached supervisor inherits the locked file description,
         # retaining repository-wide exclusion until deployment and its receipt end.
         inherit = dict(pass_fds=(integration_lock.file.fileno(),)) if os.name != 'nt' else {}
         supervisor = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--deploy', json.dumps(payload)],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, **inherit)
         threading.Thread(target=supervisor.wait, daemon=True).start()
+
+    def managed_unfertig(self):
+        argv = self.options['restart']
+        return 'unfertig' in argv and any(Path(arg).name == 'workflow_support.py' for arg in argv)
+
+    def host_argv(self, action, *args):
+        context = Path(self.processing['working_directory'])
+        script = context / 'scripts/managed_deployment.py'
+        if not script.is_file():
+            raise ValueError('Install the host migration contract before approving this migration; see DEPLOYMENT.md.')
+        return ['sh', str(context / 'scripts/run_uv.sh'), str(script), action, *args]
+
+    def host_deployment(self, action, *args):
+        result = subprocess.run(self.host_argv(action, *args), cwd=self.processing['working_directory'],
+                                capture_output=True, text=True, timeout=self.options['timeout_seconds'])
+        if result.returncode:
+            raise ValueError((result.stderr + result.stdout)[-4000:] or 'Host deployment failed.')
+        return json.loads(result.stdout)
+
+    def deployment_review(self, candidate):
+        context = Path(self.processing['working_directory'])
+        if (context / 'scripts/managed_deployment.py').is_file():
+            return self.host_deployment('review', '--candidate', str(candidate))
+        from deployment_preflight import assess
+        review = assess(candidate, context)
+        review.pop('storage_digest', None)
+        if review['state'] == 'migration_required':
+            review['message'] += ' Install the host migration contract, then request a fresh assessment.'
+        return review
+
+    def recover_deployment(self, ident, run, integration_lock):
+        pr = self.pr_state(run)  # Includes closed-unmerged and identity guards.
+        if pr['headRefOid'] != run['commit']:
+            raise Conflict('PR head changed since publication.')
+        branch = self.options['base_branch']
+        self.git('fetch', 'origin', branch)
+        published = run['published_commit']
+        if (self.git('rev-parse', 'refs/remotes/origin/' + branch) != published
+                or self.git('rev-parse', 'HEAD') != published
+                or self.git('status', '--porcelain')):
+            raise Conflict('Recovery needs the exact published commit and a clean target. Review advanced main separately.')
+        if pr['state'] == 'MERGED':
+            self.git('merge-base', '--is-ancestor', (pr.get('mergeCommit') or {})['oid'], published)
+        run['deployment_commit'] = published
+        self.launch_deployment(ident, run, integration_lock,
+                               'recover' if run.get('deployment_review', {}).get('review_id') else None)
 
     def stop_preview(self, ident):
         child = self.previews.pop(ident, None)
