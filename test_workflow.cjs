@@ -166,3 +166,24 @@ test('migration review requires separate confirmation and sends the exact review
   run.phase='restart_failed';run.published_commit=run.deployment_review.candidate_commit;await poll();
   assert.match(slot.innerHTML,/Recover deployment/);
 });
+
+
+test('conflict progress and waiting cause remain visible in pipeline and ticket details',async()=>{
+  let poll;
+  const panel={dataset:{workflow:'T0001'},querySelector:()=>null}, row={innerHTML:''};
+  const result={enabled:true,configured:true,queue_blocked_by:'T0001',runs:{
+    T0001:{phase:'resolving_conflict',message:'Agent resolving merge conflict',conflicted_paths:['versions.py'],branch:'codex/task'},
+    T0002:{phase:'merge_queued',message:'Waiting for T0001: Agent resolving merge conflict',waiting_for:'T0001'}
+  }};
+  const context={document:{querySelectorAll:s=>s==='[data-workflow]'?[panel]:s==='[data-integration-pipeline]'?[row]:[],addEventListener:()=>{}},
+    AbortSignal,token:'token',data:{todos:[{id:'T0001',status:'started'},{id:'T0002',status:'started'}]},compatibility:{},history:{},
+    escapeHTML:s=>s,setInterval:f=>poll=f,setTimeout:()=>{},fetch:async()=>({ok:true,json:async()=>result})};
+  vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
+  await poll();
+  for(const html of [row.innerHTML,panel.innerHTML]){
+    assert.match(html,/Agent resolving merge conflict/);assert.match(html,/versions.py/);
+  }
+  assert.match(row.innerHTML,/Waiting for T0001/);
+  result.runs.T0001.phase='resolution_blocked';result.runs.T0001.message='Blocked — user input required: missing requirements';
+  await poll();assert.match(panel.innerHTML,/Skip & continue queue/);assert.match(row.innerHTML,/missing requirements/);
+});

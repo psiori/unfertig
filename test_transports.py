@@ -395,6 +395,34 @@ class Conformance:
         with self.assertRaises((ValueError,Conflict)):
             self.router.transfer(source,'/api/changes',forged,snapshot.get('token'),expected)
 
+    def test_resolution_evidence_survives_recovery_switch_and_protected_writes(self):
+        source = self.sources[0]
+        for phase in ('resolving_conflict', 'testing_resolution', 'resolution_blocked', 'restart_failed'):
+            snapshot = self.alpha.snapshot(); old = snapshot['data']['todos'][0]
+            claim = dict(phase=phase, run_id='b'*32, system='c'*64,
+                         repository=str(self.alpha.root), worktree=str(self.alpha.root/'candidate'),
+                         branch=f"codex/{old['id'].lower()}-bbbbbbbb", base='d'*40,
+                         message='Retained resolution evidence', conflicted_paths=['versions.py'],
+                         queued_at='2026-09-08T00:00:00Z', action_requests={'original':'scope'},
+                         git_diagnostics=dict(stdout='CONFLICT', stderr='Recorded preimage'),
+                         integration_attempt=dict(main='a'*40, remote='d'*40))
+            self.alpha.mutate(dict(actor='Codex', request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=old['id'], revision=digest(old), record=dict(old, workflow=claim))]), workflow=True)
+            current = self.router.inspect_source(source)
+            record = current['data']['todos'][0]
+            expected = preflight_context(current['context'])
+            request = dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=old['id'], revision=digest(record), record=dict(record, priority='high'))])
+            self.router.transfer(source, '/api/changes', request, current.get('token'), expected)
+            switched = dict(source, transports=dict(http=False, filesystem=True))
+            retry = self.router.transfer(switched, '/api/changes', request, None, expected)
+            self.assertEqual(retry['data']['todos'][0]['workflow'], claim)
+            record = retry['data']['todos'][0]
+            forged = dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=old['id'], revision=digest(record), record=dict(record, workflow=dict(claim, queue_skip=True)))])
+            with self.assertRaises((ValueError, Conflict)):
+                self.router.transfer(switched, '/api/changes', forged, None, expected)
+
     def test_same_and_different_record_revisions(self):
         source = self.sources[0]
         snapshot = self.router.inspect_source(source)
