@@ -114,10 +114,10 @@ class VersionTests(unittest.TestCase):
 
     def test_mixed_supported_versions_and_future_build(self):
         data = json.loads(self.todo.read_text()); data['format_version']='1.0.0'; self.write(self.todo,data)
-        header = json.loads(self.path.read_text()); header['format_version']='1.18.9'; self.write(self.path,header)
+        header = json.loads(self.path.read_text()); header['format_version']='1.19.9'; self.write(self.path,header)
         self.store.initialize()
         self.assertEqual(json.loads(self.todo.read_text())['format_version'],FORMAT_VERSION)
-        self.assertEqual(json.loads(self.path.read_text())['format_version'],'1.18.9')
+        self.assertEqual(json.loads(self.path.read_text())['format_version'],'1.19.9')
         self.assertFalse(self.store.snapshot()['compatibility']['read_only'])
         self.assertTrue(self.store.snapshot()['compatibility']['warnings'])
 
@@ -137,7 +137,7 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.files(),originals)
 
     def test_future_minor_read_only_preserves_mixed_old_bytes(self):
-        data = json.loads(self.todo.read_text()); data['format_version']='1.19.0'; self.write(self.todo,data)
+        data = json.loads(self.todo.read_text()); data['format_version']='1.20.0'; self.write(self.todo,data)
         before = self.files(); self.store.initialize()
         snap = self.store.snapshot()
         self.assertTrue(snap['compatibility']['read_only'])
@@ -146,7 +146,7 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.files(),before)
 
     def test_future_build_edit_preserves_unknown_fields_and_version(self):
-        data = json.loads(self.todo.read_text()); data.update(format_version='1.18.42', extension={'nested':[1,2]})
+        data = json.loads(self.todo.read_text()); data.update(format_version='1.19.42', extension={'nested':[1,2]})
         self.write(self.todo,data); self.store.initialize()
         request = self.edit(name='Changed')
         request['changes'][0]['record'].pop('extension')
@@ -154,7 +154,7 @@ class VersionTests(unittest.TestCase):
         self.store.mutate(request)
         saved = json.loads(self.todo.read_text())
         self.assertEqual(saved['extension'],data['extension'])
-        self.assertEqual(saved['format_version'],'1.18.42')
+        self.assertEqual(saved['format_version'],'1.19.42')
         request = self.edit(format_version='1.1.0')
         with self.assertRaisesRegex(VersionError,'downgrade'): self.store.mutate(request)
 
@@ -165,7 +165,7 @@ class VersionTests(unittest.TestCase):
         result = self.store.mutate(dict(actor='Codex', request_id=uuid.uuid4().hex,
             changes=[dict(collection='todos', id=None, record=todo)]))
         self.assertEqual(result['data']['todos'][-1]['effort'], 'medium')
-        future = dict(result['data']['todos'][0], format_version='1.19.0', effort='future')
+        future = dict(result['data']['todos'][0], format_version='1.20.0', effort='future')
         self.write(self.todo, future)
         before = self.files(); self.store.initialize()
         snapshot = self.store.snapshot()
@@ -218,6 +218,19 @@ class VersionTests(unittest.TestCase):
             self.assertIn(DEFINITIONS['boundary'], text)
         self.assertNotEqual(scope_digest(dict(todo, category='design')), scope_digest(dict(todo, category='implementation')))
 
+    def test_bugfix_migration_preserves_categories_and_blocks_old_writers(self):
+        from categories import CATEGORIES
+        from versions import MIGRATIONS
+        for category in (None, '', *CATEGORIES):
+            original = dict(fixture()['todos'][0], effort='high', extension={'keep': True})
+            if category is not None:
+                original['category'] = category
+            for version in MIGRATIONS:
+                migrated = migrate(dict(original, format_version=version), 'todo')
+                self.assertEqual(semantic(migrated), original)
+                self.assertEqual(migrate(migrated, 'todo'), migrated)
+                self.assertEqual(inspect(migrated, supported='1.18.0')[0], 'read_only')
+
     def test_category_migration_preserves_absence_and_explicit_values(self):
         for category in (None, '', 'research'):
             todo = dict(fixture()['todos'][0], format_version='1.6.0', extension={'keep': True})
@@ -245,7 +258,7 @@ class VersionTests(unittest.TestCase):
     def test_interrupted_migration_recovers_and_retains_receipt_identity(self):
         receipt = dict(request_id='a'*16, fingerprint='existing-fingerprint', assigned=[{'collection':'todos','id':'T0001'}])
         self.write(self.store.receipts/('a'*16+'.json'),receipt)
-        todo = json.loads(self.todo.read_text()); todo.update(format_version='1.6.0', category='debugging'); self.write(self.todo, todo)
+        todo = json.loads(self.todo.read_text()); todo.update(format_version='1.18.0', category='debugging'); self.write(self.todo, todo)
         original_ideas=json.loads(self.path.read_text())['ideas']
         real=storage.atomic
         def interrupted(path,raw):
