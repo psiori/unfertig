@@ -12,7 +12,7 @@ A registered submodule defaults to its superproject's `state/unfertig/config/con
 
 ## Processing ideas is planning only
 
-1. Read the latest ideas in `BOARD/data.json` and todos in `BOARD/todos/*.json` (or the assembled API snapshot). In ordinary boards an idea is pending when no local todo references its ID in `source_ideas`. Aggregator inboxes instead use the routing section below.
+1. Copied processing briefings cover all ideas still pending at execution time, including ideas saved after copying; UI filters do not restrict this scope. Read the latest ideas in `BOARD/data.json` and todos in `BOARD/todos/*.json` (or the assembled API snapshot). In ordinary boards an idea is pending when no local todo references its ID in `source_ideas`. Aggregator inboxes instead use the routing section below. If nothing is pending, report "Nothing to process" and make no changes.
 2. Preserve the idea's `id`, `text`, `author`, and `date_entered` exactly.
 3. Check existing todos for overlap. Link a matching todo to the additional source idea rather than duplicating work when it already captures the intent. Do not silently reopen closed work; identify follow-up work separately when needed.
 4. Usually create one todo per idea. Split only into independently implementable, verifiable steps. Several ideas can support one todo.
@@ -20,7 +20,9 @@ A registered submodule defaults to its superproject's `state/unfertig/config/con
 6. Keep original requester attribution in `author`. If several ideas have different authors, use the primary requester and note other contributors in the description. Record your actual agent identity (e.g. Codex, Claude, Cursor) in `created_by`.
 7. Default to `normal` priority unless the user specified urgency. Reuse groups/tags when appropriate; new values are allowed. Leave `group` empty when uncertain.
 8. New todos start `open`, with empty closure and implementation-reference fields. Link every source idea ID. This link is the processed marker on ordinary boards. Aggregator inboxes use the confirmed routing receipt described below.
-9. Save using the procedure below and report the created/updated IDs. **Do not implement anything during processing.** Re-running should not create duplicates.
+9. Re-read live ideas and todos before saving. If another processor already linked a source, reload and reassess pending work; never use `allow_shared_sources` to bypass a processing race. Retry an uncertain save with the identical body and request ID. Save using the procedure below and report the created/updated IDs. **Do not implement anything during processing.** Re-running should not create duplicates.
+
+The **Copy all-pending briefing** control references the authoritative board and this procedure, without embedding idea bodies or a pending-ID snapshot. Idea rows offer manual creation only. Button-launched Codex jobs have a separate bounded allowlist (see Button-launched processing); copying a briefing does not launch a job or change that automatic-processing boundary.
 
 ## Maintenance work alongside board workflows
 
