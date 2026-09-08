@@ -417,9 +417,10 @@ action immediately; activity remains batched into the existing heartbeats.
 ## Implementation workflow
 
 Use **Implement with Codex → optional Test branch → Merge & restart**.
-After implementation, collapsed rows show only **Preview** as the next workflow
-action. Successful Preview advances that action to **Merge & restart**. Unfold
-the row to choose direct merge without Preview; expanded controls retain both choices.
+After implementation, collapsed rows show **Merge & restart** as the next workflow
+action, including after an optional Preview failure. Unfold the row for
+**Preview (optional)** after the merge control. Running and recovery actions retain
+their existing meanings; direct merge never invents Preview verification.
 Implementation runs in a `codex/…` branch in a locally excluded
 `.worktrees/unfertig/` checkout. It receives the host's instructions, design,
 developer rules, saved context and original ideas. It uses the configured Codex
@@ -725,3 +726,45 @@ Keep the input suffix list current if runtime assets in new languages or
 subdirectories are introduced. This identifier is independent of persisted
 `format_version`, API `protocol_version`, and board-content revisions. No board
 records or configuration are changed to display it.
+
+## Merge all PRs & restart
+
+The owner-local control beside **Push all commits** reviews every saved, finished
+implementation on this board, independent of list filters. Review shows each
+todo, repository, branch, PR and exact commit, including unchanged repositories
+in a UM run. Only ready/tested/test-failed implementations with unchanged scope,
+clean worktrees and open, ready PRs at their verified implementation heads qualify.
+Foreign, closed, superseded, queued, active, stale and incomplete attempts are
+excluded with reasons. Already merged PRs and delivery failures require the
+individual reconciliation/recovery controls. Unsaved todo/priority drafts are
+excluded in the browser. An empty review queues nothing.
+
+Confirming the concrete batch authorizes the same integration actions as each
+individual **Merge & restart**: changed children before wrapper pins, exact
+combined-candidate tests, publication and configured restart. It is a serialized
+queue of independent actions, not an atomic merge or one guaranteed restart.
+Existing migration preflight, conflict resolution, queue pause, skip and recovery
+contracts remain in force. A blocked queue can accept later entries, which remain
+visibly waiting for its blocker.
+
+GET `/api/workflow/merge-review` returns `repository`, `board`, `entries` (each
+with `id`, `name`, reviewed `repositories` and an ordinary merge `action`),
+`excluded` and `queue_blocked_by`. This read-only owner operation checks current
+PRs; it never authorizes integration. Token-protected PUT
+`/api/workflow/merge-batch` takes the exact `repository`, `board`, and `entries`
+array of those actions. It rechecks each entry, then calls the supported workflow
+action implementation. Results contain per-entry `accepted`, `rejected`, or
+`unknown` outcomes and current `workflow` status. Acceptance confirms queue
+submission only; inspect the pipeline for actual integration/deployment evidence.
+No action accepts a `tested_commit` claim as proof of Preview.
+
+Accepted entries and their request fingerprints are saved before dispatch.
+Repeated clicks exclude queued entries. After a lost response, the tab retains
+the exact batch in sessionStorage across reloads: **Retry reviewed merge batch**
+checks the same request IDs and bodies, including already accepted entries.
+Never substitute refreshed revisions into that decision. A definitive rejection
+requires a new review; partial acceptance remains in the durable queue across
+service restarts. If browser session storage is lost, inspect the pipeline before
+reviewing again; existing queued/active stages cannot be enqueued a second time.
+Aggregators cannot enqueue source work through either transport; use its owning
+instance. No board format change is introduced.

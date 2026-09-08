@@ -516,8 +516,9 @@ keep the whole workflow disabled. Restart after changing configuration.
 
 After implementation and its required checks complete, the user may explicitly
 choose Merge & restart directly or first run the optional Test branch / Preview
-step. Collapsed rows show only Preview after implementation, then Merge & restart
-after Preview succeeds. Expand the row to skip Preview and merge directly.
+step. Collapsed rows show Merge & restart after implementation, including after an
+optional Preview failure. Preview is available only in expanded details, after
+the merge action. This supersedes the earlier Preview-first collapsed row.
 Merge confirms the exact selected commit. Only a matching successful preview
 gets a test-status notice; untested commits have no notice or reserved space.
 Merging never supplies `tested_commit`. All other eligibility and recovery guards remain.
@@ -616,3 +617,19 @@ and submit corrected evidence as a new reconciliation entry. Reopening preserves
 this history and does not revive a superseded worker: use a follow-up todo for new
 implementation. Never hand-edit workflow claims, delete receipts, remerge or deploy
 merely to reconcile external work. Managed workers still hand off to the owner.
+
+## Owner-local bulk integration review
+
+**Merge all PRs & restart** reviews all currently eligible finished todos from
+the owner board, independently of UI filters. Confirm the concrete per-repository
+commits and PRs returned by `/api/workflow/merge-review`; submit its exact actions
+to token-protected `/api/workflow/merge-batch`. This is equivalent to separate
+Merge & restart actions, with per-entry rejection and durable receipts. It never
+merges every open PR, substitutes changed heads, fabricates Preview evidence or
+bypasses handoff, combined tests, migration preflight or queue recovery.
+
+Retain the same actions/request IDs after an uncertain response or restart.
+Accepted entries stay queued; rejected or stale entries require fresh review.
+Delivery failures and already merged PRs use the existing individual recovery
+controls, and pause/skip semantics remain owned by the integration coordinator.
+No worker may use these endpoints without separate explicit merge authorization.

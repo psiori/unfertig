@@ -442,7 +442,7 @@ class Workflow:
                     continue
                 self.launch(todo, run, run['queued_action'])
 
-    def start(self, body, automatic=False):
+    def start(self, body, automatic=False, *, dispatch=True):
         with self.lock:
             if not self.options['enabled']:
                 raise ValueError('Implementation workflow is disabled in configuration.')
@@ -585,7 +585,8 @@ class Workflow:
                        message='Queued for integration; draining active jobs.' if action in ('merge', 'migrate', 'recover') else 'Queued for an available worker.')
             run.pop('queue_skip', None)
             self.save(ident, run, status='started')
-            self.dispatch()
+            if dispatch:
+                self.dispatch()
             return self.status()
 
     def command(self, argv, cwd, ident, stdin=None, timeout=None, purpose='worker'):
