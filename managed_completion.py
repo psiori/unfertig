@@ -34,6 +34,8 @@ def read_report(run):
 
 
 def validate(run):
+    from context_workflow import validate as validate_context
+    validate_context(run)
     for key in ('implementation', 'publication', 'verification', 'approval'):
         if key in run:
             value = run[key]

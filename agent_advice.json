@@ -28,5 +28,10 @@
     "Preserve original branches, failed candidates and diagnostics. Never force push, blindly accept a merge side, reset unrelated work, or edit board records. Recheck main and GitHub before publication; changed code requires fresh combined verification.",
     "For parallel persistence features, retain every migration function and default in one sequential registry. Current main owns already published version assignments. Assign unpublished competing successors sequentially after main, preserving every feature, original and extension. Reject duplicate registry keys and test upgrades from all supported earlier releases. Do not weaken or duplicate the migration engine or compatibility/recovery checks.",
     "Supported migrations run automatically during the authorized restart. Rehearse them programmatically before publication and verify deployment separately. An older healthy process does not prove candidate deployment. Normal migration must never invoke an LLM or require Codex availability."
+  ],
+  "context_managed": [
+    "The UM repository is the task context. Use its assigned isolated worktree for task-related design, concepts, decisions, evidence and notes. Use the explicit repository mapping for declared child worktrees; do not infer paths from containment.",
+    "Each available repository has its own assigned branch and Git identity. Commit meaningful work in its owner. The coordinator publishes checkpoints and creates PRs only for repositories with changes; no empty code PR is required for context-only work.",
+    "Do not modify original checkouts, live board records, runtime state or UM child gitlinks. The coordinator integrates children first, updates pins after verified publication, and records partial results. Worker reports cannot expand repository scope or publication authorization."
   ]
 }
