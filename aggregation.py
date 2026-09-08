@@ -99,6 +99,7 @@ class Aggregation:
         self.discovery_reports = []
         self.discovery_inflight = False
         self.next_discovery = 0
+        self.claimed_sources = {}
         if store.context.get('search_paths'):
             store.context['explicit_sources'] = copy.deepcopy(self.explicit_sources)
             # Keep saved selections/claims visible even when their config vanished
@@ -106,6 +107,10 @@ class Aggregation:
             for idea in store.read()[0]['ideas']:
                 route = idea.get('routing', {})
                 key = route.get('project_id') or idea.get('selected_project')
+                if route.get('request') and route.get('preflight'):
+                    preflight = route['preflight']
+                    self.claimed_sources[key] = dict(project_id=key, data=preflight['data'],
+                                                    app_root=str(Path(preflight['process']).parent))
                 if key and key not in self.entries:
                     self.entries[key] = dict(project_id=key, name=key, url='', data=None,
                         checked_at=None, status='removed', error='Saved destination is not currently discovered.',
@@ -117,6 +122,8 @@ class Aggregation:
         try:
             with self.lock:
                 sources, reports = discover(self.store.context, self.explicit_sources)
+                names = {s['project_id']: source_repository_name(s) for s in sources or []
+                         if s['project_id'] not in self.entries}
                 with self.store.lock, self.view_lock:
                     self.discovery_reports = reports
                     known = {s['project_id']: s for s in self.sources}
@@ -124,11 +131,13 @@ class Aggregation:
                     if sources is not None:
                         for source in sources:
                             key = source['project_id']
-                            if key not in self.entries and len(self.entries) >= 200:
+                            if len(set(self.entries) | set(accepted) | {key}) > 200 and key not in self.entries:
                                 reports.append(dict(status='invalid', error='200 retained source identities reached; restart after reviewing retained destinations.'))
                                 continue
                             prior = next((s for s in known.values() if s['project_id'] == key or s['data'] == source['data']), None)
-                            if prior and not compatible(prior, source):
+                            claimed = next((s for s in self.claimed_sources.values() if s['project_id'] == key or s['data'] == source['data']), None)
+                            if ((prior and not compatible(prior, source)) or
+                                    (claimed and not compatible(claimed, source))):
                                 reports.append(dict(status='invalid', config=source.get('config', ''),
                                                     error=f'Identity/metadata changed for {key}; retained destination cannot be replaced.'))
                                 continue
@@ -140,7 +149,7 @@ class Aggregation:
                             self.entries[key] = dict(entry, status='removed', error=self.blocked_sources[key])
                     for key, source in accepted.items():
                         if key not in self.entries:
-                            self.entries[key] = dict(project_id=key, name=source_repository_name(source),
+                            self.entries[key] = dict(project_id=key, name=names[key],
                                 url=source.get('url', ''), data=None, checked_at=None, status='checking',
                                 error='', transport=None, fallback_reason='')
                         if key in self.blocked_sources:
@@ -182,6 +191,10 @@ class Aggregation:
             raise ValueError(f'Filesystem blocked: {error}' + (f' (fallback: {reason})' if reason else '')) from error
 
     def source_record(self, body):
+        with self.lock:
+            return self._source_record(body)
+
+    def _source_record(self, body):
         source = next((s for s in self.sources if s['project_id'] == body.get('project_id')), None)
         if source is None:
             raise ValueError('Unknown source project.')
@@ -321,9 +334,11 @@ class Aggregation:
                 idea = self.save_route(idea, dict(status='unclear', reason='Unclear: select one project or infer a single destination from the idea text.'), actor)
                 return dict(idea=idea)
             source = next((s for s in self.sources if s['project_id'] == project), None)
-            if source is None:
+            if source is None and not state.get('request'):
                 raise ValueError('Destination is not configured.')
             try:
+                if source is None:
+                    raise ValueError('Claimed destination is removed or unavailable; restore its source config and retry the retained request.')
                 snapshot = self.inspect_source(source)
                 context = snapshot['context']
                 expected = preflight_context(context)

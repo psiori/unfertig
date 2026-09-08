@@ -41,11 +41,14 @@ class Conformance:
     test_duplicate_provenance = fixtures.AggregationTests.test_duplicate_source_provenance_rejected_with_new_request_id
     test_inbox_history_recovery = fixtures.AggregationTests.test_local_history_failure_after_destination_save
 
-    def discovered_router(self):
+    def discovered_router(self, omit_beta=False):
         for source, board in zip(self.sources, self.boards[1:]):
             config = json.loads(board.config.read_text())
             config['aggregation_source'] = dict(app_root='.', url=source['url'])
             board.config.write_text(json.dumps(config))
+        if omit_beta:
+            self.hidden_beta = self.beta.config.read_bytes()
+            self.beta.config.unlink()
         self.inbox.context.update(sources=[], search_paths=[str(self.root / '*/config.json')],
                                   transports=self.enabled)
         self.router = Aggregation(self.inbox)
@@ -77,6 +80,19 @@ class Conformance:
         restarted = Aggregation(self.inbox)
         self.assertEqual(restarted.entries['alpha']['status'], 'removed')
         self.assertIsNone(restarted.entries['alpha']['data'])
+        retried = restarted.route(self.request())['idea']['routing']
+        self.assertEqual(retried['request'], blocked['request'])
+        self.assertIn('removed', retried['reason'])
+        # A newly configured board cannot steal a durable claim's project ID.
+        replacement = json.loads(config)
+        replacement['data'] = str(self.beta.path)
+        replacement_path = self.beta.root / 'replacement.json'
+        replacement_path.write_text(json.dumps(replacement))
+        self.inbox.context['search_paths'] = [str(replacement_path)]
+        replaced = Aggregation(self.inbox)
+        self.assertEqual(replaced.entries['alpha']['status'], 'removed')
+        self.assertTrue(any('changed' in r['error'] for r in replaced.discovery_reports))
+        self.inbox.context['search_paths'] = [str(self.root / '*/config.json')]
         self.alpha.config.write_bytes(config)
         router.refresh_discovery()
         self.assertEqual(router.route(self.request())['idea']['routing']['status'], 'routed')
@@ -132,12 +148,19 @@ class Conformance:
         self.assertIsNotNone(router.entries['alpha']['data'])
 
     def test_discovery_added_sources_selection_and_changed_identity_block(self):
-        router = self.discovered_router()
-        config = self.beta.config.read_bytes()
-        self.beta.config.unlink(); router.refresh_discovery()
-        self.assertEqual(router.entries['beta']['status'], 'removed')
-        self.beta.config.write_bytes(config); router.refresh_discovery()
-        request = self.request('beta')
+        router = self.discovered_router(omit_beta=True)
+        config = self.hidden_beta
+        self.assertNotIn('beta', router.entries)
+        self.beta.config.write_bytes(config)
+        router.next_discovery = 0
+        completed = threading.Event()
+        original = router.refresh_discovery
+        def refreshed():
+            original(); completed.set()
+        with patch.object(router, 'refresh_discovery', side_effect=refreshed):
+            router.view()
+            self.assertTrue(completed.wait(3))
+        self.assertIn('beta', router.entries)
         idea = self.inbox.read()[0]['ideas'][0]
         self.inbox.mutate(dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
             collection='ideas', id=idea['id'], revision=digest(idea), record=dict(idea, selected_project='beta'))]))
