@@ -42,3 +42,11 @@ test('completion summaries and exact preflight locations appear in both handoffs
   assert.match(app,/escapeHTML\(todo.completion_summary/);
   assert.match(fs.readFileSync(__dirname+'/aggregation.js','utf8'),/escapeHTML\(t.completion_summary/);
 });
+
+test('saved completion text is rendered safely in the task editor',()=>{
+  const c=setup(); Object.assign(c,{expanded:new Set(),todoSummary:()=>'',field:()=>'',options:()=>''});
+  vm.runInContext(app.slice(app.indexOf('function todoCard('),app.indexOf('function renderTodos(')),c);
+  const html=c.todoCard({id:'T0018',status:'closed',tags:[],source_ideas:[],completion_summary:'Verified <script> outcome',description:'Requirements remain separate'});
+  assert.match(html,/name="completion_summary"[^>]*>Verified &lt;script> outcome<\/textarea>/);
+  assert.match(html,/name="description"[^>]*>Requirements remain separate<\/textarea>/);
+});

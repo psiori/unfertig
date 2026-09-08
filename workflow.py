@@ -535,11 +535,13 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                 commit = self.git('rev-parse', 'HEAD', cwd=run['worktree'])
                 if not isinstance(report, dict) or report.get('status') != 'complete' or report.get('commit') != commit or not isinstance(report.get('summary'), str) or not all(isinstance(report.get(k), list) and all(isinstance(v, str) for v in report[k]) for k in ('tests', 'limitations')):
                     raise ValueError('Completion report does not match HEAD or the required result fields.')
-                if commit == run.get('kickoff_commit', run['base']) or self.git('status', '--porcelain', cwd=run['worktree']):
-                    raise ValueError('Implementation needs attention: no new commit or uncommitted changes remain.')
                 run['completion_summary'] = report['summary'].strip() + '\n\nVerification: ' + ('; '.join(report['tests']) or 'No worker checks reported') + '\nLimitations: ' + ('; '.join(report['limitations']) or 'None reported')
                 if not report['summary'].strip():
                     raise ValueError('Completion summary must describe the outcome.')
+                if self.git('status', '--porcelain', cwd=run['worktree']):
+                    raise ValueError('Implementation needs attention: uncommitted changes remain.')
+                if commit == run.get('kickoff_commit', run['base']):
+                    raise ValueError('No implementation changes reported. Coordinator review required; retain the assigned branch/PR and findings. Do not create an empty implementation commit.')
                 run['commit'] = commit
                 self.command(self.argv('test', run), run['worktree'], ident)
                 if self.git('rev-parse', 'HEAD', cwd=run['worktree']) != commit or self.git('status', '--porcelain', cwd=run['worktree']):

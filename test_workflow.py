@@ -41,7 +41,7 @@ class WorkflowTests(unittest.TestCase):
         subprocess.run(['git','-C',str(board),'add','.'],check=True)
         subprocess.run(['git','-C',str(board),'commit','-qm','Board baseline'],check=True)
         self.store=BoardStore(board/'data.json',validate)
-        self.store.context={'process':str(self.repo/'PROCESS.md')}
+        self.store.context={'process':str(self.repo/'PROCESS.md'), 'todos':str(board/'todos'), 'data':str(board/'data.json'), 'repository':str(self.repo)}
         self.store.acquire();self.addCleanup(self.store.close);self.store.initialize()
         executable=self.root/'codex'
         executable.write_text('#!'+sys.executable+'\nimport pathlib,subprocess,sys\nsys.stdin.read()\npathlib.Path("result").write_text("implemented")\nsubprocess.run(["git","add","result"],check=True)\nsubprocess.run(["git","commit","-qm","Implement test task"],check=True)\nimport json\nhead=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()\npathlib.Path(sys.argv[sys.argv.index("-o")+1]).write_text(json.dumps(dict(status="complete",commit=head,summary="Done",tests=["fake agent"],limitations=[]))+"\\nUNFERTIG_IMPLEMENTATION_COMPLETE")\nprint("Implementation complete",flush=True)\n')
@@ -104,6 +104,18 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse','HEAD'),todo['workflow']['tested_commit'])
         self.assertEqual(self.git('ls-remote','origin','refs/heads/main').split()[0],todo['commit_hash'])
         self.assertEqual((self.repo/'result').read_text(),'implemented')
+
+    def test_no_change_report_retains_findings_without_empty_implementation_commit(self):
+        executable = Path(self.processing['executable'])
+        executable.write_text(executable.read_text().replace('pathlib.Path("result").write_text("implemented")', 'pass').replace('subprocess.run(["git","add","result"],check=True)', 'pass').replace('subprocess.run(["git","commit","-qm","Implement test task"],check=True)', 'pass'))
+        todo = self.run_stage('implement')
+        run = todo['workflow']
+        self.assertEqual(run['phase'], 'implementation_failed')
+        self.assertIn('No implementation changes', run['message'])
+        self.assertIn('Done', run['completion_summary'])
+        self.assertEqual(self.git('rev-parse', run['branch']), run['kickoff_commit'])
+        self.assertEqual(todo['commit_hash'], '')
+        self.assertNotEqual(todo['status'], 'closed')
 
     def test_stale_revision_duplicate_claim_and_forgery_blocked(self):
         with self.assertRaises(Conflict): self.workflow.start(dict(id='T0001',action='implement',revision='stale'))
@@ -239,7 +251,7 @@ class WorkflowTests(unittest.TestCase):
         (board/'data.json').write_text(json.dumps(fixture()))
         (self.repo/'.gitignore').write_text('.server.lock\n.service.lock\n.operation.lock\n.receipts/\n.history-pending.json\n.transaction.json\n')
         self.git('add','.');self.git('commit','-qm','Embedded board');self.git('push','-q','origin','main')
-        self.store=BoardStore(board/'data.json',validate);self.store.context={'process':str(self.repo/'PROCESS.md')}
+        self.store=BoardStore(board/'data.json',validate);self.store.context={'process':str(self.repo/'PROCESS.md'), 'todos':str(board/'todos'), 'data':str(board/'data.json'), 'repository':str(self.repo)}
         self.store.acquire();self.addCleanup(self.store.close);self.store.initialize()
         self.workflow=Workflow(self.store,self.workflow.url,self.options,self.processing);self.addCleanup(self.workflow.close)
         self.run_stage('implement');self.run_stage('test');todo=self.run_stage('merge')
@@ -451,7 +463,7 @@ class WorkflowTests(unittest.TestCase):
             self.store.mutate(dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(collection='todos', id=first['id'], revision=snap['revisions']['todos'][first['id']], record=dict(first, depends_on=[second]))]))
         with self.assertRaisesRegex(ValueError, 'Unknown'):
             self.add_ticket(depends_on=['T9999'])
-        self.store.mutate(dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(collection='todos', id=first['id'], revision=snap['revisions']['todos'][first['id']], record=dict(first, status='closed', commit_hash=self.git('rev-parse','origin/main'), closed_by='Test', date_closed=datetime.now(timezone.utc).isoformat()))]))
+        self.store.mutate(dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(collection='todos', id=first['id'], revision=snap['revisions']['todos'][first['id']], record=dict(first, completion_summary='Verified prerequisite on origin/main; no further work required.', status='closed', commit_hash=self.git('rev-parse','origin/main'), closed_by='Test', date_closed=datetime.now(timezone.utc).isoformat()))]))
         self.workflow.dispatch(); self.await_workers()
         self.assertEqual(self.workflow.status()['runs'][second]['phase'], 'ready')
 

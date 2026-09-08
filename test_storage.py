@@ -66,6 +66,20 @@ class RecordTests(unittest.TestCase):
             self.store.mutate(self.edit(**closure))
         self.store.mutate(self.edit(**closure, completion_summary='Rechecked the outcome; tests passed; no follow-up.'))
 
+    def test_new_closed_record_and_invalid_summary(self):
+        record = copy.deepcopy(self.original['todos'][0])
+        record.pop('id')
+        record.update(source_ideas=[], status='closed', closed_by='Test', date_closed=STAMP)
+        request = dict(actor='Test', request_id=uuid.uuid4().hex,
+                       changes=[dict(collection='todos', id=None, record=record)])
+        for invalid in (None, 42, [], '  '):
+            record['completion_summary'] = invalid
+            with self.assertRaisesRegex(ValueError, 'Completion summary'):
+                self.store.mutate(request)
+        record['completion_summary'] = 'Already implemented; inspected requirements and tests; no follow-up.'
+        saved = self.store.mutate(request)['data']['todos'][-1]
+        self.assertEqual(saved['completion_summary'], record['completion_summary'])
+
     def test_legacy_closed_summary_absence_is_not_fabricated(self):
         old = copy.deepcopy(self.original)
         old['todos'][0].update(status='closed', closed_by='Original', date_closed=STAMP)
@@ -247,7 +261,7 @@ class GitTests(RecordTests):
         self.assertEqual(set(files), {'nested/data.json', 'nested/data.v1-backup.json', 'nested/todos/T0001.json'})
 
     def test_closed_status_committed(self):
-        self.store.mutate(self.edit(status='closed', closed_by='Human', date_closed=STAMP))
+        self.store.mutate(self.edit(status='closed', closed_by='Human', date_closed=STAMP, completion_summary='Verified the completed task; no follow-up required.'))
         saved=json.loads(self.git('show', 'HEAD:todos/T0001.json'))
         self.assertEqual(saved['status'], 'closed')
 
