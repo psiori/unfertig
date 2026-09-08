@@ -60,7 +60,7 @@ test('collapsed row follows workflow stages and respects execution guards',async
   const events={}; let poll, draft=false;
   let result={enabled:true,runs:{},configured:true,busy:false};
   const slot={hidden:true,innerHTML:'',dataset:{workflowNext:'T0001'}};
-  const context={document:{querySelectorAll:s=>s==='[data-workflow-next]'?[slot]:[],addEventListener:(name,fn)=>events[name]=fn},
+  const context={document:{querySelector:()=>draft?{}:null,querySelectorAll:s=>s==='[data-workflow-next]'?[slot]:[],addEventListener:(name,fn)=>events[name]=fn},
     AbortSignal,token:'token',data:{todos:[{id:'T0001',status:'open'}]},compatibility:{read_only:false},history:{pending:false},
     hasDraft:()=>draft,escapeHTML:s=>s,setInterval:fn=>poll=fn,setTimeout:()=>{},
     fetch:async()=>({ok:true,json:async()=>result})};
@@ -73,7 +73,7 @@ test('collapsed row follows workflow stages and respects execution guards',async
   }
   draft=true; events.input(); assert.match(slot.innerHTML,/ disabled/);
   draft=false; events.change(); assert.doesNotMatch(slot.innerHTML,/ disabled/);
-  for(const [object,key,value] of [[result,'busy',true],[result,'configured',false],[context.compatibility,'read_only',true],[context.history,'pending',true]]) {
+  for(const [object,key,value] of [[result,'configured',false],[result,'configured',false],[context.compatibility,'read_only',true],[context.history,'pending',true]]) {
     const previous=object[key];object[key]=value;await poll();assert.match(slot.innerHTML,/ disabled/);object[key]=previous;
   }
   for(const [phase,label] of [['implementing','Implementing…'],['testing','Preparing preview…'],['merging','Merging…'],['restarting','Restarting…']]) {
@@ -127,4 +127,19 @@ test('collapsed next action and expanded optional preview retain confirmed direc
   assert.doesNotMatch(slot.innerHTML,/This commit/);
   assert.equal(submitted.tested_commit,undefined);
   result.runs.T0001.tested_commit='b'.repeat(40);await poll();assert.doesNotMatch(panel.innerHTML,/This commit|<p class="muted"><\/p>/);
+});
+
+test('parallel activity leaves another ticket actionable and pipeline links each PR',async()=>{
+  let poll;const events={};
+  const slot={dataset:{workflowNext:'T0002'}},row={};
+  const result={enabled:true,configured:true,busy:true,active_count:1,max_workers:2,runs:{T0001:{phase:'implementing',active:true,pr_url:'https://github.com/test/code/pull/1'}}};
+  const context={document:{querySelectorAll:s=>s==='[data-workflow-next]'?[slot]:s==='[data-integration-pipeline]'?[row]:[],addEventListener:(n,f)=>events[n]=f},
+    AbortSignal,token:'token',data:{todos:[{id:'T0001',status:'started'},{id:'T0002',status:'open'}]},compatibility:{read_only:false},history:{pending:false},hasDraft:()=>false,
+    escapeHTML:s=>s,setInterval:f=>poll=f,setTimeout:()=>{},fetch:async()=>({ok:true,json:async()=>result})};
+  vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
+  await poll();assert.doesNotMatch(slot.innerHTML,/ disabled/);
+  assert.match(row.innerHTML,/1\/2 workers/);assert.match(row.innerHTML,/github.com\/test\/code\/pull\/1/);
+  result.runs.T0002={phase:'merge_queued',queued_at:'2026-09-08T00:00:00Z'};result.draining=true;
+  await poll();assert.match(slot.innerHTML,/Queued for integration/);assert.match(row.innerHTML,/Draining/);
+  result.enabled=false;await poll();assert.equal(row.hidden,true);
 });

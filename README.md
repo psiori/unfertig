@@ -397,8 +397,9 @@ never in the live board. Stopping the board stops previews. Merge confirms the
 exact selected commit. A successful Test branch / Preview is shown only when
 it matches that commit; no notice or message space is shown for an untested commit. It
 fast-forwards a clean checkout on the configured base, pushes without force,
-then runs the configured artifact restart. Concurrent main
-changes require reconciliation and retesting. A detached supervisor retains
+then runs the configured artifact restart. A serialized integration candidate
+combines current main and the ticket, with mandatory checks of the combined commit.
+Main or PR changes during validation invalidate that attempt and require retry. A detached supervisor retains
 restart results even when Unfertig itself restarts. Failed pushes/restarts and
 interrupted stages remain visible for explicit retries. Worktrees are retained.
 
@@ -417,6 +418,10 @@ without a shell. Named placeholders are `{worktree}`, `{repository}`, `{context}
 "workflow": {
   "enabled": false,
   "automatic": false,
+  "max_workers": 2,
+  "automatic_merge": false,
+  "automatic_publish": false,
+  "automatic_deploy": false,
   "automatic_since": "2026-09-07T00:00:00+00:00",
   "repository": "../../../unfertig",
   "base_branch": "main",
@@ -454,16 +459,48 @@ must have this system's capture provenance. Legacy, standalone, foreign-system
 and existing backlog todos remain manual. Aggregators never implement; open the
 source's owner link. Claims prevent automatic retries across restarts or sync.
 Explicit Retry implementation uses the retained branch. Task-scope changes
-require reviewing and reconciling that branch. Preview and merge remain manual.
+require reviewing and reconciling that branch. Preview remains manual. Unattended
+Merge & restart requires all three explicit grants described below.
 
 These are CLI runs with output in Unfertig. A shared live Codex desktop session
 has not been demonstrated. See [Codex session interoperability](CODEX_SESSIONS.md)
 for the checked interfaces, reproduction procedure, and sequential handoff.
 
-When a context repository also owns its board, its progress commits necessarily
-advance main. The merge accepts those board-file-only changes if the tested
-branch did not modify board files; any other main change blocks. It preserves
-board history with a merge commit rather than losing it in a fast-forward.
+Parallel execution defaults to two workers (`max_workers`, range 1–8), with a
+durable queue for additional tickets. Dependencies can be entered as ticket IDs
+in the expanded editor; dependent work waits until prerequisites are published
+(or closed unmanaged work whose commit is on origin/main). Cycles and unknown dependencies are rejected.
+
+GitHub CLI `gh` must be installed and authenticated for the code repository.
+Before an agent starts, Unfertig pushes its branch and creates a draft
+`[WIP] [unfertig]` PR. An empty kickoff commit establishes the PR but cannot count
+as implementation. The PR appears in the ticket and the integration pipeline
+below the todo list. Workers push coherent commits early; Unfertig also pushes
+observed HEAD changes every two seconds and at worker exit. A publication/PR
+failure blocks launch; retries recover the existing PR rather than creating two.
+
+Integration always checks GitHub first and again before publication. If the PR
+was already merged, including squash or rebase merging, it verifies the GitHub
+merge commit belongs to origin/main and reconciles that result without reapplying
+the original ticket branch. Closed unmerged PRs and changed heads need attention.
+The original branch is never rebased or force-pushed. Failed candidates remain
+available for explicit repair and retry; branch protection is never bypassed.
+
+The pipeline row shows Working → Ready → Integration queue → Integrating →
+Deploying → Done, plus Needs attention, with individual PR links. Integration
+serializes by repository and drains running workers before deployment can restart
+the service. Queued work survives restarts; running interrupted jobs require retry.
+When code and board share a repository, candidate checks include board history
+present at candidate creation; further main changes invalidate the attempt.
+
+Automatic kickoff does not authorize main publication. `automatic_merge`,
+`automatic_publish` and `automatic_deploy` each default false; all three must
+be explicitly true to enable unattended Merge & restart. Partial grants leave
+that combined action manual. Migration never turns any of these permissions on.
+
+The canonical implementation advice is [agent_advice.json](agent_advice.json),
+loaded by both the browser briefings and managed worker prompts. See
+[PROCESS.md](PROCESS.md#implementing-a-todo) for authorization, closure and recovery.
 
 Work categories describe the kind of deliverable independently of Group and
 Status. Choose one in the new-todo or expanded editor; Unclassified is the safe
@@ -472,3 +509,7 @@ included in human and AI handoffs. Search includes the selected category. See
 [PROCESS.md](PROCESS.md#work-categories-format-17) and the canonical
 [categories.json](categories.json). Format 1.7 requires an explicit supported
 migration before rollout; see [VERSIONING.md](VERSIONING.md).
+
+After implementation checks pass, Unfertig updates the PR description with the
+result and verification, removes [WIP] from its title, and marks the draft ready
+for review. It remains unmerged until the integration action is authorized.

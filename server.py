@@ -81,7 +81,16 @@ def validate(data, previous=None):
                 require(bool(re.fullmatch(r'[a-f0-9]{64}', run['system'])), 'Invalid workflow system.')
                 require(run['branch'] == f"codex/{ident.lower()}-{run['run_id'][:8]}", 'Invalid workflow branch.')
                 require(bool(re.fullmatch(r'[a-f0-9]{40,64}', run['base'])), 'Invalid workflow base.')
-                require(run['phase'] in {'implementing','ready','testing','tested','merging','restarting','done','implementation_failed','test_failed','merge_failed','push_failed','restart_failed'}, 'Invalid workflow phase.')
+                require(run['phase'] in {'queued','merge_queued','implementing','ready','testing','tested','merging','restarting','done','implementation_failed','test_failed','merge_failed','push_failed','restart_failed'}, 'Invalid workflow phase.')
+                if run['phase'] in ('queued', 'merge_queued'):
+                    require(run.get('queued_action') in ('implement', 'retry', 'test', 'merge'), 'Invalid queued action.')
+                    require((run['phase'] == 'merge_queued') == (run['queued_action'] == 'merge'), 'Invalid queue phase.')
+                    timestamp(run.get('queued_at'), 'workflow.queued_at')
+                if 'action_requests' in run:
+                    require(isinstance(run['action_requests'], dict) and all(isinstance(k, str) and isinstance(v, str) for k,v in run['action_requests'].items()), 'Invalid action receipts.')
+                for key in ('integration_commit', 'integration_tested_commit', 'deployment_commit', 'published_commit'):
+                    if key in run:
+                        require(isinstance(run[key], str) and bool(re.fullmatch(r'[a-f0-9]{40,64}', run[key])), 'Invalid workflow '+key)
                 if run.get('preview_url'):
                     preview = urlsplit(run['preview_url'])
                     require(preview.scheme == 'http' and preview.hostname in ('localhost','127.0.0.1') and not preview.username and not preview.password, 'Invalid workflow preview URL.')
@@ -89,6 +98,9 @@ def validate(data, previous=None):
                 string(item.get(field), field, True)
             for field in ("group", "closed_by", "date_closed", "pr_url", "commit_url", "commit_hash"):
                 string(item.get(field), field)
+            dependencies = item.get('depends_on', [])
+            require(isinstance(dependencies, list) and all(isinstance(v, str) for v in dependencies), 'depends_on must be a list of ticket IDs.')
+            require(len(dependencies) == len(set(dependencies)) and ident not in dependencies, 'Duplicate or self dependency.')
             category = item.get('category', '')
             string(category, 'Category')
             require(not category or category in CATEGORIES or inspect(item)[0] == 'read_only', 'Invalid category.')
@@ -110,6 +122,13 @@ def validate(data, previous=None):
                     parsed = urlsplit(item[field])
                     require(parsed.scheme == "https" and bool(parsed.netloc), f"{field} must be an HTTPS URL.")
             require(not item["commit_hash"] or re.fullmatch(r"[a-fA-F0-9]{7,64}", item["commit_hash"]), "Commit hash must contain 7–64 hexadecimal characters.")
+    graph = {t['id']: set(t.get('depends_on', [])) for t in data['todos']}
+    require(all(deps <= graph.keys() for deps in graph.values()), 'Unknown ticket dependency.')
+    pending = dict(graph)
+    while pending:
+        ready = {key for key, deps in pending.items() if not deps.intersection(pending)}
+        require(bool(ready), 'Ticket dependencies contain a cycle.')
+        pending = {key: deps for key, deps in pending.items() if key not in ready}
     idea_ids = {item["id"] for item in data["ideas"]}
     foreign_ids = set()
     for todo in data["todos"]:
@@ -240,6 +259,9 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     data, revision = self.server.store.read()
                     self.reply(200, {"data": data, "revision": revision, "token": self.server.token})
+            elif path == '/agent-advice.js':
+                advice = json.loads((Path(__file__).resolve().parent / 'agent_advice.json').read_text())
+                self.reply(200, ('const agentAdvice = ' + json.dumps(advice) + ';').encode(), 'text/javascript; charset=utf-8')
             elif path == '/api/workflow' and self.server.workflow:
                 self.reply(200, self.server.workflow.status())
             elif path == '/api/processing' and self.server.processing:
