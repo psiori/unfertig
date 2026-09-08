@@ -6,7 +6,7 @@ function setup() {
   const elements = new Map();
   const $ = id => { if (!elements.has(id)) elements.set(id,{value:'',innerHTML:'',checked:false,addEventListener(){},style:{}}); return elements.get(id); };
   $('#status-filter').value='all'; $('#sort').value='priority';
-  const context = {$, renderIdeas(){},renderTodos(){},updateChoices(){},preference(){return '';},remember(){},setInterval(){},setTimeout(){},
+  const context = {viewKey:'test-board',document:{addEventListener(){}},restoreViewChoice(){},rememberViewState(){},$, renderIdeas(){},renderTodos(){},updateChoices(){},preference(){return '';},remember(){},setInterval(){},setTimeout(){},
     expanded:new Set(), options:(values,selected)=>values.map(v=>`<option ${v===selected?'selected':''}>${v}</option>`).join(''),
     boardContext:{mode:'aggregation',sources:[{project_id:'a'},{project_id:'b'}]},
     data:{ideas:[],todos:[]},compatibility:{read_only:false},unique:values=>[...new Set(values)],date:v=>v,
@@ -76,4 +76,13 @@ test('refresh displays discovery diagnostics and source errors',async()=>{
   assert.match($('#source-status').textContent,/unmatched.*No existing config matches/);
   assert.match($('#source-status').textContent,/bad.json: invalid.*Missing metadata/);
   assert.match($('#source-status').textContent,/a: unavailable.*Connection refused/);
+});
+test('a late aggregate response cannot populate a different board view',async()=>{
+  const {context:c,$}=setup();
+  c.busy=false;c.document.hidden=false;
+  let resolve;c.fetch=()=>new Promise(r=>resolve=r);
+  const refresh=c.refreshAggregate();c.viewKey='another-board';
+  resolve({ok:true,json:async()=>({sources:[{project_id:'old-board',name:'Old',status:'reachable'}]})});
+  await refresh;
+  assert.equal(vm.runInContext('aggregateSources[0].project_id',c),'a');
 });

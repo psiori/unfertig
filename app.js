@@ -100,10 +100,43 @@ $('#initials').addEventListener('change', () => {
   remember('initials', $('#initials').value);
 });
 $('#shortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
-for (const id of ['status-filter','sort','group-by','show-processed']) {
-  const el = $('#' + id), saved = preference(id);
-  if (saved) { if (el.type === 'checkbox') el.checked = saved === 'true'; else el.value = saved; }
-  el.addEventListener('change', () => remember(id, el.type === 'checkbox' ? el.checked : el.value));
+// Disposable, board-qualified tab preferences; never migrate global view keys.
+const viewDefaults = {'search':'', 'status-filter':'active', 'group-filter':'', 'tag-filter':'', 'project-filter':'', 'sort':'priority', 'group-by':false, 'show-processed':false};
+let viewKey = '', pendingViewChoices = {}, restoredView = false;
+function activateViewState() {
+  const key = boardContext?.data ? 'unfertig.view.v1.' + JSON.stringify([boardContext.project_id || '', boardContext.data]) : '';
+  if (key === viewKey) return;
+  viewKey = key; document.dispatchEvent(new Event('unfertig:board-view-changed')); pendingViewChoices = {}; restoredView = false;
+  let saved;
+  try { saved = JSON.parse(sessionStorage.getItem(key)); } catch { /* Optional tab cache. */ }
+  if (!saved || Array.isArray(saved) || saved.version !== 1 || !saved.values || typeof saved.values !== 'object' || Array.isArray(saved.values)) saved = null;
+  restoredView = Boolean(saved);
+  for (const [id, fallback] of Object.entries(viewDefaults)) {
+    const el = $('#' + id), value = saved?.values[id];
+    const valid = typeof value === typeof fallback;
+    if (['group-filter','tag-filter','project-filter'].includes(id)) {
+      pendingViewChoices[id] = valid ? value : fallback; el.value = fallback;
+    } else if (el.type === 'checkbox') el.checked = valid ? value : fallback;
+    else el.value = valid && (id === 'search' || [...el.options].some(o => o.value === value)) ? value : fallback;
+  }
+  syncViewValues();
+}
+function restoreViewChoice(id, ready=true) {
+  if (!ready || !Object.hasOwn(pendingViewChoices, id)) return;
+  const el = $('#' + id), value = pendingViewChoices[id];
+  el.value = [...el.options].some(o => o.value === value) ? value : viewDefaults[id];
+  delete pendingViewChoices[id]; syncViewValues();
+}
+function syncViewValues() {
+  for (const id of Object.keys(viewDefaults)) {
+    const el = $('#' + id); viewValues.set(id, el.type === 'checkbox' ? el.checked : el.value);
+  }
+}
+function rememberViewState() {
+  if (!viewKey) return;
+  syncViewValues();
+  const values = {...Object.fromEntries(viewValues), ...pendingViewChoices};
+  try { sessionStorage.setItem(viewKey, JSON.stringify({version:1, values})); } catch { /* Storage can be disabled or full. */ }
 }
 function actor() {
   const name = $('#initials').value.trim().toUpperCase();
@@ -139,8 +172,9 @@ async function load(force=false) {
     const result = await requestState();
     if (busy || revision !== requestedRevision) return;
     compatibility = result.compatibility || {read_only:false, warnings:[]}; compatibilityState();
+    const boardChanged = boardContext?.data !== result.context?.data || boardContext?.project_id !== result.context?.project_id;
     token = result.token; boardContext = result.context; updateTitle(boardContext); $('#board-location').textContent = boardContext?.data || 'Board location unavailable'; history = result.history; historyState();
-    if (result.revision !== revision || !data) {
+    if (result.revision !== revision || !data || boardChanged) {
       if (data && hasDraft() && !force) {
         stale = true; notice('Other records changed. Your drafts are preserved; saving checks only the record you edit.'); return;
       }
@@ -197,10 +231,11 @@ function updateChoices() {
     const el = $('#' + id), selected = el.value;
     el.innerHTML = `<option value="">${label}</option>` + options(values, selected);
   }
+  for (const id of ['group-filter','tag-filter','project-filter']) restoreViewChoice(id);
   $('#groups').innerHTML = options(groups, '');
 }
 function render() {
-  updateChoices(); renderIdeas(); renderTodos();
+  activateViewState(); updateChoices(); rememberViewState(); renderIdeas(); renderTodos();
   const done = data.todos.filter(todo => todo.status === 'closed').length;
   $('#done-count').textContent = done;
   $('#progress-fill').style.width = (data.todos.length ? done / data.todos.length * 100 : 0) + '%';
@@ -377,10 +412,10 @@ for (const id of ['search','status-filter','group-filter','tag-filter','sort','g
   const el = $('#' + id); viewValues.set(id, el.type === 'checkbox' ? el.checked : el.value);
   el.addEventListener(id === 'search' ? 'input' : 'change', () => {
     if (!safeViewChange()) { if (el.type === 'checkbox') el.checked = viewValues.get(id); else el.value = viewValues.get(id); return; }
-    viewValues.set(id, el.type === 'checkbox' ? el.checked : el.value); renderTodos();
+    viewValues.set(id, el.type === 'checkbox' ? el.checked : el.value); delete pendingViewChoices[id]; rememberViewState(); renderTodos();
   });
 }
-$('#show-processed').addEventListener('change', () => { if (data) renderIdeas(); });
+$('#show-processed').addEventListener('change', () => { rememberViewState(); if (data) renderIdeas(); });
 $('#expand-ideas').addEventListener('click', () => {
   const button = $('#expand-ideas');
   const enlarged = $('.scratch-grid').classList.toggle('ideas-expanded');
@@ -430,12 +465,12 @@ document.addEventListener('click', async event => {
   if (button.dataset.jump) {
     if (!safeViewChange()) return;
     const todo = data.todos.find(todo => todo.id === button.dataset.jump);
-    $('#status-filter').value = 'all'; $('#group-filter').value = ''; $('#tag-filter').value = ''; $('#search').value = '';
+    $('#status-filter').value = 'all'; $('#group-filter').value = ''; $('#tag-filter').value = ''; $('#search').value = ''; rememberViewState();
     expanded.add(todo.id); collapsedGroups.delete(todo.group); renderTodos(); $('#todo-' + todo.id).scrollIntoView({behavior:'smooth',block:'center'});
   }
   if (button.id === 'empty-action') {
     if (!data.todos.length) newTodo();
-    else { $('#status-filter').value = 'all'; $('#group-filter').value = ''; $('#tag-filter').value = ''; $('#search').value = ''; renderTodos(); }
+    else { $('#status-filter').value = 'all'; $('#group-filter').value = ''; $('#tag-filter').value = ''; $('#search').value = ''; rememberViewState(); renderTodos(); }
   }
 });
 window.addEventListener('beforeunload', event => { if (hasDraft() || busy) { event.preventDefault(); event.returnValue = ''; } });
@@ -450,5 +485,5 @@ $('#history-retry').addEventListener('click', async () => {
 });
 $('#publication-refresh').addEventListener('click', () => publicationAction(false));
 $('#publication-push').addEventListener('click', () => publicationAction(true));
-load().then(() => { const match = location.hash.match(/^#(todo|idea)-([A-Z0-9_]+)$/); if (match) { if (match[1] === 'todo') { $('#status-filter').value = 'all'; expanded.add(match[2]); renderTodos(); } else { $('#show-processed').checked = true; renderIdeas(); } document.getElementById(match[1] + '-' + match[2])?.scrollIntoView(); } });
+load().then(() => { const match = location.hash.match(/^#(todo|idea)-([A-Z0-9_]+)$/); if (match && !restoredView) { if (match[1] === 'todo') { $('#status-filter').value = 'all'; expanded.add(match[2]); renderTodos(); } else { $('#show-processed').checked = true; renderIdeas(); } rememberViewState(); document.getElementById(match[1] + '-' + match[2])?.scrollIntoView(); } });
 setInterval(() => { if (!document.hidden && !busy) load(); }, 4000);
