@@ -103,7 +103,6 @@
         ['Awaiting restart', ['migration_required']],
         ['Published / deploying', ['migrating','recovering','restarting']],
         ['Done', ['done']],
-        ['Historical / superseded', ['historical','superseded']],
         ['Needs attention', ['handoff_blocked','implementation_failed','test_failed','merge_failed','push_failed','restart_failed','resolution_blocked','interrupted','activity_unknown']]
       ];
       row.innerHTML = `<p><strong>Integration pipeline</strong>${latest.queue_blocked_by ? ` · Waiting for ${escapeHTML(latest.queue_blocked_by)}` : ''} · ${latest.active_count || 0}/${latest.max_workers || 1} workers${latest.draining ? ' · Draining before integration & restart' : ''}</p><div class="pipeline-stages">` + stages.map(([label, phases]) => {

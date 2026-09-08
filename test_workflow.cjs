@@ -208,7 +208,7 @@ test('closed history, external completion and uncertain activity agree across al
     assert.match(panel.innerHTML,/Completed externally/);
     assert.match(panel.innerHTML,/Original failure/);
     assert.match(pipeline.innerHTML,/Needs attention <span>0/);
-    assert.match(pipeline.innerHTML,/Historical \/ superseded <span>1/);
+    assert.doesNotMatch(pipeline.innerHTML,/Historical \/ superseded|#todo-T0001/);
   }
   run.phase='activity_unknown';run.activity_block='Worker still running';run.can_complete_external=false;
   await poll();assert.equal(slot.hidden,false);assert.match(slot.innerHTML,/disabled/);
