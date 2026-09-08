@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.10.0`.
+`format_version` is a major.minor.build string. Current storage is `1.11.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -158,10 +158,12 @@ extensions remain intact. HTTP/filesystem readers share the same version guard
 and protected workflow records. See DEPLOYMENT.md for reviewed host deployment,
 private evidence, unchanged-storage startup and forward recovery.
 
+Format **1.10.0** adds optional completion_summary and transition validation. The sequential 1.9 → 1.10 migration advances metadata only, preserving absent legacy summaries, descriptions, attribution, extensions and receipts. New closures require nonblank summaries; unchanged legacy closed records remain editable. Reopening clears the field and re-closing requires a fresh account. Older minor writers become read-only. Protocol stays 2.0.0; shared BoardStore transactions, history and recovery apply. Use the existing explicit stopped-instance migration procedure.
 
-## Storage 1.10.0 — config source discovery
 
-Sequential 1.9→1.10 adds `search_paths: []` to aggregation configs when absent.
+## Storage 1.11.0 — config source discovery
+
+Sequential 1.10→1.11 adds `search_paths: []` to aggregation configs when absent.
 Existing exact sources, explicit settings, originals, workflow/routing claims,
 unknown fields and receipt identities are preserved. An empty list grants no
 new discovery. Matched child configs can declare `aggregation_source` service

@@ -37,9 +37,10 @@ test('nested view keeps projects above equal groups and source open actions',()=
   assert.equal(($('#todos').innerHTML.match(/#todo-T0001/g)||[]).length,2);
   assert.equal(c.ownerLink({status:'stale'},'todo','T0001'),'<span class="route-warning">Instance unavailable</span>');
 });
-test('routing briefing carries actual selection, retry and preflight rules',()=>{
-  const {context:c}=setup(); const text=c.aggregationBrief([{id:'SL_I0001',text:'Original',selected_project:'b'}]);
-  for(const expected of ['selected_project','PROCESS.md','process_sha256','/api/routes','source_refs','stored request','No routing step pushes']) assert.ok(text.includes(expected),expected);
+test('routing briefing reads live selection and retains retry and preflight rules',()=>{
+  const {context:c}=setup(); const text=c.aggregationBrief();
+  assert.doesNotMatch(text, /Ideas:|Sources \(configuration/);
+  for(const expected of ['all pending inbox ideas', 'Nothing to process', '/api/state', '/api/aggregate', 'selected_project','PROCESS.md','process_sha256','/api/routes','source_refs','stored request','No routing step pushes']) assert.ok(text.includes(expected),expected);
 });
 test('filesystem records retain details without a service link and briefings show transport',()=>{
   const {context:c,$}=setup();

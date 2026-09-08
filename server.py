@@ -99,6 +99,7 @@ def validate(data, previous=None):
                 string(item.get(field), field, True)
             for field in ("group", "closed_by", "date_closed", "pr_url", "commit_url", "commit_hash"):
                 string(item.get(field), field)
+            string(item.get('completion_summary', ''), 'Completion summary')
             dependencies = item.get('depends_on', [])
             require(isinstance(dependencies, list) and all(isinstance(v, str) for v in dependencies), 'depends_on must be a list of ticket IDs.')
             require(len(dependencies) == len(set(dependencies)) and ident not in dependencies, 'Duplicate or self dependency.')
@@ -144,6 +145,13 @@ def validate(data, previous=None):
             identity = (ref['project_id'], original['id'])
             require(identity not in foreign_ids, 'Foreign idea already has a destination todo.')
             foreign_ids.add(identity)
+    if previous is not None:
+        old_todos = {t['id']: t for t in previous['todos']}
+        for todo in data['todos']:
+            old = old_todos.get(todo['id'], {})
+            summary = todo.get('completion_summary', '')
+            if todo['status'] == 'closed' and (old.get('status') != 'closed' or summary != old.get('completion_summary', '')):
+                string(summary, 'Completion summary: describe outcome, verification and limitations', True)
     if previous:
         for collection in ("ideas", "todos"):
             current = {item["id"]: item for item in data[collection]}

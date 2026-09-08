@@ -168,8 +168,10 @@ reports its startup-captured `context.runtime_commit` for deployment health. Thi
 is process evidence, not persisted record semantics; offline/filesystem snapshots
 do not claim a running service revision.
 
+Format 1.10 completion summaries use shared validation and BoardStore reopening normalization in both adapters. Legacy absence remains valid; new closures require a summary. Revision checks, receipt retry after transport switching, recovery and local history retain the same contract.
 
-## Config search paths (format 1.10)
+
+## Config search paths (format 1.11)
 
 Optional `search_paths` is a list of config JSON path patterns, relative to the
 aggregator config directory. Each matched config must declare `data`, an explicit

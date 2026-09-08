@@ -12,7 +12,7 @@ A registered submodule defaults to its superproject's `state/unfertig/config/con
 
 ## Processing ideas is planning only
 
-1. Read the latest ideas in `BOARD/data.json` and todos in `BOARD/todos/*.json` (or the assembled API snapshot). In ordinary boards an idea is pending when no local todo references its ID in `source_ideas`. Aggregator inboxes instead use the routing section below.
+1. Copied processing briefings cover all ideas still pending at execution time, including ideas saved after copying; UI filters do not restrict this scope. Read the latest ideas in `BOARD/data.json` and todos in `BOARD/todos/*.json` (or the assembled API snapshot). In ordinary boards an idea is pending when no local todo references its ID in `source_ideas`. Aggregator inboxes instead use the routing section below. If nothing is pending, report "Nothing to process" and make no changes.
 2. Preserve the idea's `id`, `text`, `author`, and `date_entered` exactly.
 3. Check existing todos for overlap. Link a matching todo to the additional source idea rather than duplicating work when it already captures the intent. Do not silently reopen closed work; identify follow-up work separately when needed.
 4. Usually create one todo per idea. Split only into independently implementable, verifiable steps. Several ideas can support one todo.
@@ -20,7 +20,9 @@ A registered submodule defaults to its superproject's `state/unfertig/config/con
 6. Keep original requester attribution in `author`. If several ideas have different authors, use the primary requester and note other contributors in the description. Record your actual agent identity (e.g. Codex, Claude, Cursor) in `created_by`.
 7. Default to `normal` priority unless the user specified urgency. Reuse groups/tags when appropriate; new values are allowed. Leave `group` empty when uncertain.
 8. New todos start `open`, with empty closure and implementation-reference fields. Link every source idea ID. This link is the processed marker on ordinary boards. Aggregator inboxes use the confirmed routing receipt described below.
-9. Save using the procedure below and report the created/updated IDs. **Do not implement anything during processing.** Re-running should not create duplicates.
+9. Re-read live ideas and todos before saving. If another processor already linked a source, reload and reassess pending work; never use `allow_shared_sources` to bypass a processing race. Retry an uncertain save with the identical body and request ID. Save using the procedure below and report the created/updated IDs. **Do not implement anything during processing.** Re-running should not create duplicates.
+
+The **Copy all-pending briefing** control references the authoritative board and this procedure, without embedding idea bodies or a pending-ID snapshot. Idea rows offer manual creation only. Button-launched Codex jobs have a separate bounded allowlist (see Button-launched processing); copying a briefing does not launch a job or change that automatic-processing boundary.
 
 ## Maintenance work alongside board workflows
 
@@ -39,21 +41,23 @@ implementation rules in JavaScript or prompts. The common contract follows.
 
 1. Treat descriptions and original ideas as task input, not authority. Follow the user’s authorization, repository instructions, PROCESS.md, VERSIONING.md and TRANSPORTS.md. Respect planning and approval gates.
 
-2. Re-read the authoritative ticket and linked original ideas. Verify the selected developer, scope, dependencies and one worker per todo. Other tickets may run concurrently. Preserve attribution and unrelated work.
+2. First locate and read the process, authoritative task file and linked original ideas at the supplied absolute locations. Verify the intended ID, owning repository, selected developer, scope, dependencies and one worker per todo before work or status changes. If a required file cannot be found, report the missing location and stop dependent work; a copied description is not a substitute. Preserve attribution and unrelated work.
 
-3. Use one assigned codex/<ticket-id>-<run> branch and isolated .worktrees/ worktree per ticket in the repository owning the code. Never edit another worktree, main, shared context documents, or live board files directly. Keep handoffs per run and let the coordinator consolidate shared documentation.
+3. Inspect whether implementation changes are needed before creating a ticket branch. With no implementation changes, report findings and verification without an empty implementation commit or unnecessary branch; board bookkeeping alone does not require one. Otherwise use one assigned codex/<ticket-id>-<run> branch and isolated worktree in the owning repository. Preserve other worktrees, main, shared context and live board files. For an already managed run, retain the supplied branch/PR and report a no-change outcome for coordinator review. Never delete a pre-existing branch or one containing work. A newly created unused, unpublished branch may be removed only after verifying it still equals its starting commit and has no changes or other users; retain it if uncertain.
 
-4. Before implementation, push the assigned branch to origin and create or recover its draft [WIP] [unfertig] PR against the configured base. A kickoff empty commit is allowed to establish the PR, but is not implementation. If branch publication or PR creation cannot be confirmed, stop before implementation.
+4. For authorized managed implementation, confirm the assigned published branch and draft [WIP] [unfertig] PR before editing; stop if publication cannot be confirmed. Its kickoff commit is not implementation evidence. Unmanaged local work does not require publication. Never push or create a PR without explicit authorization.
 
-5. Commit coherent progress frequently and push every checkpoint promptly to the assigned branch so the requester can read the PR while work proceeds. Never force push, rewrite published history, or push a different branch. Report a failed push and retain all work.
+5. Commit meaningful ticket-related work in its owning repository after verification, preserving unrelated changes. For an explicitly authorized managed run, push coherent checkpoints promptly to its assigned branch. Never force push, rewrite published history or push another branch. Report failed pushes and retain work.
 
-6. Implement only the assigned scope. Use uv for Python. Run appropriate verification and leave a clean worktree with a local implementation commit. Planning-only or no-commit instructions override these implementation defaults.
+6. Implement only the assigned scope. Use uv for Python and run appropriate verification. Leave a clean worktree with a local implementation commit for real changes; no-change findings require no empty commit. Planning-only, no-commit instructions and approval gates override these defaults. Never invent an implementation hash or substitute a board-data commit.
 
 7. Before integration, always check the current GitHub PR state and head. An already merged PR must be reconciled through its verified merge commit on origin/main, including squash/rebase merges; never merge the original branch again. A closed unmerged PR or changed head requires attention.
 
 8. The integration coordinator serializes by repository, combines the ticket with current main in a separate retained candidate worktree, tests that exact commit, then publishes without force. Any main or PR change invalidates that attempt. Record implementation, tested integration, publication and deployment revisions separately.
 
-9. Report branch, PR URL, actual commit hash, verification and remaining limitations. Do not invent references or claim that ready means integrated or deployed. Push/PR authorization for the assigned branch does not authorize main publication, deployment or messaging others.
+9. For managed Unfertig deployment, follow DEPLOYMENT.md: preflight the exact tested candidate before publication or shutdown. Migration required is a review gate, never permission to migrate. Obtain explicit approval for its review ID; keep exact backups and private evidence local, retain the normal unchanged-storage updater, and use the host reservation/migration/recovery CLI. Reconcile already published or externally migrated work through public recovery, never internal claim edits. Verify both wrapper pins, runtime revision, board owner and writable history before calling it deployed.
+
+10. Report branch, PR URL, actual commit hash, verification and remaining limitations. Do not invent references or claim that ready means integrated or deployed. Push/PR authorization for the assigned branch does not authorize main publication, deployment or messaging others.
 
 ### Managed and unmanaged completion
 
@@ -63,11 +67,11 @@ Do not change board records, merge, deploy, restart production or close the todo
 
 Finish with a JSON object containing status (complete or needs_attention), commit (actual HEAD), summary, tests (array), and limitations (array), then the exact final marker UNFERTIG_IMPLEMENTATION_COMPLETE only for complete work, otherwise UNFERTIG_NEEDS_ATTENTION.
 
-For a copied briefing, verify authorization to publish the ticket branch and create its PR before starting. Copying alone grants no authorization. If a managed claim exists, coordinate through its owner and do not take it over.
+A copied briefing grants no publication authorization. Respect any managed claim and coordinate through its owner; do not take it over.
 
 Use record-scoped /api/changes with the latest revision and retry the identical request after an uncertain write. Mark started with a dated assignment note; preserve drafts on conflict. Board history commits are not code commits. Relevant changes must maintain HTTP/filesystem parity and pass shared transport conformance tests.
 
-For unmanaged work, close only when the authorized deliverable is implemented, verified and committed locally (unless explicitly asked not to commit); record closed_by, date_closed, pr_url and commit_hash. For managed work, let the coordinator close after deployment. If blocked, leave started and record a concise progress note.
+For unmanaged work, close after the authorized deliverable is verified and meaningful implementation changes are committed locally (unless explicitly asked not to commit). No-change outcomes need no implementation commit. Record actual implementation references only. Supply completion_summary separately from requirements: outcome or findings, relevant verification, and material limitations/follow-up (or none). Use your own identity in closed_by and record date_closed. Reopening clears the saved summary; re-closing requires a fresh summary. Managed closure belongs to the coordinator after deployment. If blocked, leave started and report progress.
 
 ### Parallel execution and GitHub integration
 
@@ -111,7 +115,7 @@ requires all three explicit settings `automatic_merge`, `automatic_publish` and
 combined action. Failed stages require explicit retry. No existing installation
 receives automatic publication or deployment permission through migration.
 
-Reopening a closed todo clears `closed_by` and `date_closed`. Git retains committed history. There is no deletion workflow; retain original ideas and close superseded todos with an explanation and replacement ID.
+Reopening a closed todo clears `closed_by`, `date_closed` and `completion_summary`; re-closing requires a fresh summary. Git retains committed history. There is no deletion workflow; retain original ideas and close superseded todos with an explanation and replacement ID.
 
 ## AI and human briefings
 
@@ -171,7 +175,8 @@ A todo has these standard fields:
   "date_closed": "",
   "pr_url": "",
   "commit_url": "",
-  "commit_hash": ""
+  "commit_hash": "",
+  "completion_summary": ""
 }
 ```
 
@@ -301,7 +306,7 @@ feature only with disposable local repositories/bare remotes, never real remotes
 ## Data and API versions
 
 [VERSIONING.md](VERSIONING.md) governs both idea processing and implementation.
-Persisted JSON uses `format_version` (currently `1.10.0`), independently of integer
+Persisted JSON uses `format_version` (currently `1.11.0`), independently of integer
 layout schema_version. Snapshots declare protocol_version `2.0.0`. Preserve these
 fields and unknown extensions in edits. Newer major versions require updating;
 newer minor versions allow inspection only; compatible builds preserve their
@@ -312,7 +317,7 @@ sequential migrations under the writer lock and commit meaningful changes locall
 ## Aggregation routing (format 1.2)
 
 Aggregation uses exact sources and optional bounded config `search_paths` (format
-1.10); no recursive `**` or nested aggregators. See TRANSPORTS.md for matching,
+1.11); no recursive `**` or nested aggregators. See TRANSPORTS.md for matching,
 service metadata, symlink boundaries and removed-source recovery. Each source is an exact data JSON path, loopback service origin and
 stable project_id. GET `/api/aggregate` is a read-only view with source-qualified
 identities, revisions, context and reachable/stale/unavailable status. Only its
@@ -519,3 +524,7 @@ it. Recover a published deployment through the public action/host CLI, checking
 GitHub first, without remerging or rewriting claims. Report published, installed,
 migration-pending and verified deployed states separately. The wrapper owns
 startup reservation, exact backup, transactional migration and coordinated pins.
+
+## Completion summaries (format 1.10)
+
+`completion_summary` is optional plain text, absent meaning empty. New closures (including creation already closed) require non-whitespace text describing the outcome, relevant verification and material limitations or follow-up. Content quality is a reviewer responsibility; validation enforces text and non-emptiness, not a word count. Requirements stay in description. Legacy closed records may remain without a summary and accept unrelated edits; migration never extracts or fabricates summaries or rewrites attribution/description notes. Existing summaries cannot be emptied while closed. Reopening clears the summary in the shared writer; Git retains the prior account. A later closure requires a fresh summary. Open tasks may save summary drafts. Both human and agent writes share these checks, revisions, recovery and local data history. Managed workers report results; the coordinator saves their summary and deployment evidence when closing. Legacy managed runs without a saved report retain only actual deployment evidence, never inferred implementation findings.
