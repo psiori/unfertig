@@ -48,7 +48,7 @@ test('disabled or missing feature flag hides all workflow controls and blocks st
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
   await poll();assert.equal(panel.hidden,true);assert.equal(panel.innerHTML,'');
   result={enabled:true,runs:{},configured:true,automatic:false};await poll();
-  assert.equal(panel.hidden,false);assert.match(panel.innerHTML,/Implement with Codex/);assert.match(panel.innerHTML,/Test branch/);assert.match(panel.innerHTML,/Merge & restart/);
+  assert.equal(panel.hidden,false);assert.match(panel.innerHTML,/including inherited local commits/);assert.match(panel.innerHTML,/Implement with Codex/);assert.match(panel.innerHTML,/Test branch/);assert.match(panel.innerHTML,/Merge & restart/);
   result={enabled:false,runs:{}};await poll();assert.equal(panel.hidden,true);assert.equal(panel.innerHTML,'');
   const before=calls.length;
   await events.click({target:{closest:()=>({dataset:{todo:'T0001',workflowAction:'implement'}})},preventDefault(){},stopPropagation(){}});
@@ -65,7 +65,7 @@ test('collapsed row follows workflow stages and respects execution guards',async
     hasDraft:()=>draft,escapeHTML:s=>s,setInterval:fn=>poll=fn,setTimeout:()=>{},
     fetch:async()=>({ok:true,json:async()=>result})};
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
-  await poll(); assert.equal(slot.hidden,false); assert.match(slot.innerHTML,/data-workflow-action="implement"/);
+  await poll(); assert.equal(slot.hidden,false); assert.match(slot.innerHTML,/including inherited local commits/); assert.match(slot.innerHTML,/data-workflow-action="implement"/);
   for(const [phase,action,label] of [['ready','test','Preview'],['tested','merge','Merge & restart'],['implementation_failed','retry','Retry implementation'],['test_failed','test','Preview'],['push_failed','merge','Merge & restart']]) {
     result.runs.T0001={phase}; await poll();
     assert.equal((slot.innerHTML.match(/<button/g)||[]).length,1);

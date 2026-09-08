@@ -206,11 +206,14 @@ def prepare(w, todo, run):
             if path.exists():
                 if p.git('branch','--show-current',cwd=path)!=item['branch']:
                     raise Conflict('Retained repository worktree branch differs.')
+                p.git('merge-base','--is-ancestor',item['base'],'HEAD',cwd=path)
                 continue
-            p.git('fetch','origin',p.options['base_branch'])
-            remote = p.git('rev-parse','origin/'+p.options['base_branch'])
-            p.git('merge-base','--is-ancestor',item['base'],remote)
-            item['base'] = remote
+            item['base'] = p.startup_base()
+            # Persist before worktree creation: a crash afterwards must not leave
+            # a retained worktree paired with the stale enqueue-time base.
+            if item['repository'] == run['repository']:
+                run['base'] = item['base']
+            w.save(todo['id'],run)
             path.parent.mkdir(parents=True,exist_ok=True)
             p.git('worktree','add','-b',item['branch'],str(path),item['base'])
     primary = next(r for r in run['repositories'] if r['repository']==run['repository'])

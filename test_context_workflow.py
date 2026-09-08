@@ -152,3 +152,95 @@ class ContextWorkflowTests(unittest.TestCase):
         from context_workflow import protected
         with self.assertRaisesRegex(Conflict,'child pins'):
             protected(self.workflow,context)
+
+    def context_commit(self, name):
+        path=self.context/name;path.write_text(name)
+        self.workflow.git('add',name,cwd=self.context)
+        self.workflow.git('commit','-m',name,cwd=self.context)
+        return self.workflow.git('rev-parse','HEAD',cwd=self.context)
+
+    def test_local_ahead_context_inherits_commits_without_pushing_main(self):
+        self.um();remote=self.workflow.git('rev-parse','origin/main',cwd=self.context)
+        local=self.context_commit('unpublished-context.txt')
+        todo=self.implement();item=todo['workflow']['repositories'][0]
+        self.assertEqual(item['base'],local)
+        self.assertEqual((Path(item['worktree'])/'unpublished-context.txt').read_text(),'unpublished-context.txt')
+        self.assertEqual(self.workflow.git('ls-remote','origin','refs/heads/main',cwd=self.context).split()[0],remote)
+        body=(Path(item['worktree']).parent/(item['run_id']+'-pr.md')).read_text()
+        self.assertIn(local+' unpublished-context.txt',body)
+        self.assertIn('They predate this task',body)
+        todo=self.run_stage('merge')
+        self.assertEqual(todo['workflow']['phase'],'done',todo['workflow']['message'])
+        self.assertEqual(self.workflow.git('log','--format=%s','main',cwd=self.context).splitlines().count('unpublished-context.txt'),1)
+
+    def test_local_ahead_without_task_changes_does_not_publish_context(self):
+        self.um();local=self.context_commit('board-history.txt');self.changed={'project'}
+        todo=self.implement();context=todo['workflow']['repositories'][0]
+        self.assertEqual(context['base'],local);self.assertFalse(context['changed'])
+        self.assertNotIn('pr_url',context);self.assertEqual(len(self.prs),1)
+
+    def test_remote_ahead_selects_remote_without_moving_local_main(self):
+        self.um();baseline=self.workflow.git('rev-parse','HEAD',cwd=self.context)
+        remote=self.context_commit('remote-change.txt')
+        self.workflow.git('push','origin','main',cwd=self.context)
+        self.workflow.git('reset','--hard',baseline,cwd=self.context)  # disposable fixture only
+        todo=self.implement();item=todo['workflow']['repositories'][0]
+        self.assertEqual(item['base'],remote)
+        self.assertEqual(self.workflow.git('rev-parse','main',cwd=self.context),baseline)
+        self.assertTrue((Path(item['worktree'])/'remote-change.txt').is_file())
+
+    def test_queued_run_selects_latest_local_commit_at_preparation(self):
+        from context_workflow import prepare
+        self.um();selected=[]
+        def advance(w,todo,run):
+            old=run['repositories'][0]['base'];new=self.context_commit('queued-change.txt')
+            self.assertNotEqual(old,new);selected.append(new)
+            return prepare(w,todo,run)
+        with patch('context_workflow.prepare',side_effect=advance):todo=self.implement()
+        self.assertEqual(todo['workflow']['repositories'][0]['base'],selected[0])
+
+    def test_divergence_stops_before_agent_with_actionable_error(self):
+        self.um();baseline=self.workflow.git('rev-parse','HEAD',cwd=self.context)
+        self.context_commit('remote-change.txt');self.workflow.git('push','origin','main',cwd=self.context)
+        self.workflow.git('reset','--hard',baseline,cwd=self.context)
+        local=self.context_commit('local-change.txt')
+        with patch.object(self.workflow,'command') as command:todo=self.run_stage('implement')
+        command.assert_not_called();self.assertEqual(todo['workflow']['phase'],'implementation_failed')
+        self.assertIn('diverged main',todo['workflow']['message']);self.assertIn('Integrate both histories',todo['workflow']['message'])
+        self.assertEqual(self.workflow.git('rev-parse','HEAD',cwd=self.context),local)
+        self.assertFalse(Path(todo['workflow']['repositories'][0]['worktree']).exists())
+
+    def test_interrupted_creation_retains_saved_base_and_worktree_on_retry(self):
+        from workflow import Workflow
+        self.um();local=self.context_commit('unpublished-context.txt');original=Workflow.git;failed=[]
+        def interrupt(w,*args,**kwargs):
+            result=original(w,*args,**kwargs)
+            if args[:2]==('worktree','add') and w.options['repository']==str(self.context) and not failed:
+                saved=self.store.snapshot()['data']['todos'][0]['workflow']['repositories'][0]
+                self.assertEqual(saved['base'],local)  # durable before creation
+                failed.append(True);raise OSError('Interrupted after worktree creation')
+            return result
+        with patch.object(Workflow,'git',interrupt):todo=self.run_stage('implement')
+        self.assertEqual(todo['workflow']['phase'],'implementation_failed')
+        item=todo['workflow']['repositories'][0];path=Path(item['worktree'])
+        self.assertTrue(path.is_dir());self.context_commit('later-main.txt')
+        (path/'retained.txt').write_text('Retained worker work')
+        self.workflow.git('add','retained.txt',cwd=path);self.workflow.git('commit','-m','Retained work',cwd=path)
+        with patch.object(self.workflow,'command',side_effect=self.agent):todo=self.run_stage('retry')
+        self.assertEqual(todo['workflow']['phase'],'ready',todo['workflow']['message'])
+        self.assertEqual(todo['workflow']['repositories'][0]['base'],local)
+        self.assertEqual((path/'retained.txt').read_text(),'Retained worker work')
+        self.assertFalse((path/'later-main.txt').exists())
+
+    def test_git_execution_error_is_not_misreported_as_divergence(self):
+        from workflow import Workflow
+        from integration import GitFailure
+        import subprocess
+        self.um();original=Workflow.git
+        def fail(w,*args,**kwargs):
+            if args[:2]==('merge-base','--is-ancestor'):
+                raise GitFailure(args,subprocess.CompletedProcess(args,128,'','object lookup failed'))
+            return original(w,*args,**kwargs)
+        with patch.object(Workflow,'git',fail):todo=self.run_stage('implement')
+        self.assertIn('object lookup failed',todo['workflow']['message'])
+        self.assertNotIn('diverged',todo['workflow']['message'])

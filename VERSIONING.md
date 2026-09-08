@@ -306,3 +306,8 @@ The settings API edits only the existing validated worker field. UM local overri
 JSON remains the host-owned partial config contract; no app receipt or effective
 configuration mirror is added. A single atomic override replacement is durable;
 normal host startup recovers live application after interruption.
+
+Local-ahead startup uses the existing per-repository `base` and publication grant;
+it adds no stored fields or format. Selection is saved before worktree creation,
+and retained worktrees keep their base. PR prose reports inherited history without
+introducing a durable publication manifest. Existing integration checks remain.
