@@ -23,7 +23,7 @@
   function testStatus(run) {
     return run?.commit && run.tested_commit === run.commit
       ? 'This commit passed Test branch / Preview.'
-      : 'This commit has not passed Test branch / Preview.';
+      : '';
   }
   function nextStep(todo, run) {
     if (!run) return todo.status !== 'closed' ? ['implement','Implement',todo.status === 'open'] : null;
@@ -45,11 +45,7 @@
       if (slot.hidden) { slot.innerHTML = ''; return; }
       const [action,label,allowed] = next;
       const disabled = sending || latest.busy || !allowed || !latest.configured || compatibility.read_only || history.pending || hasDraft() || run?.foreign;
-      let html = `<button type="button" class="button small next-step" data-workflow-action="${action}" data-todo="${todo.id}" ${disabled ? 'disabled' : ''}>${label}${allowed ? ' ↗' : ''}</button>`;
-      if (canMerge(run)) {
-        if (action !== 'merge') html += `<button type="button" class="button small next-step" data-workflow-action="merge" data-todo="${todo.id}" ${disabled ? 'disabled' : ''}>Merge & restart ↗</button>`;
-        html += `<span class="muted">${testStatus(run)}</span>`;
-      }
+      const html = `<button type="button" class="button small next-step" data-workflow-action="${action}" data-todo="${todo.id}" ${disabled ? 'disabled' : ''}>${label}${allowed ? ' ↗' : ''}</button>`;
       if (slot.innerHTML !== html) slot.innerHTML = html;
     });
     document.querySelectorAll('[data-workflow]').forEach(panel => {
@@ -62,7 +58,7 @@
       const button = (action, label, allowed) => `<button type="button" class="button small" data-workflow-action="${action}" data-todo="${id}" ${disabled || !allowed ? 'disabled' : ''}>${label}</button>`;
       const expanded = panel.querySelector('details')?.open;
       const scroll = panel.querySelector('pre')?.scrollTop || 0;
-      const html = `<div class="workflow-actions"><strong>Implementation</strong>${button('implement','Implement with Codex', !run && todo.status === 'open' && latest.configured)}${run && (run.phase === 'implementation_failed' || run.resume_action === 'retry') ? button('retry','Retry implementation',true) : ''}${button('test','Test branch', (['ready','tested','test_failed'].includes(run?.phase) || run?.resume_action === 'test'))}${button('merge','Merge & restart', canMerge(run))}${run?.preview_url ? `<a class="button small" href="${escapeHTML(run.preview_url)}" target="_blank" rel="noopener">Open preview ↗</a>` : ''}</div><p class="muted">${escapeHTML(run ? ({implementing:'Implementing…',ready:'Ready to preview or merge',testing:'Preparing preview…',tested:'Ready for your review',merging:'Merging and publishing…',restarting:'Restarting artifact…',done:'Completed',interrupted:'Interrupted — review and retry'}[run.phase] || run.phase.replaceAll('_',' ')) : !latest.configured ? 'Configure project test, preview and restart commands to enable this workflow.' : latest.automatic ? 'Automatic implementation is on for new ideas captured on this system.' : 'Automatic implementation is off.')}</p>${run?.commit ? `<p class="muted">${testStatus(run)}</p>` : ''}${run ? `<details><summary>Progress & branch details</summary><pre>${escapeHTML(`${run.branch}\n${run.commit || ''}\n${run.worktree}\n\n${run.message}`)}</pre></details>` : ''}`;
+      const html = `<div class="workflow-actions"><strong>Implementation</strong>${button('implement','Implement with Codex', !run && todo.status === 'open' && latest.configured)}${run && (run.phase === 'implementation_failed' || run.resume_action === 'retry') ? button('retry','Retry implementation',true) : ''}${button('test','Test branch', (['ready','tested','test_failed'].includes(run?.phase) || run?.resume_action === 'test'))}${button('merge','Merge & restart', canMerge(run))}${run?.preview_url ? `<a class="button small" href="${escapeHTML(run.preview_url)}" target="_blank" rel="noopener">Open preview ↗</a>` : ''}</div><p class="muted">${escapeHTML(run ? ({implementing:'Implementing…',ready:'Ready to preview or merge',testing:'Preparing preview…',tested:'Ready for your review',merging:'Merging and publishing…',restarting:'Restarting artifact…',done:'Completed',interrupted:'Interrupted — review and retry'}[run.phase] || run.phase.replaceAll('_',' ')) : !latest.configured ? 'Configure project test, preview and restart commands to enable this workflow.' : latest.automatic ? 'Automatic implementation is on for new ideas captured on this system.' : 'Automatic implementation is off.')}</p>${testStatus(run) ? `<p class="muted">${testStatus(run)}</p>` : ''}${run ? `<details><summary>Progress & branch details</summary><pre>${escapeHTML(`${run.branch}\n${run.commit || ''}\n${run.worktree}\n\n${run.message}`)}</pre></details>` : ''}`;
       if (panel.dataset.rendered === html) return;
       panel.dataset.rendered = html; panel.innerHTML = html;
       if (expanded && panel.querySelector('details')) panel.querySelector('details').open = true;
@@ -100,7 +96,7 @@
     event.preventDefault(); event.stopPropagation();
     if (!latest?.enabled || sending || button.disabled || hasDraft()) return;
     const id = button.dataset.todo, action = button.dataset.workflowAction, run = latest.runs[id];
-    if (action === 'merge' && !confirm(`Merge ${run.branch} at ${run.commit}, push it and restart the configured artifact?\n\n${testStatus(run)}`)) return;
+    if (action === 'merge' && !confirm(`Merge ${run.branch} at ${run.commit}, push it and restart the configured artifact?${testStatus(run) ? `\n\n${testStatus(run)}` : ''}`)) return;
     sending = true; button.disabled = true;
     if (action === 'test' && latest.web_preview) { previewId = id; previewWindow = window.open('about:blank','_blank'); if (previewWindow) { previewWindow.opener = null; previewWindow.document.title = 'Preparing branch preview…'; } }
     try {

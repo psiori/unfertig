@@ -394,9 +394,11 @@ keep the whole workflow disabled. Restart after changing configuration.
 
 After implementation and its required checks complete, the user may explicitly
 choose Merge & restart directly or first run the optional Test branch / Preview
-step. Both collapsed and expanded controls retain that choice. Merge confirms
-the exact selected commit and displays its separate test/preview status; merging
-never supplies `tested_commit`. All other eligibility and recovery guards remain.
+step. Collapsed rows show only Preview after implementation, then Merge & restart
+after Preview succeeds. Expand the row to skip Preview and merge directly.
+Merge confirms the exact selected commit. Only a matching successful preview
+gets a test-status notice; untested commits have no notice or reserved space.
+Merging never supplies `tested_commit`. All other eligibility and recovery guards remain.
 
 ## Work categories (format 1.7)
 
