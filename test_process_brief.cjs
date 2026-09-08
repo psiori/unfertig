@@ -6,7 +6,9 @@ const app = fs.readFileSync(__dirname + '/app.js', 'utf8');
 function setup() {
   const c = {boardContext:{process:'/temporary/app/PROCESS.md', data:'/temporary/board/data.json',
     todos:'/temporary/board/todos', repository:'/temporary'}, data:{ideas:[], todos:[]}};
+  c.effortDefinitions = JSON.parse(fs.readFileSync(__dirname + '/efforts.json', 'utf8'));
   vm.createContext(c);
+  vm.runInContext(app.slice(app.indexOf('function effortValue('), app.indexOf("document.addEventListener('change'")), c);
   vm.runInContext(app.slice(app.indexOf('function boardLocations('), app.indexOf('let revisions')), c);
   vm.runInContext(app.slice(app.indexOf('function processBrief('), app.indexOf('function implementationBrief(')), c);
   return c;
@@ -18,6 +20,7 @@ test('copied scope stays live across new ideas, processed ideas, and an empty bo
   const original = JSON.stringify(c.data);
   const copied = c.processBrief();
   assert.equal(copied, empty);
+  assert.ok(copied.includes(c.effortProcessingGuidance()));
   assert.equal(JSON.stringify(c.data), original);
   c.data.ideas.push({id:'I9992',text:'Added after copying'});
   c.data.todos.push({source_ideas:['I9991']});

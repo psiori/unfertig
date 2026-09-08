@@ -26,7 +26,7 @@ class DeploymentPreflightTests(unittest.TestCase):
             app.mkdir(parents=True)
             for path in Path(__file__).parent.glob('*.py'):
                 shutil.copy2(path, app / path.name)
-            for name in ('categories.json', 'agent_advice.json'):
+            for name in ('categories.json', 'agent_advice.json', 'efforts.json'):
                 shutil.copy2(Path(__file__).parent / name, app / name)
             command(['git', 'init', '-q'], app)
             command(['git', 'config', 'user.name', 'Test'], app)
