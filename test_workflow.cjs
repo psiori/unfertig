@@ -245,3 +245,25 @@ test('Done shows local-day completions and expires them after midnight',async()=
   now=new Date(2026,8,9,0,0,1).getTime();
   await poll();assert.match(row.innerHTML,/Done <span>0/);assert.doesNotMatch(row.innerHTML,/#todo-T0001/);
 });
+
+
+test('pipeline keeps long titles, blockers and complete escaped evidence in explicit details', async()=>{
+  let poll; const row={};
+  const long='path/'.repeat(300)+'<unsafe>& tail';
+  const run={phase:'resolution_blocked',message:long,activity_block:'Worker activity uncertain',
+    conflicted_paths:[long],git_diagnostics:{stderr:long},queue_skip:true};
+  const result={enabled:true,runs:{T0001:run}};
+  const context={document:{querySelectorAll:s=>s==='[data-integration-pipeline]'?[row]:[],addEventListener:()=>{}},
+    AbortSignal,token:'token',data:{todos:[{id:'T0001',name:long,workflow:{original:long}}]},
+    escapeHTML:s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'),
+    setInterval:f=>poll=f,setTimeout:()=>{},fetch:async()=>({ok:true,json:async()=>result})};
+  vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
+  await poll();
+  assert.match(row.innerHTML,/Full details/); assert.match(row.innerHTML,/<details class="pipeline-details">/);
+  assert.match(row.innerHTML,/Worker activity uncertain/); assert.match(row.innerHTML,/Skipped by explicit request/);
+  assert.match(row.innerHTML,/1 conflicted file/); assert.match(row.innerHTML,/&lt;unsafe&gt;&amp; tail/);
+  assert.doesNotMatch(row.innerHTML,/<unsafe>/); assert.ok(row.innerHTML.includes('path/'.repeat(300)));
+  assert.match(row.innerHTML,/Full run details/); assert.match(row.innerHTML,/Saved attempt/);
+  result.enabled=false; await poll(); assert.equal(row.innerHTML,'');
+  result.enabled=true; await poll(); assert.match(row.innerHTML,/Full details/);
+});

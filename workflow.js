@@ -94,10 +94,54 @@
       if (panel.querySelector('pre')) panel.querySelector('pre').scrollTop = scroll;
     });
   }
+  function pipelineTicket(id, run) {
+    const todo = data.todos.find(t => t.id === id);
+    const phase = run.phase.replaceAll('_', ' ');
+    const message = run.activity_block || run.publication_warning ||
+      (run.approval?.status === 'blocked' && run.approval.message) || externalStatus(run) || run.message || '';
+    const flags = [run.waiting_for && `Waiting for ${run.waiting_for}`, run.foreign && 'Other system',
+      run.queue_skip && 'Skipped by explicit request',
+      run.conflicted_paths?.length && `${run.conflicted_paths.length} conflicted file(s)`].filter(Boolean);
+    const evidence = `Current phase: ${phase}\n${flags.join(' · ')}\n\n${run.message || ''}\n\n` +
+      `Full run details:\n${JSON.stringify(run, null, 2)}\n\nSaved attempt:\n${JSON.stringify(todo?.workflow || {}, null, 2)}`;
+    return `<article class="pipeline-ticket" data-pipeline-ticket="${escapeHTML(id)}">
+      <div data-pipeline-part="links" class="pipeline-ticket-links"><a href="#todo-${escapeHTML(id)}">${escapeHTML(id)}</a>${run.pr_url ? `<a href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">PR ↗</a>` : ''}${externalLink(run)}</div>
+      <p data-pipeline-part="title" class="pipeline-title">${escapeHTML(todo?.name || id)}</p><p data-pipeline-part="phase" class="pipeline-phase">${escapeHTML(phase)}</p>
+      <p data-pipeline-part="flags" class="pipeline-flags">${escapeHTML(flags.join(' · '))}</p>
+      <p data-pipeline-part="message" class="pipeline-message muted">${escapeHTML(message)}</p>
+      <details class="pipeline-details"><summary>Full details<span class="sr-only"> for ${escapeHTML(id)}</span></summary>
+      <div data-pipeline-reader role="region" tabindex="0" aria-label="Full progress and diagnostics for ${escapeHTML(id)}"><p data-pipeline-part="full-title" class="pipeline-full-title">${escapeHTML(todo?.name || id)}</p><div data-pipeline-part="repositories">${repositoryResults(run)}</div><pre data-pipeline-part="evidence">${escapeHTML(evidence)}</pre></div></details></article>`;
+  }
+  function updatePipeline(row, html) {
+    // Keep disclosure nodes, focus and reading position across live polling and
+    // stage moves. Only changed content is patched; identical polls do no DOM work.
+    if (row._pipelineHTML === html) return;
+    row._pipelineHTML = html;
+    if (!row.ownerDocument) { row.innerHTML = html; return; }
+    const readingPositions = [...row.querySelectorAll('[data-pipeline-reader]')]
+      .map(element => [element, element.scrollTop]);
+    const template = row.ownerDocument.createElement('template');
+    template.innerHTML = html;
+    const focused = row.contains(document.activeElement) ? document.activeElement : null;
+    for (const ticket of row.querySelectorAll('[data-pipeline-ticket]')) {
+      const replacement = [...template.content.querySelectorAll('[data-pipeline-ticket]')]
+        .find(item => item.dataset.pipelineTicket === ticket.dataset.pipelineTicket);
+      if (!replacement) continue;
+      for (const part of ticket.querySelectorAll('[data-pipeline-part]')) {
+        const next = replacement.querySelector(`[data-pipeline-part="${part.dataset.pipelinePart}"]`);
+        if (part.innerHTML === next.innerHTML) continue;
+        part.replaceChildren(...next.childNodes);
+      }
+      replacement.replaceWith(ticket);
+    }
+    row.replaceChildren(template.content);
+    for (const [element, scroll] of readingPositions) element.scrollTop = scroll;
+    if (focused?.isConnected) focused.focus({preventScroll:true});
+  }
   function renderPipeline() {
     for (const row of document.querySelectorAll('[data-integration-pipeline]')) {
       row.hidden = latest.enabled !== true;
-      if (row.hidden) { row.innerHTML = ''; continue; }
+      if (row.hidden) { row.innerHTML = ''; delete row._pipelineHTML; continue; }
       const today = new Date().toDateString();
       const runs = Object.entries(latest.runs).filter(([id, run]) => {
         if (run.phase !== 'done') return true;
@@ -115,10 +159,11 @@
         ['Done', ['done']],
         ['Needs attention', ['handoff_blocked','implementation_failed','test_failed','merge_failed','push_failed','restart_failed','resolution_blocked','interrupted','activity_unknown']]
       ];
-      row.innerHTML = `<p><strong>Integration pipeline</strong>${latest.queue_blocked_by ? ` · Waiting for ${escapeHTML(latest.queue_blocked_by)}` : ''} · ${latest.active_count || 0}/${latest.max_workers || 1} workers${latest.draining ? ' · Draining before integration & restart' : ''}</p><div class="pipeline-stages">` + stages.map(([label, phases]) => {
+      const html = `<p class="pipeline-heading"><strong>Integration pipeline</strong>${latest.queue_blocked_by ? ` · Waiting for ${escapeHTML(latest.queue_blocked_by)}` : ''} · ${latest.active_count || 0}/${latest.max_workers || 1} workers${latest.draining ? ' · Draining before integration & restart' : ''}</p><div class="pipeline-stages">` + stages.map(([label, phases]) => {
         const items = runs.filter(([,run]) => phases.includes(run.phase));
-        return `<section class="pipeline-stage"><h3>${label} <span>${items.length}</span></h3>${items.map(([id,run]) => `<div class="pipeline-ticket"><a href="#todo-${escapeHTML(id)}" title="${escapeHTML(run.message)}">${escapeHTML(id)}</a>${run.pr_url ? ` <a href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">PR ↗</a>` : ''} ${externalLink(run)}${run.foreign ? ' · other system' : ''}<p class="muted">${escapeHTML(externalStatus(run) || run.activity_block || (run.message || '').slice(0,300))}${run.conflicted_paths?.length ? ` · ${escapeHTML(run.conflicted_paths.join(', '))}` : ''}${run.queue_skip ? ' · Skipped by explicit request' : ''}</p></div>`).join('') || '<span class="muted">—</span>'}</section>`;
+        return `<section class="pipeline-stage"><h3>${label} <span>${items.length}</span></h3><div class="pipeline-tickets">${items.map(([id,run]) => pipelineTicket(id, run)).join('') || '<span class="muted">—</span>'}</div></section>`;
       }).join('') + '</div>';
+      updatePipeline(row, html);
     }
   }
   async function refresh() {
