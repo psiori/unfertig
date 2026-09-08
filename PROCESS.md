@@ -18,7 +18,7 @@ A registered submodule defaults to its superproject's `state/unfertig/config/con
 4. Usually create one todo per idea. Split only into independently implementable, verifiable steps. Several ideas can support one todo.
 5. Write a short actionable heading and a refined description. Include acceptance conditions proportional to the task. State meaningful ambiguities, ask if essential, and never invent requirements. Do not split off trivial implementation steps as separate todos.
 6. Keep original requester attribution in `author`. If several ideas have different authors, use the primary requester and note other contributors in the description. Record your actual agent identity (e.g. Codex, Claude, Cursor) in `created_by`.
-7. Default to `normal` priority unless the user specified urgency. Reuse groups/tags when appropriate; new values are allowed. Leave `group` empty when uncertain.
+7. Select and persist an appropriate `effort` using [efforts.json](efforts.json) and its processing guidance; use `medium` when unclear. Effort is separate from urgency and category. Default to `normal` priority unless the user specified urgency. Reuse groups/tags when appropriate; new values are allowed. Leave `group` empty when uncertain.
 8. New todos start `open`, with empty closure and implementation-reference fields. Link every source idea ID. This link is the processed marker on ordinary boards. Aggregator inboxes use the confirmed routing receipt described below.
 9. Re-read live ideas and todos before saving. If another processor already linked a source, reload and reassess pending work; never use `allow_shared_sources` to bypass a processing race. Retry an uncertain save with the identical body and request ID. Save using the procedure below and report the created/updated IDs. **Do not implement anything during processing.** Re-running should not create duplicates.
 
@@ -166,6 +166,7 @@ A todo has these standard fields:
   "created_by": "Codex",
   "updated_at": "2026-09-06T12:05:00Z",
   "priority": "normal",
+  "effort": "medium",
   "group": "City",
   "name": "An actionable heading",
   "description": "Refined requirements and how to recognize completion.",
@@ -306,7 +307,7 @@ feature only with disposable local repositories/bare remotes, never real remotes
 ## Data and API versions
 
 [VERSIONING.md](VERSIONING.md) governs both idea processing and implementation.
-Persisted JSON uses `format_version` (currently `1.11.0`), independently of integer
+Persisted JSON uses `format_version` (currently `1.12.0`), independently of integer
 layout schema_version. Snapshots declare protocol_version `2.0.0`. Preserve these
 fields and unknown extensions in edits. Newer major versions require updating;
 newer minor versions allow inspection only; compatible builds preserve their
@@ -528,3 +529,28 @@ startup reservation, exact backup, transactional migration and coordinated pins.
 ## Completion summaries (format 1.10)
 
 `completion_summary` is optional plain text, absent meaning empty. New closures (including creation already closed) require non-whitespace text describing the outcome, relevant verification and material limitations or follow-up. Content quality is a reviewer responsibility; validation enforces text and non-emptiness, not a word count. Requirements stay in description. Legacy closed records may remain without a summary and accept unrelated edits; migration never extracts or fabricates summaries or rewrites attribution/description notes. Existing summaries cannot be emptied while closed. Reopening clears the summary in the shared writer; Git retains the prior account. A later closure requires a fresh summary. Open tasks may save summary drafts. Both human and agent writes share these checks, revisions, recovery and local data history. Managed workers report results; the coordinator saves their summary and deployment evidence when closing. Legacy managed runs without a saved report retain only actual deployment evidence, never inferred implementation findings.
+
+## Agent effort (format 1.12)
+
+`efforts.json` is the canonical vocabulary and processing guidance: `low`,
+`medium`, `high`, `xhigh`. Choose based on task complexity, independently of
+priority and category; use `medium` when unclear. Save the chosen field in both
+ordinary and routed todo creation. Missing effort defaults to `medium`, including
+manual creation and migration of old todos. Omission during an edit retains the
+saved value. Explicit empty, null or unsupported values are errors, never defaults.
+
+The expanded owner editor has a labelled native Agent effort dropdown. Save it
+through the existing record-scoped API; conflict/uncertain-save recovery retains
+the draft and original revision/request. Aggregate details display their owner's
+saved effort; use the owning board to edit it. Both freshly generated AI and human
+briefings include the saved effort, with aggregate briefings re-reading the owner.
+Save drafts before copying. Unsupported effort blocks briefing generation.
+
+Implement/retry re-reads the saved todo immediately before execution and passes
+`-c 'model_reasoning_effort="<effort>"'` to Codex. Queued jobs use the latest saved
+setting when launched. Changes after launch do not reconfigure an existing job,
+invalidate its scope, or grant any additional authorization. There is no automatic
+retry with a substitute effort after a launcher failure. Configure a Codex model
+that supports the selected effort; model availability remains a launcher concern.
+The planning agent's own execution setting is unchanged; it selects effort for
+its output todos using the shared processing guidance.

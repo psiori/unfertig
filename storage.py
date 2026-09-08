@@ -1,5 +1,6 @@
 """Record-scoped board storage, recoverable transactions, and local Git history."""
 import copy
+from efforts import DEFAULT_EFFORT
 import hashlib
 import json
 import os
@@ -446,6 +447,7 @@ class BoardStore:
                         raise ValueError('Routing state is managed by /api/routes.')
                 if ident is None:
                     if kind == 'todos':
+                        record.setdefault('effort', DEFAULT_EFFORT)
                         record = migrate(record, 'todo')
                     prefix = 'I' if kind == 'ideas' else 'T'
                     initials = body.get('initials', '')

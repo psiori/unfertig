@@ -28,6 +28,9 @@ class RecordTests(unittest.TestCase):
         data['todos'].append(second)
         data['extension'] = {'preserve': True}
         self.original = data
+        self.expected = copy.deepcopy(data)
+        for todo in self.expected['todos']:
+            todo['effort'] = 'medium'
         self.path.write_text(json.dumps(data))
         self.store = BoardStore(self.path, validate, git=False)
         self.store.acquire(); self.addCleanup(self.store.close)
@@ -94,11 +97,11 @@ class RecordTests(unittest.TestCase):
         self.assertEqual(migrate(migrated, 'todo'), migrated)
 
     def test_migration_lossless_and_repeatable(self):
-        self.assertEqual(semantic(self.store.read()[0]), self.original)
+        self.assertEqual(semantic(self.store.read()[0]), self.expected)
         self.assertEqual(json.loads((self.path.parent/'data.v1-backup.json').read_bytes()), self.original)
         self.assertNotIn('todos', json.loads(self.path.read_bytes()))
         self.store.initialize()
-        self.assertEqual(semantic(self.store.read()[0]), self.original)
+        self.assertEqual(semantic(self.store.read()[0]), self.expected)
 
     def test_interrupted_migration_recovers_exact_original(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -114,7 +117,7 @@ class RecordTests(unittest.TestCase):
             self.assertEqual((path.parent/'data.v1-backup.json').read_bytes(), raw)
             restarted = BoardStore(path, validate, git=False)
             restarted.initialize()
-            self.assertEqual(semantic(restarted.read()[0]), self.original)
+            self.assertEqual(semantic(restarted.read()[0]), self.expected)
             restarted.initialize()
             self.assertFalse(restarted.journal.exists())
 
@@ -178,7 +181,7 @@ class RecordTests(unittest.TestCase):
         bad = self.edit(1, source_ideas=['I9999'])['changes'][0]
         body['changes'].append(bad)
         with self.assertRaises(ValueError): self.store.mutate(body)
-        self.assertEqual(semantic(self.store.read()[0]), self.original)
+        self.assertEqual(semantic(self.store.read()[0]), self.expected)
 
     def test_interruption_rolls_forward_and_retry_does_not_duplicate(self):
         body = self.edit(name='Recovered')

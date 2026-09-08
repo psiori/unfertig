@@ -18,6 +18,7 @@ import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
+from efforts import DEFINITIONS as EFFORT_DEFINITIONS, saved_effort
 from categories import CATEGORIES, DEFINITIONS
 from storage import BoardStore, Conflict
 from publication import Publication
@@ -103,6 +104,8 @@ def validate(data, previous=None):
             dependencies = item.get('depends_on', [])
             require(isinstance(dependencies, list) and all(isinstance(v, str) for v in dependencies), 'depends_on must be a list of ticket IDs.')
             require(len(dependencies) == len(set(dependencies)) and ident not in dependencies, 'Duplicate or self dependency.')
+            if inspect(item)[0] != 'read_only':
+                saved_effort(item)
             category = item.get('category', '')
             string(category, 'Category')
             require(not category or category in CATEGORIES or inspect(item)[0] == 'read_only', 'Invalid category.')
@@ -279,6 +282,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, self.server.aggregation.view())
             elif path == "/api/publication" and self.server.publication:
                 self.reply(200, self.server.publication.status())
+            elif path == '/efforts-data.js':
+                self.reply(200, ('const effortDefinitions = ' + json.dumps(EFFORT_DEFINITIONS) + ';').encode(), 'text/javascript; charset=utf-8')
             elif path == '/categories-data.js':
                 self.reply(200, ('const categoryDefinitions = ' + json.dumps(DEFINITIONS) + ';').encode(), 'text/javascript; charset=utf-8')
             elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/workflow.js", "/aggregation.js", "/style.css", "/favicon.svg"):

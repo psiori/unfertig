@@ -219,3 +219,11 @@ claim; receipt identity and transport-switch recovery remain unchanged. Discover
 never grants write authorization, creates boards, registers repositories, starts
 services, relocates records or publishes changes. Both adapters retain their
 existing preflight/version/history checks; upgrade child storage explicitly.
+
+Format 1.12 adds todo effort using BoardStore for both adapters: missing creation
+values default to medium, omitted edit fields preserve saved values, and explicit
+unsupported values fail. Routed creation uses the same defaults and original
+provenance/claim preservation. The conformance matrix covers effort edits, conflict
+recovery, reload and receipt retry after transport switching. Aggregate details and
+fresh owner-qualified AI/Human briefings display the owner's effort. The expanded
+owner editor saves effort through /api/changes; aggregate effort remains read-only.

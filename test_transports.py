@@ -263,6 +263,65 @@ class Conformance:
             with self.assertRaises((ValueError, Conflict)):
                 self.router.transfer(source, '/api/changes', request, snapshot.get('token'), preflight_context(snapshot['context']))
 
+    def test_routed_effort_default_and_explicit_selection(self):
+        from efforts import EFFORTS, processing_guidance
+        self.assertIn('medium for ordinary work or unclear complexity', processing_guidance())
+        for effort in [None, *EFFORTS]:
+            if effort is not None:
+                self.inbox.mutate(dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
+                    collection='ideas', id=None, record=dict(author='SL', text='Another scoped task', date_entered='2026-09-08T00:00:00Z'))]))
+            idea = self.inbox.read()[0]['ideas'][-1]
+            request = self.request()
+            request.update(idea_id=idea['id'], revision=digest(idea))
+            if effort is not None:
+                request['todo']['effort'] = effort
+            result = self.router.route(request)
+            saved = self.alpha.read()[0]['todos'][-1]
+            self.assertEqual(saved['effort'], effort or 'medium')
+            self.assertEqual(saved['source_refs'][0]['idea']['text'], idea['text'])
+            self.assertEqual(saved['source_refs'][0]['idea']['captured_system'], idea['captured_system'])
+            self.assertEqual(self.router.route(request), result)
+            detail = self.router.source_record(dict(project_id='alpha', todo_id=saved['id']))
+            self.assertEqual(detail['todo']['effort'], effort or 'medium')
+            self.assertEqual(detail['context']['project_id'], 'alpha')
+
+    def test_effort_creation_edit_conflict_and_switch(self):
+        from efforts import EFFORTS
+        source = self.sources[0]
+        snapshot = self.router.inspect_source(source)
+        expected = preflight_context(snapshot['context'])
+        for effort in [None, *EFFORTS]:
+            record = dict(name='Effort task', description='Disposable processing result', author='SL',
+                          created_by='Codex', date_entered='2026-09-08T00:00:00Z', extension={'keep': True})
+            if effort is not None:
+                record['effort'] = effort
+            request = dict(actor='Codex', request_id=uuid.uuid4().hex,
+                           changes=[dict(collection='todos', id=None, record=record)])
+            result = self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
+            old = result['data']['todos'][-1]
+            self.assertEqual(old['effort'], effort or 'medium')
+            request = dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=old['id'], revision=digest(old), record=dict(old, effort='high', group='Changed'))])
+            saved = self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)['data']['todos'][-1]
+            switched = dict(source, transports=dict(http=False, filesystem=True))
+            self.assertEqual(self.router.transfer(switched, '/api/changes', request, None, expected)['data']['todos'][-1], saved)
+            self.assertEqual(self.router.inspect_source(switched)['data']['todos'][-1], saved)
+            with self.assertRaises((ValueError, Conflict)):
+                self.router.transfer(source, '/api/changes', dict(request, request_id=uuid.uuid4().hex), snapshot.get('token'), expected)
+            # An old client omitting effort retains it, including recovery from a conflict.
+            edited = dict(saved, group='Recovered'); edited.pop('effort')
+            request = dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=saved['id'], revision=digest(saved), record=edited)])
+            recovered = self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)['data']['todos'][-1]
+            self.assertEqual(recovered['effort'], 'high')
+            for field in ('author', 'created_by', 'source_ideas', 'extension'):
+                self.assertEqual(recovered[field], old[field])
+            for invalid in ('', 'unsupported', None, [], 1):
+                request = dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
+                    collection='todos', id=recovered['id'], revision=digest(recovered), record=dict(recovered, effort=invalid))])
+                with self.assertRaises((ValueError, Conflict)):
+                    self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
+
     def test_workflow_claims_cannot_be_forged_by_either_transport(self):
         source = self.sources[0]
         snapshot = self.router.inspect_source(source)
@@ -285,12 +344,13 @@ class Conformance:
         snapshot = self.router.inspect_source(source)
         old = snapshot['data']['todos'][0]
         request = dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
-            collection='todos', id=old['id'], revision=digest(old), record=dict(old, priority='high'))])
+            collection='todos', id=old['id'], revision=digest(old), record=dict(old, priority='high', effort='xhigh'))])
         expected = preflight_context(snapshot['context'])
         self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
         switched = dict(source, transports=dict(http=False, filesystem=True))
         retry = self.router.transfer(switched, '/api/changes', request, None, expected)
         self.assertEqual(retry['data']['todos'][0]['workflow'], claim)
+        self.assertEqual(retry['data']['todos'][0]['effort'], 'xhigh')
         self.assertEqual(self.router.inspect_source(switched)['data']['todos'][0]['workflow'], claim)
 
     def test_queued_claim_evidence_survives_switch_and_cannot_be_changed(self):
