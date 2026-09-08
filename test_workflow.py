@@ -180,7 +180,7 @@ class WorkflowTests(unittest.TestCase):
         todo = self.run_stage('test')
         self.assertEqual(todo['workflow']['phase'], 'test_failed')
         todo = self.run_stage('merge')
-        self.assertEqual(todo['workflow']['phase'], 'merge_failed', todo)
+        self.assertEqual(todo['workflow']['phase'], 'resolution_blocked', todo)
         self.assertNotIn('tested_commit', todo['workflow'])
 
     def test_direct_merge_rejects_stale_commit_dirty_worktree_and_incomplete_run(self):
@@ -480,7 +480,7 @@ class WorkflowTests(unittest.TestCase):
         head = self.git('rev-parse', 'HEAD')
         self.options['test'] = [sys.executable, '-c', 'from pathlib import Path; assert not (Path("other").exists() and Path("result").exists())']
         todo = self.run_stage('merge')
-        self.assertEqual(todo['workflow']['phase'], 'merge_failed')
+        self.assertEqual(todo['workflow']['phase'], 'resolution_blocked')
         self.assertEqual(self.git('rev-parse', 'HEAD'), head)
         self.assertTrue(Path(todo['workflow']['integration_worktree']).is_dir())
 
@@ -589,6 +589,208 @@ class WorkflowTests(unittest.TestCase):
         resumed.guard_process(run)
 
 
+
+    def queue_ready_tickets(self):
+        self.run_stage('implement')
+        ids = ['T0001', self.add_ticket(), self.add_ticket()]
+        for ident in ids[1:]:
+            self.start_ticket(ident); self.await_workers()
+        requests = []
+        with patch.object(self.workflow, 'dispatch'):
+            for ident in ids:
+                requests.append(self.start_ticket(ident, 'merge')[0])
+        return ids, requests
+
+    def await_receipt(self, ident):
+        run = self.workflow.status()['runs'][ident]
+        path = Path(run['worktree']).parent/(run['run_id']+'-deployment.json')
+        deadline = time.monotonic()+10
+        while not path.exists() and time.monotonic() < deadline:
+            time.sleep(.02)
+        self.assertTrue(path.exists())
+        return path
+
+    def restart_coordinator(self):
+        self.workflow.close()
+        self.workflow = Workflow(self.store, 'http://127.0.0.1:1', self.options, self.processing)
+        self.addCleanup(self.workflow.close)
+
+    def test_failed_delivery_pauses_queue_across_restart_and_recovery(self):
+        ids, requests = self.queue_ready_tickets()
+        before = copy.deepcopy(self.workflow.status()['runs'])
+        self.options['restart'] = ['/usr/bin/false']
+        self.workflow.dispatch(); self.await_workers(); self.await_receipt(ids[0])
+        self.restart_coordinator()
+        self.workflow.tick()
+        state = self.workflow.status()
+        self.assertEqual(state['queue_blocked_by'], ids[0])
+        self.assertEqual(state['runs'][ids[0]]['phase'], 'restart_failed')
+        for ident, request in zip(ids[1:], requests[1:]):
+            self.assertEqual(state['runs'][ident]['phase'], 'merge_queued')
+            self.assertEqual(state['runs'][ident]['waiting_for'], ids[0])
+            self.assertEqual(state['runs'][ident]['queued_at'], before[ident]['queued_at'])
+            self.workflow.start(request)  # Original request remains idempotent.
+        self.options['restart'] = [sys.executable, '-c', 'print("recovered")']
+        self.start_ticket(ids[0], 'recover'); self.await_workers(); self.await_receipt(ids[0])
+        self.workflow.reconcile()
+        for ident in ids[1:]:
+            self.workflow.dispatch(); self.await_workers(); self.await_receipt(ident)
+            self.workflow.reconcile()
+            self.assertEqual(self.workflow.status()['runs'][ident]['phase'], 'done')
+
+    def test_successful_supervisor_receipt_retains_subsequent_queue_after_restart(self):
+        ids, _ = self.queue_ready_tickets()
+        self.workflow.dispatch(); self.await_workers(); self.await_receipt(ids[0])
+        self.restart_coordinator()
+        self.workflow.tick(); self.await_workers()
+        self.assertEqual(self.workflow.status()['runs'][ids[0]]['phase'], 'done')
+        self.assertEqual(self.workflow.status()['runs'][ids[1]]['phase'], 'restarting')
+        self.assertEqual(self.workflow.status()['runs'][ids[2]]['phase'], 'merge_queued')
+        self.await_receipt(ids[1]); self.workflow.reconcile()
+
+    def test_explicit_skip_preserves_failure_and_request_identity(self):
+        ids, _ = self.queue_ready_tickets()
+        run = self.workflow.status()['runs'][ids[0]]
+        self.workflow.save(ids[0], dict(run, phase='merge_failed', message='Retained failure'))
+        with patch.object(self.workflow, 'dispatch'):
+            request, _ = self.start_ticket(ids[0], 'skip')
+            self.workflow.start(request)
+        current = self.workflow.status()['runs'][ids[0]]
+        self.assertEqual(current['phase'], 'merge_failed')
+        self.assertEqual(current['message'], 'Retained failure')
+        self.assertIn('queue_skip', current)
+        self.assertIsNone(self.workflow.status()['queue_blocked_by'])
+        with self.assertRaises(Conflict):
+            self.workflow.start(dict(request, action='merge'))
+
+    def conflict_fixture(self):
+        agent = Path(self.processing['executable'])
+        agent.write_text(agent.read_text().replace('sys.stdin.read()', 'sys.stdin.read();pathlib.Path("readme").write_text("ticket")').replace('["git","add","result"]', '["git","add","result","readme"]'))
+        todo = self.run_stage('implement')
+        (self.repo/'readme').write_text('main')
+        self.git('add', 'readme'); self.git('commit', '-qm', 'Advanced main')
+        self.git('push', 'origin', 'main')
+        agent.write_text('#!'+sys.executable+'''\nimport pathlib,subprocess,sys,json
+prompt=sys.stdin.read()
+assert 'All merge conflicts' in prompt
+assert 'Do not push' in prompt
+pathlib.Path('readme').write_text('main + ticket')
+subprocess.run(['git','add','readme'],check=True)
+subprocess.run(['git','commit','-qm','Preserve both intended changes'],check=True)
+head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status='complete',commit=head,summary='Both changes preserved',tests=['combined'],attempts=['Inspect both parents and combine'],blocker='')))
+''')
+        self.options['test'] = [sys.executable, '-c', 'from pathlib import Path; assert Path("readme").read_text() == "main + ticket"']
+        return todo['workflow']
+
+    def test_agent_resolves_conflict_and_continues_existing_authorization(self):
+        original = self.conflict_fixture()
+        todo = self.run_stage('merge'); run = todo['workflow']
+        self.assertEqual(run['phase'], 'restarting', run)
+        self.assertEqual((self.repo/'readme').read_text(), 'main + ticket')
+        self.assertEqual(self.git('rev-parse', original['branch']), original['commit'])
+        self.assertEqual(run['conflicted_paths'], ['readme'])
+        self.assertIn('CONFLICT', run['git_diagnostics']['stdout'])
+        self.assertEqual(run['integration_tested_commit'], run['published_commit'])
+        self.assertTrue(Path(run['resolution_reports'][0]).is_file())
+        self.await_receipt(todo['id'])
+
+    def test_restart_during_resolution_reuses_candidate_and_waiting_entries(self):
+        self.conflict_fixture()
+        resolve = self.workflow.resolve_candidate
+        def interrupt(ident, run, candidate, cause):
+            run.update(phase='resolving_conflict', message='Agent resolving merge conflict', conflicted_paths=['readme'])
+            self.workflow.save(ident, run)
+            raise SystemExit('Simulated coordinator exit')
+        with patch.object(self.workflow, 'resolve_candidate', side_effect=interrupt):
+            self.run_stage('merge')
+        before = self.workflow.status()['runs']['T0001']
+        self.restart_coordinator()
+        self.workflow.dispatch(); self.await_workers()
+        after = self.workflow.status()['runs']['T0001']
+        self.assertEqual(after['phase'], 'restarting', after)
+        self.assertEqual(after['integration_worktree'], before['integration_worktree'])
+        self.await_receipt('T0001')
+
+    def test_git_diagnostics_preserve_both_streams_and_command(self):
+        from integration import GitFailure
+        result = subprocess.CompletedProcess([], 1, 'CONFLICT in app.js', 'Recorded preimage for app.js')
+        with patch('workflow.subprocess.run', return_value=result):
+            with self.assertRaises(GitFailure) as caught:
+                self.workflow.git('merge', 'candidate')
+        self.assertIn('CONFLICT', str(caught.exception))
+        self.assertIn('Recorded preimage', str(caught.exception))
+        self.assertEqual(caught.exception.evidence['command'], ['merge','candidate'])
+
+    def test_genuine_resolution_blocker_retains_attempts_and_queue(self):
+        self.conflict_fixture()
+        agent = Path(self.processing['executable'])
+        agent.write_text('#!'+sys.executable+'''\nimport pathlib,sys,json
+sys.stdin.read()
+pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status='needs_attention',attempts=['Inspected both contracts', 'Searched saved requirements'],blocker='Required external interface specification is unavailable')))
+''')
+        todo = self.run_stage('merge'); run = todo['workflow']
+        self.assertEqual(run['phase'], 'resolution_blocked')
+        self.assertIn('Inspected both contracts', run['message'])
+        self.assertIn('specification', run['message'])
+        self.assertEqual(self.workflow.status()['queue_blocked_by'], todo['id'])
+        self.assertTrue(Path(run['integration_worktree']).exists())
+        self.assertEqual((self.repo/'readme').read_text(), 'main')
+
+    def test_unchanged_failing_candidate_stops_for_lack_of_progress(self):
+        self.run_stage('implement')
+        agent = Path(self.processing['executable'])
+        agent.write_text('#!'+sys.executable+'''\nimport pathlib,subprocess,sys,json
+sys.stdin.read()
+head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status='complete',commit=head,summary='No changed candidate',tests=[],attempts=['Inspected failure'],blocker='')))
+''')
+        self.options['test'] = [sys.executable, '-c', 'raise SystemExit(1)']
+        run = self.run_stage('merge')['workflow']
+        self.assertEqual(run['phase'], 'resolution_blocked')
+        self.assertIn('without progress', run['message'])
+        self.assertEqual(len(run['resolution_reports']), 1)
+        self.assertEqual(len(run['resolution_failures']), 1)
+        retried = self.run_stage('merge')['workflow']
+        self.assertEqual(retried['phase'], 'resolution_blocked')
+        self.assertEqual(len(retried['resolution_reports']), 2)
+        self.assertNotEqual(run['resolution_epoch'], retried['resolution_epoch'])
+
+    def test_incomplete_or_newer_receipts_keep_delivery_pending(self):
+        self.run_stage('implement'); todo = self.run_stage('merge')
+        path = self.await_receipt(todo['id'])
+        valid = json.loads(path.read_text())
+        for receipt, reason in [('interrupted JSON', 'pending'),
+                                (json.dumps(dict(valid, format_version='1.14.0')), 'too old'),
+                                (json.dumps(dict(valid, commit='0'*40)), 'different candidate'),
+                                (json.dumps(dict(valid, ok='true')), 'incomplete')]:
+            path.write_text(receipt)
+            self.workflow.reconcile()
+            run = self.workflow.status()['runs'][todo['id']]
+            self.assertEqual(run['phase'], 'restarting')
+            self.assertIn(reason, run['message'])
+        path.write_text(json.dumps(valid)); self.workflow.reconcile()
+        self.assertEqual(self.workflow.status()['runs'][todo['id']]['phase'], 'done')
+
+    def test_agent_reconciles_competing_migration_successors(self):
+        baseline = "def initial(v): return v\nMIGRATIONS = {'0.0.0': initial}\n"
+        (self.repo/'versions.py').write_text(baseline)
+        self.git('add', 'versions.py'); self.git('commit', '-qm', 'Initial registry'); self.git('push','origin','main')
+        agent = Path(self.processing['executable'])
+        proposed = "def initial(v): return v\ndef effort(v): return dict(v, effort='medium')\nMIGRATIONS = {'0.0.0': initial, '1.0.0': effort}\n"
+        agent.write_text(agent.read_text().replace('sys.stdin.read()', 'sys.stdin.read();pathlib.Path("versions.py").write_text('+repr(proposed)+')').replace('["git","add","result"]', '["git","add","result","versions.py"]'))
+        original = self.run_stage('implement')['workflow']
+        main = "def initial(v): return v\ndef discovery(v): return dict(v, search_paths=[])\nMIGRATIONS = {'0.0.0': initial, '1.0.0': discovery}\n"
+        (self.repo/'versions.py').write_text(main)
+        self.git('add','versions.py'); self.git('commit','-qm','Published discovery migration'); self.git('push','origin','main')
+        combined = "def initial(v): return v\ndef discovery(v): return dict(v, search_paths=[])\ndef effort(v): return dict(v, effort='medium')\nMIGRATIONS = {'0.0.0': initial, '1.0.0': discovery, '1.1.0': effort}\n"
+        agent.write_text('#!'+sys.executable+'\nimport pathlib,subprocess,sys,json\nprompt=sys.stdin.read()\nassert "sequential registry" in prompt\npathlib.Path("versions.py").write_text('+repr(combined)+')\nsubprocess.run(["git","add","versions.py"],check=True)\nsubprocess.run(["git","commit","-qm","Serialize both migrations"],check=True)\nhead=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()\npathlib.Path(sys.argv[sys.argv.index("-o")+1]).write_text(json.dumps(dict(status="complete",commit=head,summary="Both migrations retained",tests=["supported upgrades"],attempts=["Preserved published assignment; appended effort"],blocker="")))\n')
+        self.options['test'] = [sys.executable, '-B', '-c', "import versions; v={'original':'retained','extension':[42]};\nfor f in versions.MIGRATIONS.values(): v=f(v)\nassert v == {'original':'retained','extension':[42],'search_paths':[],'effort':'medium'}"]
+        todo = self.run_stage('merge'); run = todo['workflow']
+        self.assertEqual(run['phase'], 'restarting', run)
+        self.assertEqual((self.repo/'versions.py').read_text(), combined)
+        self.assertEqual(self.git('rev-parse', original['branch']), original['commit'])
+        self.await_receipt(todo['id'])
 
     def migration_review(self):
         self.run_stage('implement')
