@@ -1,6 +1,7 @@
 'use strict';
 // Aggregate records never enter `data`: it is exclusively the local writable inbox.
 let aggregateSources = [], aggregateBusy = false, aggregateSignature = '';
+document.addEventListener('unfertig:board-view-changed', () => { aggregateSources = []; aggregateSignature = ''; });
 const localRenderIdeas = renderIdeas, localRenderTodos = renderTodos, localUpdateChoices = updateChoices;
 const aggregating = () => boardContext?.mode === 'aggregation';
 const qualified = (project, value) => JSON.stringify([project, value]);
@@ -20,9 +21,11 @@ function ownerLink(source, kind, id) {
 async function refreshAggregate() {
   if (!aggregating() || aggregateBusy || busy || document.hidden || document.activeElement?.closest('.row-priority')) return;
   aggregateBusy = true;
+  const requestedView = viewKey;
   try {
     const response = await fetch('/api/aggregate'); const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Could not refresh sources.');
+    if (requestedView !== viewKey) return;
     const signature = JSON.stringify(result.sources.map(s => [s.project_id,s.name,s.revision,s.status,s.error,s.transport,s.fallback_reason]));
     aggregateSources = result.sources;
     $('#source-status').textContent = aggregateSources.map(s => `${sourceName(s)}: ${s.status}${s.error ? ' · ' + s.error : ''}${s.transport ? ' · ' + s.transport : ''}${s.fallback_reason ? ' · HTTP unavailable; using filesystem' : ''}${['unavailable', 'stale'].includes(s.status) ? ' · retry every 20s' : ''}`).concat((result.discovery || []).filter(d => d.status !== 'matched').map(d => `${d.config || d.pattern || 'Discovery'}: ${d.status} · ${d.error}`)).join(' | ') || 'No sources configured. Add sources or search_paths in configuration and restart.';
@@ -39,17 +42,24 @@ function aggregateStats() {
   $('#progress-note').textContent = `${done} of ${todos.length} source todos complete. See source status for freshness.`;
 }
 updateChoices = function() {
-  if (!aggregating()) return localUpdateChoices();
+  if (!aggregating()) {
+    $('#new-todo').hidden = false; $('#project-filter-label').hidden = true; $('#idea-project-label').hidden = true;
+    return localUpdateChoices();
+  }
   $('#new-todo').hidden = true;
   $('#project-filter-label').hidden = false; $('#idea-project-label').hidden = false;
-  const project = $('#project-filter').value, selection = $('#idea-project').value;
+  let project = $('#project-filter').value; const selection = $('#idea-project').value;
   $('#project-filter').innerHTML = '<option value="">All projects</option>' + aggregateSources.map(s => `<option value="${escapeHTML(s.project_id)}" ${project === s.project_id ? 'selected' : ''}>${escapeHTML(sourceName(s))}</option>`).join('');
+  restoreViewChoice('project-filter', Boolean(aggregateSignature));
+  project = $('#project-filter').value;
   $('#idea-project').innerHTML = projectOptions(selection);
   for (const [id, field, label] of [['group-filter','group','All groups'], ['tag-filter','tags','All tags']]) {
     const selected = $('#' + id).value;
     const choices = aggregateSources.filter(s => !project || s.project_id === project).flatMap(s => unique((s.data?.todos || []).flatMap(t => field === 'tags' ? t.tags : [t.group]).filter(Boolean)).sort().map(v => ({value:qualified(s.project_id,v), label:sourceName(s) + ' / ' + v})));
     $('#' + id).innerHTML = `<option value="">${label}</option>` + choices.map(c => `<option value="${escapeHTML(c.value)}" ${c.value === selected ? 'selected' : ''}>${escapeHTML(c.label)}</option>`).join('');
   }
+  for (const id of ['group-filter','tag-filter']) restoreViewChoice(id, Boolean(aggregateSignature));
+  rememberViewState();
 };
 renderIdeas = function() {
   if (!aggregating()) return localRenderIdeas();
@@ -83,7 +93,7 @@ renderTodos = function() {
   } else $('#todos').innerHTML = rows.map(card).join('');
   if (!rows.length) $('#todos').innerHTML = '<p>No source todos match. Check source status and filters.</p>';
 };
-$('#project-filter').addEventListener('change', () => { updateChoices(); renderTodos(); });
+$('#project-filter').addEventListener('change', () => { if (!safeViewChange()) { $('#project-filter').value = viewValues.get('project-filter'); return; } delete pendingViewChoices['project-filter']; updateChoices(); rememberViewState(); renderTodos(); });
 $('#ideas').addEventListener('change', async event => {
   const id = event.target.dataset.projectIdea; if (!id) return;
   const next = structuredClone(data), idea = next.ideas.find(i => i.id === id); idea.selected_project = event.target.value;
