@@ -119,6 +119,23 @@ class VersionTests(unittest.TestCase):
         request = self.edit(format_version='1.1.0')
         with self.assertRaisesRegex(VersionError,'downgrade'): self.store.mutate(request)
 
+    def test_current_format_creation_defaults_and_future_effort_is_read_only(self):
+        self.store.initialize()
+        todo = dict(fixture()['todos'][0], format_version=FORMAT_VERSION, source_ideas=[])
+        todo.pop('id')
+        result = self.store.mutate(dict(actor='Codex', request_id=uuid.uuid4().hex,
+            changes=[dict(collection='todos', id=None, record=todo)]))
+        self.assertEqual(result['data']['todos'][-1]['effort'], 'medium')
+        future = dict(result['data']['todos'][0], format_version='1.11.0', effort='future')
+        self.write(self.todo, future)
+        before = self.files(); self.store.initialize()
+        snapshot = self.store.snapshot()
+        self.assertTrue(snapshot['compatibility']['read_only'])
+        self.assertEqual(snapshot['data']['todos'][0]['effort'], 'future')
+        with self.assertRaises(Conflict):
+            self.store.mutate(self.edit(name='Cannot overwrite future semantics'))
+        self.assertEqual(self.files(), before)
+
     def test_effort_migration_defaults_preserves_and_recovers(self):
         from efforts import EFFORTS
         for effort in [None, *EFFORTS]:

@@ -391,7 +391,7 @@ $('#todos').addEventListener('toggle', event => {
 }, true);
 $('#fold-all').addEventListener('click', () => { $$('#todos details').forEach(el => el.open = false); });
 $('#unfold-all').addEventListener('click', () => { $$('#todos details').forEach(el => el.open = true); });
-document.addEventListener('click', event => {
+document.addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
   if (button.dataset.close) $('#' + button.dataset.close).close();
   if (button.dataset.make) newTodo(data.ideas.find(idea => idea.id === button.dataset.make));
@@ -403,12 +403,18 @@ document.addEventListener('click', event => {
     if (priorityDrafts.entries.has(id)) { toast('Resolve this priority draft before copying a saved briefing.'); return; }
     const form = $(`.todo-editor[data-id="${id}"]`);
     if (form?.dataset.dirty === 'true') { toast('Save your edits first so the briefing includes them.'); return; }
-    const todo = data.todos.find(todo => todo.id === id);
-    if (button.dataset.humanBrief) {
-      showCopy(humanBrief(todo), `Human briefing · ${id}`, 'A handoff for a person: the task, original context, and how to finish. Copying leaves the todo unchanged.');
-    } else {
-      showCopy(implementationBrief(todo), `AI briefing · ${id}`);
-    }
+    try {
+      const snapshot = await requestState();
+      if (snapshot.compatibility?.read_only || snapshot.history?.pending) throw new Error('Resolve compatibility or pending history before copying.');
+      if (form?.dataset.dirty === 'true' || priorityDrafts.entries.has(id)) throw new Error('Save your edits before copying a briefing.');
+      const todo = snapshot.data.todos.find(todo => todo.id === id);
+      if (!todo) throw new Error('The saved todo is unavailable.');
+      if (button.dataset.humanBrief) {
+        showCopy(humanBrief(todo, snapshot.data, snapshot.context), `Human briefing · ${id}`, 'A handoff for a person: the task, original context, and how to finish. Copying leaves the todo unchanged.');
+      } else {
+        showCopy(implementationBrief(todo, snapshot.data, snapshot.context), `AI briefing · ${id}`);
+      }
+    } catch (error) { toast('No current briefing copied. ' + error.message); }
   }
   if (button.dataset.reset) { const form = button.closest('form'); form.reset(); form.querySelector('.category-help').textContent = categoryBrief({category:form.elements.category.value}); draftRevisions.delete(form.dataset.id); delete form.dataset.dirty; saveState($('.todo-editor[data-dirty="true"]') ? 'Unsaved edits' : stale ? 'External changes pending' : 'All changes saved'); }
   if (button.dataset.jump) {
