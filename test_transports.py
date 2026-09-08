@@ -41,6 +41,114 @@ class Conformance:
     test_duplicate_provenance = fixtures.AggregationTests.test_duplicate_source_provenance_rejected_with_new_request_id
     test_inbox_history_recovery = fixtures.AggregationTests.test_local_history_failure_after_destination_save
 
+    def discovered_router(self):
+        for source, board in zip(self.sources, self.boards[1:]):
+            config = json.loads(board.config.read_text())
+            config['aggregation_source'] = dict(app_root='.', url=source['url'])
+            board.config.write_text(json.dumps(config))
+        self.inbox.context.update(sources=[], search_paths=[str(self.root / '*/config.json')],
+                                  transports=self.enabled)
+        self.router = Aggregation(self.inbox)
+        return self.router
+
+    def test_discovery_refresh_retains_cache_and_claim_then_recovers(self):
+        router = self.discovered_router()
+        before = self.refreshed(router)['sources'][0]
+        original = router.transfer
+        def lost(source, path='/api/state', *args, **kwargs):
+            result = original(source, path, *args, **kwargs)
+            if path == '/api/changes':
+                raise Unreachable('Lost accepted response')
+            return result
+        with patch.object(router, 'transfer', side_effect=lost):
+            blocked = router.route(self.request())['idea']['routing']
+        self.assertEqual(blocked['status'], 'blocked')
+        self.assertIn('request', blocked)
+        config = self.alpha.config.read_bytes()
+        self.alpha.config.unlink()
+        router.refresh_discovery()
+        removed = router.entries['alpha']
+        self.assertEqual(removed['status'], 'removed')
+        self.assertEqual(removed['data'], before['data'])
+        retry = router.route(self.request())['idea']['routing']
+        self.assertEqual(retry['request'], blocked['request'])
+        self.assertIn('removed', retry['reason'])
+        # Restart retains the saved destination even without an in-memory cache.
+        restarted = Aggregation(self.inbox)
+        self.assertEqual(restarted.entries['alpha']['status'], 'removed')
+        self.assertIsNone(restarted.entries['alpha']['data'])
+        self.alpha.config.write_bytes(config)
+        router.refresh_discovery()
+        self.assertEqual(router.route(self.request())['idea']['routing']['status'], 'routed')
+        self.assertEqual(len(self.alpha.read()[0]['todos']), 2)
+        self.assertEqual(len(list(self.alpha.receipts.glob('*.json'))), 1)
+        # Same receipt remains recoverable after changing transport.
+        source = dict(self.sources[0], transports=dict(http=False, filesystem=True))
+        result = filesystem(source, validate, blocked['request'], blocked['preflight'])
+        self.assertEqual(len(result['data']['todos']), 2)
+
+    def test_discovery_serializes_membership_refresh_during_route(self):
+        router = self.discovered_router()
+        entered, release, discovered = threading.Event(), threading.Event(), threading.Event()
+        original = router.transfer
+        def paused(source, path='/api/state', *args, **kwargs):
+            if path == '/api/changes':
+                entered.set()
+                if not release.wait(3):
+                    raise ValueError('Test timed out waiting for refresh')
+            return original(source, path, *args, **kwargs)
+        outcomes = []
+        with patch.object(router, 'transfer', side_effect=paused):
+            worker = threading.Thread(target=lambda: outcomes.append(router.route(self.request())))
+            worker.start()
+            self.assertTrue(entered.wait(2))
+            router.store.context['search_paths'] = [str(self.root / 'beta/config.json')]
+            refresh = threading.Thread(target=lambda: (router.refresh_discovery(), discovered.set()))
+            refresh.start()
+            self.assertFalse(discovered.wait(0.05))
+            # Cached UI reads remain nonblocking while route/discovery is busy.
+            self.assertTrue(router.view()['sources'])
+            release.set(); worker.join(3); refresh.join(3)
+        self.assertFalse(worker.is_alive()); self.assertFalse(refresh.is_alive())
+        self.assertEqual(outcomes[0]['idea']['routing']['status'], 'routed')
+        self.assertEqual(router.entries['alpha']['status'], 'removed')
+
+    def test_discovery_old_refresh_cannot_resurrect_removed_source(self):
+        router = self.discovered_router()
+        self.refreshed(router)
+        original = router.inspect_source
+        entered, release = threading.Event(), threading.Event()
+        def slow(source):
+            snapshot = original(source)
+            entered.set(); release.wait(3)
+            return snapshot
+        with patch.object(router, 'inspect_source', side_effect=slow):
+            worker = threading.Thread(target=router.refresh_source, args=(router.sources[0],))
+            worker.start(); self.assertTrue(entered.wait(2))
+            self.alpha.config.unlink()
+            router.refresh_discovery()
+            release.set(); worker.join(3)
+        self.assertEqual(router.entries['alpha']['status'], 'removed')
+        self.assertIsNotNone(router.entries['alpha']['data'])
+
+    def test_discovery_added_sources_selection_and_changed_identity_block(self):
+        router = self.discovered_router()
+        config = self.beta.config.read_bytes()
+        self.beta.config.unlink(); router.refresh_discovery()
+        self.assertEqual(router.entries['beta']['status'], 'removed')
+        self.beta.config.write_bytes(config); router.refresh_discovery()
+        request = self.request('beta')
+        idea = self.inbox.read()[0]['ideas'][0]
+        self.inbox.mutate(dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
+            collection='ideas', id=idea['id'], revision=digest(idea), record=dict(idea, selected_project='beta'))]))
+        self.assertEqual(router.route(self.request('beta'))['idea']['routing']['status'], 'routed')
+        # Reusing a retained project ID with a different service is never accepted.
+        changed = json.loads(config)
+        changed['aggregation_source']['url'] = 'http://127.0.0.1:1'
+        self.beta.config.write_text(json.dumps(changed)); router.refresh_discovery()
+        self.assertEqual(router.entries['beta']['status'], 'removed')
+        self.assertTrue(any('changed' in r['error'] for r in router.discovery_reports))
+
     def test_capture_system_is_authoritative_and_preserved(self):
         source = self.sources[0]
         snapshot = self.router.inspect_source(source)

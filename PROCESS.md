@@ -311,8 +311,9 @@ sequential migrations under the writer lock and commit meaningful changes locall
 
 ## Aggregation routing (format 1.2)
 
-Aggregation uses an explicit list of sources, never filesystem recursion or nested
-aggregators. Each source is an exact data JSON path, loopback service origin and
+Aggregation uses exact sources and optional bounded config `search_paths` (format
+1.10); no recursive `**` or nested aggregators. See TRANSPORTS.md for matching,
+service metadata, symlink boundaries and removed-source recovery. Each source is an exact data JSON path, loopback service origin and
 stable project_id. GET `/api/aggregate` is a read-only view with source-qualified
 identities, revisions, context and reachable/stale/unavailable status. Only its
 local inbox is writable through `/api/changes`; it cannot own any todos. Source

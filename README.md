@@ -197,6 +197,50 @@ Set the corresponding `project_id` in each source config and restart it first;
 verify source IDs and exact data paths with `/api/state`. Configuration paths are
 relative to the config file. Up to 20 explicit JSON locations are supported.
 
+
+To discover existing boards at startup and during refresh, add `search_paths`
+alongside any exact `sources` (format 1.10):
+
+```json
+{
+  "search_paths": [
+    "../../../um-*/state/unfertig/config/config.json",
+    "../../../companies/*/projects/um-*/state/unfertig/config/config.json",
+    "../../../companies/*/clients/*/state/unfertig/config/config.json"
+  ]
+}
+```
+
+Each matched **config**, not data file, must declare its existing board's `data`
+and explicit stable `project_id`, plus service metadata such as:
+
+```json
+{
+  "aggregation_source": {
+    "app_root": "../../../tools/unfertig",
+    "url": "http://127.0.0.1:8766"
+  }
+}
+```
+
+The app path is relative to that matched config and must contain PROCESS.md.
+The loopback URL must match the actual service; discovery never infers it from
+`port`, starts services or creates boards. Filesystem-only mode can omit `url`.
+Keep machine-specific metadata in your host's supported local config and target
+that effective config when necessary; examples are not installation settings.
+
+Patterns support `*` and `?` within components, but no `**` or brackets. They
+follow directory symlinks only along those finite components, including outside
+the pattern's prefix. Canonical aliases and exact entries deduplicate when their
+metadata agrees. The limit remains 20 unique current boards. Unmatched/invalid
+patterns appear in source status; removed boards retain cached rows and project
+filters, with writes blocked. Returning matches recover without restart. Saved
+routing claims keep their destination and retry request even across restart.
+See [TRANSPORTS.md](TRANSPORTS.md#config-search-paths-format-110) for all bounds,
+refresh scheduling, identity conflicts, symlink behavior and recovery. Configure
+and migrate explicitly under [VERSIONING.md](VERSIONING.md); discovery itself
+never migrates sources or grants write authorization.
+
 An explicit `project_id` always takes precedence. If omitted, the ID is the first
 32 hexadecimal characters of SHA-256 of the resolved board data path relative to
 the enclosing Kermit workspace, using POSIX separators and UTF-8. The workspace
