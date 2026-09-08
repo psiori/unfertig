@@ -5,6 +5,10 @@
   let verifiedAt = null, refreshing = false;
   // A hung request or a suspended tab must not leave confirmed activity behind.
   const activityLifetime = 6000;
+  function hasTicketDraft(id) {
+    return Boolean(document.querySelector?.(`.todo-editor[data-id="${id}"][data-dirty="true"]`) ||
+      (typeof priorityDrafts !== 'undefined' && priorityDrafts.entries.has(id)));
+  }
   function renderActivity() {
     const fresh = verifiedAt !== null && Date.now() - verifiedAt < activityLifetime;
     document.querySelectorAll('[data-workflow-icon]').forEach(icon => {
@@ -47,7 +51,7 @@
       slot.hidden = latest.enabled !== true || !next;
       if (slot.hidden) { slot.innerHTML = ''; return; }
       const [action,label,allowed] = next;
-      const disabled = sending.has(todo.id) || run?.active || !allowed || !latest.configured || compatibility.read_only || history.pending || hasDraft() || run?.foreign;
+      const disabled = sending.has(todo.id) || run?.active || !allowed || !latest.configured || compatibility.read_only || history.pending || hasTicketDraft(todo.id) || run?.foreign;
       const html = `<button type="button" class="button small next-step" data-workflow-action="${action}" data-todo="${todo.id}" ${disabled ? 'disabled' : ''}>${label}${allowed ? ' ↗' : ''}</button>`;
       if (slot.innerHTML !== html) slot.innerHTML = html;
     });
@@ -57,7 +61,7 @@
       const id = panel.dataset.workflow, todo = data.todos.find(t => t.id === id);
       if (!todo) return;
       const run = latest.runs[id];
-      const disabled = sending.has(id) || !latest.configured || run?.active || compatibility.read_only || history.pending || hasDraft() || run?.foreign;
+      const disabled = sending.has(id) || !latest.configured || run?.active || compatibility.read_only || history.pending || hasTicketDraft(id) || run?.foreign;
       const button = (action, label, allowed) => `<button type="button" class="button small" data-workflow-action="${action}" data-todo="${id}" ${disabled || !allowed ? 'disabled' : ''}>${label}</button>`;
       const expanded = panel.querySelector('details')?.open;
       const scroll = panel.querySelector('pre')?.scrollTop || 0;
@@ -117,7 +121,7 @@
     const button = event.target.closest('[data-workflow-action]');
     if (!button) return;
     event.preventDefault(); event.stopPropagation();
-    if (!latest?.enabled || sending.has(button.dataset.todo) || button.disabled || hasDraft()) return;
+    if (!latest?.enabled || sending.has(button.dataset.todo) || button.disabled || hasTicketDraft(button.dataset.todo)) return;
     const id = button.dataset.todo, action = button.dataset.workflowAction, run = latest.runs[id];
     if (action === 'merge' && !confirm(`Merge ${run.branch} at ${run.commit}, push it and restart the configured artifact?${testStatus(run) ? `\n\n${testStatus(run)}` : ''}`)) return;
     sending.add(id); button.disabled = true;

@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 from processing import Processor, system_id
 from codex_runtime import resolve_executable
-from storage import Conflict, digest, OperationLock
+from storage import Conflict, digest, OperationLock, atomic, encode
 
 ACTIVE = {'implementing', 'testing', 'merging'}
 
@@ -90,6 +90,7 @@ class Workflow:
         self.live = {}
         self.stopping = False
         self.next_tick = 0
+        self.next_dependency_fetch = 0
         # No implicit backlog sweep when an administrator first enables automation.
         self.since = options['automatic_since'] or datetime.now(timezone.utc).isoformat()
 
@@ -196,6 +197,43 @@ class Workflow:
         self.git('push', 'origin', commit+':refs/heads/'+run['branch'], cwd=run['worktree'])
         return commit
 
+    def process_identity(self, pid):
+        """Distinguish PID reuse on Linux; other hosts conservatively retain a block."""
+        try:
+            stat = Path(f'/proc/{pid}/stat').read_text()
+            fields = stat[stat.rfind(')')+2:].split()
+            if fields[0] == 'Z':
+                return None
+            return fields[19]  # Linux starttime, field 22 after pid/comm.
+        except (OSError, IndexError):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return None
+            except PermissionError:
+                pass
+            return 'unknown'
+
+    def process_receipt(self, run):
+        return Path(run['worktree']).parent / (run['run_id']+'-process.json')
+
+    def guard_process(self, run):
+        path = self.process_receipt(run)
+        if not path.exists():
+            return
+        from versions import inspect
+        saved = json.loads(path.read_text())
+        if inspect(saved, 'worker process receipt')[0] == 'read_only':
+            raise Conflict('Worker receipt needs a newer Unfertig before recovery.')
+        if saved.get('run_id') != run['run_id']:
+            raise Conflict('Worker receipt belongs to a different run.')
+        if saved.get('state') == 'launching':
+            raise Conflict('Worker launch outcome is unknown. Inspect retained process receipt before recovery: '+str(path))
+        if saved.get('state') == 'running':
+            identity = self.process_identity(saved['pid'])
+            if identity is not None and (identity == 'unknown' or identity == saved.get('identity')):
+                raise Conflict('The retained worker is still running. Do not launch a duplicate; inspect '+str(path))
+
     def active_workers(self):
         return {key: worker for key, worker in self.workers.items() if worker.is_alive()}
 
@@ -210,8 +248,15 @@ class Workflow:
         for ident in todo.get('depends_on', []):
             dependency = by_id.get(ident, {})
             run = dependency.get('workflow', {})
-            if not (run.get('published_commit') or run.get('phase') == 'done' or
-                    (not run and dependency.get('status') == 'closed')):
+            satisfied = bool(run.get('published_commit') or run.get('phase') == 'done')
+            if not run and dependency.get('status') == 'closed' and dependency.get('commit_hash'):
+                try:
+                    self.git('merge-base', '--is-ancestor', dependency['commit_hash'],
+                             'refs/remotes/origin/'+self.options['base_branch'])
+                    satisfied = True
+                except ValueError:
+                    pass
+            if not satisfied:
                 waiting.append(ident)
         return 'Waiting for dependencies: '+', '.join(waiting) if waiting else ''
 
@@ -247,6 +292,10 @@ class Workflow:
                 if self.active_workers():
                     return
                 queued = merges[:1]
+            if any(t.get('depends_on') for t in queued) and time.monotonic() >= self.next_dependency_fetch:
+                self.next_dependency_fetch = time.monotonic()+10
+                with self.repository_lock():
+                    self.git('fetch', 'origin', self.options['base_branch'])
             for todo in queued:
                 if len(self.active_workers()) >= self.options['max_workers']:
                     break
@@ -322,6 +371,7 @@ class Workflow:
                 expected = Path(self.options['repository']) / '.worktrees' / 'unfertig' / run['run_id']
                 if Path(run['worktree']).resolve() != expected or not run['branch'].startswith('codex/'):
                     raise ValueError('Run paths do not match this repository. Manual recovery required.')
+                self.guard_process(run)
                 if run['repository'] != self.options['repository']:
                     raise ValueError('Repository configuration changed. Recover this run in its original repository.')
                 head = self.git('rev-parse', run['branch']) if action != 'retry' or Path(run['worktree']).exists() else run['base']
@@ -351,9 +401,21 @@ class Workflow:
         with self.lock:
             if self.stopping:
                 raise ValueError('Service is stopping.')
-            child = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=os.name != 'nt')
+            run = next(t['workflow'] for t in self.snapshot()['data']['todos'] if t['id'] == ident)
+            self.guard_process(run)
+            receipt_path = self.process_receipt(run)
+            receipt = dict(format_version='1.8.0', run_id=run['run_id'], state='launching')
+            atomic(receipt_path, encode(receipt))
+            try:
+                child = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=os.name != 'nt')
+            except Exception:
+                receipt.update(state='exited', returncode=None)
+                atomic(receipt_path, encode(receipt))
+                raise
             self.children[ident] = child
+            receipt.update(state='running', pid=child.pid, identity=self.process_identity(child.pid))
+            atomic(receipt_path, encode(receipt))
         if stdin:
             child.stdin.write(stdin); child.stdin.close()
         timed_out = threading.Event()
@@ -374,6 +436,8 @@ class Workflow:
         finally:
             timer.cancel()
             child.stdout.close()
+            receipt.update(state='exited', returncode=child.returncode)
+            atomic(receipt_path, encode(receipt))
             with self.lock:
                 self.children.pop(ident, None)
 

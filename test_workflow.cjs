@@ -60,7 +60,7 @@ test('collapsed row follows workflow stages and respects execution guards',async
   const events={}; let poll, draft=false;
   let result={enabled:true,runs:{},configured:true,busy:false};
   const slot={hidden:true,innerHTML:'',dataset:{workflowNext:'T0001'}};
-  const context={document:{querySelectorAll:s=>s==='[data-workflow-next]'?[slot]:[],addEventListener:(name,fn)=>events[name]=fn},
+  const context={document:{querySelector:()=>draft?{}:null,querySelectorAll:s=>s==='[data-workflow-next]'?[slot]:[],addEventListener:(name,fn)=>events[name]=fn},
     AbortSignal,token:'token',data:{todos:[{id:'T0001',status:'open'}]},compatibility:{read_only:false},history:{pending:false},
     hasDraft:()=>draft,escapeHTML:s=>s,setInterval:fn=>poll=fn,setTimeout:()=>{},
     fetch:async()=>({ok:true,json:async()=>result})};
