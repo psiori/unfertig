@@ -32,8 +32,8 @@
         <textarea id="idea-text" rows="2" placeholder="What’s on your mind? Rough ideas welcome." required maxlength="100000"></textarea>
         <div class="composer-footer"><span><kbd id="shortcut">⌘</kbd> <kbd>Enter</kbd> to capture</span><div class="composer-actions"><label id="idea-project-label" hidden>Project <select id="idea-project"><option value="">Infer from text</option></select></label><button id="add-idea" class="button primary" type="submit" disabled>Add idea <span aria-hidden="true">↗</span></button></div></div>
       </form>
-      </div><div class="saved-column">
-      <div class="scratch-toolbar"><div><h3 id="saved-ideas-heading">Saved ideas <span id="pending-count" class="count" title="Total saved ideas in this board">0</span></h3><p id="scratch-summary">Your ideas, before they become a plan.</p></div><label class="check"><input type="checkbox" id="show-processed"> Show processed</label></div>
+      </div><div class="saved-column" id="saved-ideas">
+      <div class="scratch-toolbar"><div><h3 id="saved-ideas-heading">Saved ideas <span id="pending-count" class="count" title="Total saved ideas in this board">0</span></h3><p id="scratch-summary">Your ideas, before they become a plan.</p></div><div class="saved-idea-controls"><label class="check"><input type="checkbox" id="show-processed"> Show processed</label><button id="expand-ideas" class="button small" type="button" aria-label="Expand saved ideas" title="Expand saved ideas" aria-expanded="false" aria-controls="saved-ideas"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="expand-icon" d="M8 3H3v5m0-5 7 7m6 11h5v-5m0 5-7-7"/><path class="collapse-icon" d="M3 10h7V3m0 7L3 3m18 11h-7v7m0-7 7 7"/></svg></button></div></div>
       <ul id="ideas" class="ideas" aria-labelledby="saved-ideas-heading"></ul>
       </div></div>
       <div class="processing-controls" aria-labelledby="processing-heading">
