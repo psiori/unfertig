@@ -40,6 +40,45 @@ class RecordTests(unittest.TestCase):
         record.update(fields)
         return dict(request_id=uuid.uuid4().hex, actor='Test', changes=[dict(collection='todos', id=record['id'], revision=revision, record=record)])
 
+    def test_completion_lifecycle_and_recovery(self):
+        closure = dict(status='closed', closed_by='Test', date_closed=STAMP)
+        with self.assertRaisesRegex(ValueError, 'Completion summary'):
+            self.store.mutate(self.edit(**closure))
+        summary = 'Added closure reporting. Verified lifecycle tests. No limitations.'
+        request = self.edit(**closure, completion_summary=summary)
+        real = storage.atomic
+        def interrupted(target, content):
+            if target.name == 'T0001.json':
+                raise OSError('interrupted closure')
+            return real(target, content)
+        with patch('storage.atomic', side_effect=interrupted):
+            with self.assertRaises(OSError):
+                self.store.mutate(request)
+        self.store.recover()
+        saved = self.store.mutate(request)['data']['todos'][0]
+        self.assertEqual(saved['completion_summary'], summary)
+        self.assertEqual(saved['description'], self.original['todos'][0]['description'])
+        with self.assertRaisesRegex(ValueError, 'Completion summary'):
+            self.store.mutate(self.edit(completion_summary='  '))
+        self.store.mutate(self.edit(status='open', closed_by='', date_closed=''))
+        self.assertEqual(self.store.read()[0]['todos'][0]['completion_summary'], '')
+        with self.assertRaisesRegex(ValueError, 'Completion summary'):
+            self.store.mutate(self.edit(**closure))
+        self.store.mutate(self.edit(**closure, completion_summary='Rechecked the outcome; tests passed; no follow-up.'))
+
+    def test_legacy_closed_summary_absence_is_not_fabricated(self):
+        old = copy.deepcopy(self.original)
+        old['todos'][0].update(status='closed', closed_by='Original', date_closed=STAMP)
+        validate(old)
+        changed = copy.deepcopy(old)
+        changed['todos'][0]['priority'] = 'urgent'
+        validate(changed, old)
+        from versions import migrate
+        migrated = migrate(old['todos'][0], 'todo')
+        self.assertNotIn('completion_summary', migrated)
+        self.assertEqual(migrated['closed_by'], 'Original')
+        self.assertEqual(migrate(migrated, 'todo'), migrated)
+
     def test_migration_lossless_and_repeatable(self):
         self.assertEqual(semantic(self.store.read()[0]), self.original)
         self.assertEqual(json.loads((self.path.parent/'data.v1-backup.json').read_bytes()), self.original)
