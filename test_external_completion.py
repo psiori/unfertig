@@ -222,7 +222,7 @@ class ExternalCompletionTests(unittest.TestCase):
         self.options.update(test=[], preview=[], restart=[])
         server = Server(('127.0.0.1', 0), self.store)
         server.workflow = self.workflow
-        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         worker.start()
         body = self.request(todo)
         try:

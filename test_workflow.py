@@ -316,7 +316,7 @@ class WorkflowTests(unittest.TestCase):
         import threading
         server=Server(('127.0.0.1',0),self.store);server.workflow=self.workflow
         self.options['enabled']=False
-        worker=threading.Thread(target=server.serve_forever,daemon=True);worker.start()
+        worker=threading.Thread(target=server.serve_forever,kwargs={"poll_interval": 0.01},daemon=True);worker.start()
         try:
             for action in ('implement','retry','test','merge'):
                 request=Request(f'http://127.0.0.1:{server.server_port}/api/workflow/action',
@@ -953,7 +953,7 @@ class WorkerCapacityTests(unittest.TestCase):
         import threading
         editor = self.configure_capacity()
         server = Server(('127.0.0.1', 0), self.store); server.workflow = self.workflow
-        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True); thread.start()
         try:
             revision = editor.view()['revision']
             def send(token, value, revision=revision):

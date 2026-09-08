@@ -644,7 +644,7 @@ class Workflow:
             result.append(arg)
         return result
 
-    def run(self, todo, run, action):
+    def run(self, todo, run, action, *, verified_check=None):
         ident = todo['id']
         failed = {'retry':'implementation_failed', 'implement':'implementation_failed', 'test':'test_failed', 'merge':'merge_failed', 'migrate':'merge_failed', 'recover':'restart_failed', 'verify_existing':'handoff_blocked'}[action]
         try:
@@ -722,7 +722,9 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                 finish(self, todo, run)
             elif action == 'test':
                 self.stop_preview(ident)
-                self.command(self.argv('test', run), run['worktree'], ident)
+                from preview_check import PreviewCheck
+                if not (type(verified_check) is PreviewCheck and verified_check.consume(self, run)):
+                    self.command(self.argv('test', run), run['worktree'], ident)
                 if self.git('rev-parse', 'HEAD', cwd=run['worktree']) != run['commit'] or self.git('status', '--porcelain', cwd=run['worktree']):
                     raise ValueError('Testing changed the branch. Review it before retrying.')
                 with socket.socket() as probe:

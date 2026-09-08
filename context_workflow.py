@@ -240,7 +240,7 @@ def publish_changed(w, todo, run):
         w.save(todo['id'],run)
 
 
-def finish(w, todo, run):
+def finish(w, todo, run, *, preview=False):
     from workflow import scope_digest
     guard(w,run)
     w.guard_process(run)
@@ -269,10 +269,15 @@ def finish(w, todo, run):
         protected(p,item)
         item['commit']=head;item['changed']=p.git('rev-parse','HEAD^{tree}',cwd=item['worktree'])!=p.git('rev-parse',item['base']+'^{tree}',cwd=item['worktree'])
     publish_changed(w,todo,run)
+    checks = {}
     for item in available:
         if not item['changed']:continue
         p=facade(w,run,item,todo['id'])
-        p.command(p.argv('test',item),item['worktree'],todo['id'],purpose='verification')
+        if preview and item['repository'] == run['repository'] and item['recipe'].get('preview'):
+            from preview_check import PreviewCheck
+            checks[item['id']] = PreviewCheck.verify(p, item, todo['id'])
+        else:
+            p.command(p.argv('test',item),item['worktree'],todo['id'],purpose='verification')
         if p.git('rev-parse','HEAD',cwd=item['worktree'])!=item['commit'] or p.git('status','--porcelain',cwd=item['worktree']):
             raise Conflict('Verification modified '+item['id'])
         state=p.pr_state(item)
@@ -286,6 +291,7 @@ def finish(w, todo, run):
     run['pr_url']=next((r['pr_url'] for r in available if r.get('changed')), '')
     run['repository_heads']={r['id']:r['commit'] for r in available}
     w.save(todo['id'],run,commit_hash=run['commit'],pr_url=run['pr_url'])
+    return checks
 
 
 def execute(w, todo, run, action):
@@ -331,12 +337,12 @@ Return a JSON object with status complete or needs_attention, summary, tests and
         finally:stopped.set();publisher.join()
         finish(w,todo,run)
     elif action in ('test','verify_existing'):
-        finish(w,todo,run)
+        checks = finish(w,todo,run, preview=action == 'test')
         if action=='test':
             primary=next(r for r in run['repositories'] if r['repository']==run['repository'])
             if primary.get('changed') and primary['recipe'].get('preview'):
                 p=facade(w,run,primary,ident)
-                p.run(todo,primary,'test')
+                p.run(todo,primary,'test', verified_check=checks.get(primary['id']))
                 if primary['phase']!='tested':
                     raise Conflict(primary['message'])
                 if primary.get('preview_url'):run['preview_url']=primary['preview_url']

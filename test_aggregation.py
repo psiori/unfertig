@@ -11,6 +11,8 @@ import unittest
 import uuid
 from unittest.mock import patch
 
+from fixture_servers import start_server
+
 from aggregation import Aggregation, exchange, source_repository_name
 from configuration import resolve
 from server import Server, validate
@@ -96,11 +98,13 @@ class AggregationTests(unittest.TestCase):
         self.sources=[]
         self.servers=[]
         for board in self.boards[1:]:
-            server=Server(('127.0.0.1',0),board)
-            self.servers.append(server)
-            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
-            self.addCleanup(server.server_close);self.addCleanup(server.shutdown)
-            self.sources.append(dict(project_id=board.context['project_id'],data=str(board.path),url=f'http://127.0.0.1:{server.server_port}'))
+            source = dict(project_id=board.context['project_id'], data=str(board.path))
+            if getattr(self, 'enabled', {'http': True})['http']:
+                server = Server(('127.0.0.1', 0), board)
+                self.servers.append(server)
+                start_server(self, server)
+                source['url'] = f'http://127.0.0.1:{server.server_port}'
+            self.sources.append(source)
         self.inbox.context['sources']=self.sources
         self.router=Aggregation(self.inbox)
         result=self.inbox.mutate(dict(request_id=uuid.uuid4().hex,actor='Requester',initials='SL',changes=[dict(collection='ideas',id=None,record=dict(author='Sascha',text='Improve Alpha',date_entered=STAMP))]))
@@ -127,8 +131,7 @@ class AggregationTests(unittest.TestCase):
 
     def test_http_route_and_changed_source_revision(self):
         server=Server(('127.0.0.1',0),self.inbox)
-        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
-        self.addCleanup(server.server_close);self.addCleanup(server.shutdown)
+        start_server(self, server)
         source=dict(url=f'http://127.0.0.1:{server.server_port}')
         snapshot=exchange(source)
         def wait_revision(previous=None):
