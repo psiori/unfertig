@@ -84,7 +84,7 @@ Never replace or unlink live lock files. Hosts must ignore `.server.lock`,
 
 Filesystem discovery never initializes a missing board or migrates formats.
 Every active JSON file and journal payload must already be format 1.3 or a
-compatible successor. Older data requires an explicit stopped migration using
+compatible successor. Older data is migrated by restarting the updated owning instance using
 the child installation and VERSIONING.md procedure. Compatible interrupted
 journals roll forward under the operation lock before returning a snapshot;
 reads do not retry pending Git history. Newer major formats block; newer minors

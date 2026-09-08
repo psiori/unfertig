@@ -55,7 +55,7 @@ implementation rules in JavaScript or prompts. The common contract follows.
 
 8. The integration coordinator serializes by repository, combines the ticket with current main in a separate retained candidate worktree, tests that exact commit, then publishes without force. Any main or PR change invalidates that attempt. Record implementation, tested integration, publication and deployment revisions separately.
 
-9. For managed Unfertig deployment, follow DEPLOYMENT.md: preflight the exact tested candidate before publication or shutdown. Migration required is a review gate, never permission to migrate. Obtain explicit approval for its review ID; keep exact backups and private evidence local, retain the normal unchanged-storage updater, and use the host reservation/migration/recovery CLI. Reconcile already published or externally migrated work through public recovery, never internal claim edits. Verify both wrapper pins, runtime revision, board owner and writable history before calling it deployed.
+9. For every persisted-format change, implement deterministic, sequential Python migrations and robust defaults in versions.py; preserve originals, explicit values and extensions, and test interrupted recovery, idempotence and supported upgrade paths. Normal server startup applies supported migrations automatically before serving requests. Merge/update/restart authorization includes these routine migrations; no separate migration approval, LLM, Codex or network service is required. Preflight rehearses the exact candidate; genuine validation, compatibility or recovery failures stop startup with diagnostics. Follow DEPLOYMENT.md for host backups, configuration migration and recovery. Verify the actual runtime, owner and writable history before reporting deployment.
 
 10. Report branch, PR URL, actual commit hash, verification and remaining limitations. Do not invent references or claim that ready means integrated or deployed. Push/PR authorization for the assigned branch does not authorize main publication, deployment or messaging others.
 
@@ -522,16 +522,13 @@ unknown. Do not delete evidence or take over a live worker. For an uncertain
 launch, an operator must establish that no worker remains before archiving the
 local receipt and retrying; never infer that a service restart killed its child.
 
-## Migration-aware integration
+## Automatic migration during integration and startup
 
-Follow [DEPLOYMENT.md](DEPLOYMENT.md). The managed Unfertig coordinator assesses
-the exact tested candidate against disposable live-state copies before publication
-or shutdown. Storage changes pause at Migration review. Migrate & deploy needs
-explicit approval bound to that candidate; automatic delivery flags do not grant
-it. Recover a published deployment through the public action/host CLI, checking
-GitHub first, without remerging or rewriting claims. Report published, installed,
-migration-pending and verified deployed states separately. The wrapper owns
-startup reservation, exact backup, transactional migration and coordinated pins.
+For every persisted-format change, implement deterministic, sequential Python migrations and robust defaults in versions.py; preserve originals, explicit values and extensions, and test interrupted recovery, idempotence and supported upgrade paths. Normal server startup applies supported migrations automatically before serving requests. Merge/update/restart authorization includes these routine migrations; no separate migration approval, LLM, Codex or network service is required. Preflight rehearses the exact candidate; genuine validation, compatibility or recovery failures stop startup with diagnostics. Follow DEPLOYMENT.md for host backups, configuration migration and recovery. Verify the actual runtime, owner and writable history before reporting deployment.
+
+Filesystem discovery remains read-only and does not upgrade another board. Update
+and restart each owning instance to apply its own migrations. Relocation between
+repositories remains an explicit operation, separate from a format upgrade.
 
 ## Completion summaries (format 1.10)
 
