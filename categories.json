@@ -49,6 +49,13 @@
       "deliverable": "A focused structural change with evidence of behavior preservation.",
       "completion": "Existing behavior remains intact and the intended structural improvement is demonstrated.",
       "instructions": "Define the behavior to preserve, make bounded changes and run relevant regression checks."
+    },
+    "bugfix": {
+      "label": "Bugfix",
+      "meaning": "Correct a known defect and verify the correction.",
+      "deliverable": "A demonstrated fix with proportional regression verification.",
+      "completion": "The reported defect is corrected and relevant regression checks pass; remaining limitations are recorded.",
+      "instructions": "Confirm the defect, make a focused fix within the task’s authorization, demonstrate the corrected behavior and run proportional regression checks. Category selection grants no additional approval."
     }
   }
 }

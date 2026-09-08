@@ -555,6 +555,13 @@ included in human and AI handoffs. Search includes the selected category. See
 [categories.json](categories.json). Format 1.7 requires an explicit supported
 migration before rollout; see [VERSIONING.md](VERSIONING.md).
 
+Bugfix corrects a known defect and demonstrates the correction with proportional
+regression verification within the task's authorization. Debugging retains its
+focus on investigation and causal explanation. Both use the shipped definitions
+in `categories.json` for selectors, validation, human/AI briefings and worker
+guidance. Storage 1.19 protects the expanded vocabulary from older writers and
+never automatically recategorizes existing todos.
+
 After implementation checks pass, Unfertig updates the PR description with the
 result and verification, removes [WIP] from its title, and marks the draft ready
 for review. It remains unmerged until the integration action is authorized.
