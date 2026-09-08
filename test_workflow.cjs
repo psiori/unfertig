@@ -143,3 +143,26 @@ test('parallel activity leaves another ticket actionable and pipeline links each
   await poll();assert.match(slot.innerHTML,/Queued for integration/);assert.match(row.innerHTML,/Draining/);
   result.enabled=false;await poll();assert.equal(row.hidden,true);
 });
+
+test('migration review requires separate confirmation and sends the exact review ID',async()=>{
+  const events={};let poll,approved=false,confirmation='',submitted;
+  const todo={id:'T0001',status:'started',name:'Migration',description:'Preserve originals'};
+  const slot={dataset:{workflowNext:todo.id}},row={};
+  const run={phase:'migration_required',commit:'a'.repeat(40),branch:'codex/task',deployment_review:{review_id:'b'.repeat(32),candidate_commit:'c'.repeat(40),message:'1.8.0 → 1.9.0'}};
+  const result={enabled:true,configured:true,runs:{T0001:run}};
+  const context={document:{querySelectorAll:s=>s==='[data-workflow-next]'?[slot]:s==='[data-integration-pipeline]'?[row]:[],addEventListener:(n,f)=>events[n]=f},
+    AbortSignal,token:'token',data:{todos:[todo]},compatibility:{read_only:false},history:{pending:false},escapeHTML:s=>s,
+    setInterval:f=>poll=f,setTimeout:()=>{},load:async()=>{},alert:message=>{throw Error(message);},
+    confirm:s=>{confirmation=s;return approved;},fetch:async(url,options)=>{
+      if(url==='/api/state')return {ok:true,json:async()=>({data:{todos:[todo]},token:'fresh',revisions:{todos:{T0001:'revision'}}})};
+      if(options?.body)submitted=JSON.parse(options.body);
+      return {ok:true,json:async()=>result};
+    }};
+  vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
+  await poll();assert.match(slot.innerHTML,/Migrate & deploy/);assert.match(row.innerHTML,/Migration review/);
+  const click=()=>events.click({target:{closest:()=>({dataset:{todo:todo.id,workflowAction:'migrate'}})},preventDefault(){},stopPropagation(){}});
+  await click();assert.equal(submitted,undefined);assert.ok(confirmation.includes(run.deployment_review.candidate_commit));
+  approved=true;await click();assert.equal(submitted.review_id,run.deployment_review.review_id);assert.equal(submitted.action,'migrate');
+  run.phase='restart_failed';run.published_commit=run.deployment_review.candidate_commit;await poll();
+  assert.match(slot.innerHTML,/Recover deployment/);
+});

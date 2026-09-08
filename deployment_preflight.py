@@ -88,20 +88,20 @@ def capture(context):
         store.close()
 
 
-def preserve(before, after, label):
+def preserve(before, after, label, metadata=True):
     """Every existing value except top-level version metadata must survive."""
     if isinstance(before, dict) and isinstance(after, dict):
         for key, value in before.items():
-            if key == 'format_version':
+            if metadata and key == 'format_version':
                 continue
             if key not in after:
                 raise ValueError('Migration changes original content or extensions: ' + label + ':' + key)
-            preserve(value, after[key], label + ':' + key)
+            preserve(value, after[key], label + ':' + key, False)
     elif isinstance(before, list) and isinstance(after, list):
         if len(before) != len(after):
             raise ValueError('Migration changes original content: ' + label)
         for index, (old, new) in enumerate(zip(before, after)):
-            preserve(old, new, label + ':' + str(index))
+            preserve(old, new, label + ':' + str(index), False)
     elif before != after:
         raise ValueError('Migration changes original content: ' + label)
 

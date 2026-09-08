@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.7.0`.
+`format_version` is a major.minor.build string. Current storage is `1.9.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -149,3 +149,11 @@ Format 1.8 also versions per-run local process receipts (launching, running,
 exited). Recovery blocks uncertain launches or a still-live worker before retry;
 Linux process start identity distinguishes PID reuse. Other hosts conservatively
 block a live PID when identity is unavailable. Preserve receipts during recovery.
+
+## Storage 1.9.0 — reviewed deployment
+
+Sequential 1.8→1.9 adds protected migration-review/action semantics without granting
+automatic migration permission or rewriting old claims. Existing originals and
+extensions remain intact. HTTP/filesystem readers share the same version guard
+and protected workflow records. See DEPLOYMENT.md for reviewed host deployment,
+private evidence, unchanged-storage startup and forward recovery.

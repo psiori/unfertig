@@ -544,4 +544,61 @@ class WorkflowTests(unittest.TestCase):
 
 
 
+    def migration_review(self):
+        self.run_stage('implement')
+        def review(candidate):
+            return dict(schema_version=1,review_id='a'*32,state='migration_required',
+                        candidate_commit=self.workflow.git('rev-parse','HEAD',cwd=candidate),
+                        current_formats=['1.8.0'],target_format='1.9.0',message='Reviewed storage upgrade')
+        with patch.object(self.workflow,'managed_unfertig',return_value=True),patch.object(self.workflow,'deployment_review',side_effect=review):
+            return self.run_stage('merge')
+
+    def test_migration_pauses_before_main_publication_and_requires_exact_review(self):
+        head=self.git('rev-parse','HEAD')
+        todo=self.migration_review();run=todo['workflow']
+        self.assertEqual(run['phase'],'migration_required',todo)
+        self.assertEqual(self.git('rev-parse','HEAD'),head)
+        self.assertEqual(self.git('rev-parse','origin/main'),head)
+        self.assertFalse((Path(run['worktree']).parent/(run['run_id']+'-deployment.json')).exists())
+        snap=self.store.snapshot()
+        body=dict(id=todo['id'],action='migrate',revision=snap['revisions']['todos'][todo['id']],commit=run['commit'])
+        with self.assertRaisesRegex(Conflict,'review_id'):self.workflow.start(body)
+        body['review_id']=run['deployment_review']['review_id']
+        with patch.object(self.workflow,'host_deployment',return_value={}) as check,patch.object(self.workflow,'launch_deployment') as launch:
+            self.workflow.start(body);self.workflow.workers[todo['id']].join(10)
+            check.assert_called_once_with('check','--review','a'*32)
+            launch.assert_called_once()
+            self.assertEqual(launch.call_args.args[-1],'deploy')
+        self.assertEqual(self.git('rev-parse','origin/main'),run['integration_tested_commit'])
+
+    def test_changed_main_invalidates_migration_approval_before_publish(self):
+        todo=self.migration_review();run=todo['workflow']
+        (self.repo/'other').write_text('unrelated');self.git('add','other');self.git('commit','-qm','Main advanced')
+        head=self.git('rev-parse','HEAD');snap=self.store.snapshot()
+        with patch.object(self.workflow,'launch_deployment') as launch:
+            self.workflow.start(dict(id=todo['id'],action='migrate',revision=snap['revisions']['todos'][todo['id']],commit=run['commit'],review_id='a'*32))
+            self.workflow.workers[todo['id']].join(10);launch.assert_not_called()
+        current=self.store.snapshot()['data']['todos'][0]['workflow']
+        self.assertEqual(current['phase'],'merge_failed');self.assertIn('since migration review',current['message'])
+        self.assertEqual(self.git('rev-parse','HEAD'),head)
+
+    def test_automatic_delivery_never_approves_migration(self):
+        self.migration_review()
+        self.options.update(automatic_merge=True,automatic_publish=True,automatic_deploy=True)
+        with patch.object(self.workflow,'start') as start:self.workflow.tick();start.assert_not_called()
+
+    def test_public_recovery_verifies_publication_without_new_integration(self):
+        self.run_stage('implement');todo=self.run_stage('merge');run=todo['workflow']
+        # Join the detached receipt writer before simulating failed deployment.
+        receipt=Path(run['worktree']).parent/(run['run_id']+'-deployment.json')
+        for _ in range(100):
+            if receipt.exists():break
+            time.sleep(.02)
+        self.workflow.save(todo['id'],dict(run,phase='restart_failed'))
+        before=self.git('rev-parse','HEAD')
+        with patch.object(self.workflow,'integrate_and_deploy') as integrate,patch.object(self.workflow,'launch_deployment') as launch:
+            self.run_stage('recover');integrate.assert_not_called();launch.assert_called_once()
+        self.assertEqual(self.git('rev-parse','HEAD'),before)
+
+
 if __name__=='__main__':unittest.main()
