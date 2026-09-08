@@ -238,7 +238,7 @@ class Workflow:
         return {key: worker for key, worker in self.workers.items() if worker.is_alive()}
 
     def draining(self):
-        return any(t.get('workflow', {}).get('phase') in ('merge_queued', 'merging', 'restarting')
+        return any(t.get('workflow', {}).get('phase') in ('merge_queued', 'merging', 'restarting', 'migrating', 'recovering')
                    and t['workflow'].get('system') == system_id()
                    for t in self.store.snapshot()['data']['todos'])
 
@@ -283,7 +283,7 @@ class Workflow:
                              if t.get('workflow', {}).get('phase') in ('queued', 'merge_queued')
                              and t['workflow']['system'] == system_id()),
                             key=lambda t: (t['workflow']['queued_at'], t['id']))
-            if any(t.get('workflow', {}).get('phase') in ('merging', 'restarting')
+            if any(t.get('workflow', {}).get('phase') in ('merging', 'restarting', 'migrating', 'recovering')
                    and t['workflow']['system'] == system_id() for t in snap['data']['todos']):
                 return
             merges = [t for t in queued if t['workflow']['phase'] == 'merge_queued']
@@ -331,7 +331,7 @@ class Workflow:
                 if previous[request_id] != fingerprint:
                     raise Conflict('Workflow request ID reused for different input.')
                 return self.status()
-            if ident in self.active_workers() or todo.get('workflow', {}).get('phase') in ('queued', 'merge_queued') or (todo.get('workflow', {}).get('phase') == 'restarting' and action != 'recover'):
+            if ident in self.active_workers() or todo.get('workflow', {}).get('phase') in ('queued', 'merge_queued') or (todo.get('workflow', {}).get('phase') in ('restarting', 'migrating', 'recovering') and action != 'recover'):
                 raise ValueError('This ticket already has an active or queued stage.')
             if snap['revisions']['todos'][ident] != body.get('revision'):
                 raise Conflict('Todo changed. Reload and review before starting.')
@@ -389,7 +389,7 @@ class Workflow:
                     review = run.get('deployment_review', {})
                     if automatic or run['phase'] != 'migration_required' or not review.get('review_id') or body.get('review_id') != review['review_id']:
                         raise Conflict('Review the exact migration candidate and submit its review_id explicitly.')
-                if action == 'recover' and (run['phase'] not in ('restart_failed', 'restarting', 'merge_failed') or not run.get('published_commit')):
+                if action == 'recover' and (run['phase'] not in ('restart_failed', 'restarting', 'migrating', 'recovering', 'merge_failed') or not run.get('published_commit')):
                     raise ValueError('Recovery requires retained publication evidence.')
                 run.update(phase='implementing' if action == 'retry' else 'testing' if action == 'test' else 'merging', message='Running '+action+'…')
             requests = dict(run.get('action_requests', {}))
@@ -712,7 +712,8 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
         receipt = Path(run['worktree']).parent / (run['run_id']+'-deployment.json')
         if receipt.exists():
             receipt.rename(receipt.with_name(receipt.name+'.previous-'+uuid.uuid4().hex))
-        run.update(phase='restarting', message='Published; deployment supervisor is restarting the artifact…')
+        run.update(phase={'deploy':'migrating', 'recover':'recovering'}.get(host_action, 'restarting'),
+                   message='Published; '+('reviewed migration is running under the host reservation…' if host_action == 'deploy' else 'recovering the retained deployment…' if host_action == 'recover' else 'deployment supervisor is restarting the artifact…'))
         self.save(ident, run)
         argv = self.host_argv(host_action, '--review', run['deployment_review']['review_id']) if host_action else self.argv('restart', run)
         payload = dict(argv=argv, cwd=run['repository'], receipt=str(receipt),
@@ -790,7 +791,7 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
         snap = self.store.snapshot()
         for todo in snap['data']['todos']:
             run = todo.get('workflow', {})
-            if run.get('phase') != 'restarting' or run.get('system') != system_id():
+            if run.get('phase') not in ('restarting', 'migrating', 'recovering') or run.get('system') != system_id():
                 continue
             common = Path(self.git('rev-parse', '--path-format=absolute', '--git-common-dir'))
             if Path(run['worktree']) != Path(self.options['repository']) / '.worktrees' / 'unfertig' / run['run_id']:

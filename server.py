@@ -82,7 +82,7 @@ def validate(data, previous=None):
                 require(bool(re.fullmatch(r'[a-f0-9]{64}', run['system'])), 'Invalid workflow system.')
                 require(run['branch'] == f"codex/{ident.lower()}-{run['run_id'][:8]}", 'Invalid workflow branch.')
                 require(bool(re.fullmatch(r'[a-f0-9]{40,64}', run['base'])), 'Invalid workflow base.')
-                require(run['phase'] in {'queued','merge_queued','implementing','ready','testing','tested','merging','restarting','done','implementation_failed','test_failed','merge_failed','push_failed','restart_failed','migration_required'}, 'Invalid workflow phase.')
+                require(run['phase'] in {'queued','merge_queued','implementing','ready','testing','tested','merging','restarting','done','implementation_failed','test_failed','merge_failed','push_failed','restart_failed','migration_required','migrating','recovering'}, 'Invalid workflow phase.')
                 if run['phase'] in ('queued', 'merge_queued'):
                     require(run.get('queued_action') in ('implement', 'retry', 'test', 'merge', 'migrate', 'recover'), 'Invalid queued action.')
                     require((run['phase'] == 'merge_queued') == (run['queued_action'] in ('merge', 'migrate', 'recover')), 'Invalid queue phase.')
