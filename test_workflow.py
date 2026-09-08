@@ -761,7 +761,7 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
         path = self.await_receipt(todo['id'])
         valid = json.loads(path.read_text())
         for receipt, reason in [('interrupted JSON', 'pending'),
-                                (json.dumps(dict(valid, format_version='1.14.0')), 'too old'),
+                                (json.dumps(dict(valid, format_version='1.15.0')), 'too old'),
                                 (json.dumps(dict(valid, commit='0'*40)), 'different candidate'),
                                 (json.dumps(dict(valid, ok='true')), 'incomplete')]:
             path.write_text(receipt)
@@ -801,39 +801,27 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
         with patch.object(self.workflow,'managed_unfertig',return_value=True),patch.object(self.workflow,'deployment_review',side_effect=review):
             return self.run_stage('merge')
 
-    def test_migration_pauses_before_main_publication_and_requires_exact_review(self):
-        head=self.git('rev-parse','HEAD')
+    def test_supported_migration_publishes_and_restarts_without_approval(self):
         todo=self.migration_review();run=todo['workflow']
-        self.assertEqual(run['phase'],'migration_required',todo)
+        self.assertEqual(run['phase'],'restarting',todo)
+        self.assertEqual(run['deployment_driver'],'startup')
+        self.assertEqual(self.git('rev-parse','origin/main'),run['integration_tested_commit'])
+        self.await_receipt(todo['id'])
+
+    def test_failed_programmatic_preflight_never_publishes(self):
+        self.run_stage('implement');head=self.git('rev-parse','HEAD')
+        with patch.object(self.workflow,'managed_unfertig',return_value=True), patch.object(self.workflow,'deployment_review',side_effect=ValueError('Invalid migration')):
+            run=self.run_stage('merge')['workflow']
+        self.assertEqual(run['phase'],'merge_failed')
         self.assertEqual(self.git('rev-parse','HEAD'),head)
         self.assertEqual(self.git('rev-parse','origin/main'),head)
-        self.assertFalse((Path(run['worktree']).parent/(run['run_id']+'-deployment.json')).exists())
-        snap=self.store.snapshot()
-        body=dict(id=todo['id'],action='migrate',revision=snap['revisions']['todos'][todo['id']],commit=run['commit'])
-        with self.assertRaisesRegex(Conflict,'review_id'):self.workflow.start(body)
-        body['review_id']=run['deployment_review']['review_id']
-        with patch.object(self.workflow,'host_deployment',return_value={}) as check,patch.object(self.workflow,'launch_deployment') as launch:
-            self.workflow.start(body);self.workflow.workers[todo['id']].join(10)
-            check.assert_called_once_with('check','--review','a'*32)
-            launch.assert_called_once()
-            self.assertEqual(launch.call_args.args[-1],'deploy')
-        self.assertEqual(self.git('rev-parse','origin/main'),run['integration_tested_commit'])
 
-    def test_changed_main_invalidates_migration_approval_before_publish(self):
-        todo=self.migration_review();run=todo['workflow']
-        (self.repo/'other').write_text('unrelated');self.git('add','other');self.git('commit','-qm','Main advanced')
-        head=self.git('rev-parse','HEAD');snap=self.store.snapshot()
+    def test_startup_deployment_recovery_uses_restart_without_host_review(self):
+        todo=self.migration_review();run=todo['workflow'];self.await_receipt(todo['id'])
+        self.workflow.save(todo['id'],dict(run,phase='restart_failed'))
         with patch.object(self.workflow,'launch_deployment') as launch:
-            self.workflow.start(dict(id=todo['id'],action='migrate',revision=snap['revisions']['todos'][todo['id']],commit=run['commit'],review_id='a'*32))
-            self.workflow.workers[todo['id']].join(10);launch.assert_not_called()
-        current=self.store.snapshot()['data']['todos'][0]['workflow']
-        self.assertEqual(current['phase'],'merge_failed');self.assertIn('since migration review',current['message'])
-        self.assertEqual(self.git('rev-parse','HEAD'),head)
-
-    def test_automatic_delivery_never_approves_migration(self):
-        self.migration_review()
-        self.options.update(automatic_merge=True,automatic_publish=True,automatic_deploy=True)
-        with patch.object(self.workflow,'start') as start:self.workflow.tick();start.assert_not_called()
+            self.run_stage('recover')
+        self.assertIsNone(launch.call_args.args[-1])
 
     def test_public_recovery_verifies_publication_without_new_integration(self):
         self.run_stage('implement');todo=self.run_stage('merge');run=todo['workflow']
@@ -849,18 +837,13 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
         self.assertEqual(self.git('rev-parse','HEAD'),before)
 
 
-    def test_migrating_phase_drains_until_verified_receipt(self):
-        todo=self.migration_review();run=todo['workflow'];snapshot=self.store.snapshot()
-        with patch.object(self.workflow,'host_deployment',return_value={}),patch.object(self.workflow,'host_argv',return_value=[sys.executable,'-c','print("verified host deployment")']):
-            self.workflow.start(dict(id=todo['id'],action='migrate',revision=snapshot['revisions']['todos'][todo['id']],commit=run['commit'],review_id='a'*32))
-            self.workflow.workers[todo['id']].join(10)
-        self.assertEqual(self.workflow.status()['runs'][todo['id']]['phase'],'migrating')
+    def test_startup_migration_drains_until_verified_receipt(self):
+        todo=self.migration_review();run=todo['workflow']
+        self.assertEqual(run['phase'],'restarting')
         self.assertTrue(self.workflow.draining())
-        for _ in range(100):
-            self.workflow.reconcile()
-            current=self.store.snapshot()['data']['todos'][0]
-            if current['status']=='closed':break
-            time.sleep(.02)
+        self.await_receipt(todo['id'])
+        self.workflow.reconcile()
+        current=self.store.snapshot()['data']['todos'][0]
         self.assertEqual(current['workflow']['phase'],'done',current)
         self.assertFalse(self.workflow.draining())
 

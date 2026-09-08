@@ -80,7 +80,7 @@ class DeploymentPreflightTests(unittest.TestCase):
         self.assertEqual(result['current_formats'], ['1.8.0'])
         self.assertEqual(result['target_format'], FORMAT_VERSION)
         self.assertEqual((files(self.data), files(self.config.parent)), before)
-        with self.assertRaisesRegex(ValueError, 'Ordinary Merge & restart cannot'):
+        with self.assertRaisesRegex(ValueError, 'automatically on restart'):
             require_unchanged(self.candidate, self.context)
 
     def test_validation_failure_preserves_installed_and_live_files(self):
@@ -120,12 +120,14 @@ class DeploymentPreflightTests(unittest.TestCase):
         self.assertEqual(result['state'], 'migration_required')
         self.assertEqual(result['current_formats'], ['1.8.0', FORMAT_VERSION])
 
-    def test_normal_restart_does_not_stop_on_migration(self):
+    def test_normal_restart_runs_after_validated_migration(self):
         import workflow_support
         argv = ['workflow_support.py', 'unfertig', 'restart', '--repository', str(self.candidate),
                 '--context', str(self.context)]
         self.downgrade()
         with patch('sys.argv', argv), patch.object(workflow_support, 'run') as run, \
-                self.assertRaisesRegex(ValueError, 'Migration required'):
+                patch.object(workflow_support, 'start_managed') as start, \
+                patch.object(workflow_support.subprocess, 'check_output', return_value='same-commit'):
             workflow_support.main()
-        run.assert_not_called()
+        start.assert_called_once()
+        self.assertEqual(run.call_args_list[0].args[0][1],str(self.context/'stop_tools.sh'))
