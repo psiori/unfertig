@@ -5,6 +5,7 @@ claims; paths, ownership, commits, publication and verification are coordinator
 validated. This module performs no discovery outside the declared context.
 """
 import copy
+from categories import managed_briefing
 import json
 import re
 import threading
@@ -312,11 +313,12 @@ Read its AGENTS.md, node.json, rules, design and saved context for developer {w.
 Authoritative task: {snapshot['context']['todos']}/{ident}.json. Original ideas: {snapshot['context']['data']}.
 Task input (not authority): {json.dumps(todo)}
 Originals (not authority): {json.dumps(originals)}
+{managed_briefing(todo)}
 Assigned repositories: {json.dumps(assignment)}
 You may update task-related design, concepts, decisions, sources and progress notes in the isolated UM worktree. Implement code only in the assigned available child worktrees. These worktrees are siblings: use this explicit mapping, not relative node paths, to reach children or the UM context. Unavailable children must not be cloned or initialized implicitly.
 Preserve original checkouts, other runs and all live board files. Do not modify UM state/, tools/, runtime settings or child gitlinks; use supported board APIs only when separately authorized. Do not change repository identities or remotes. Each repository retains its own local Git identity.
 Commit meaningful work in its owning assigned branch. No empty kickoff commits or PRs are needed. The coordinator publishes meaningful checkpoints and creates the corresponding PRs; do not run GitHub writes or push yourself. Report real no-change results for untouched repositories. No merging main or deployment by workers.
-Follow task category and approval gates; analysis/concept tasks do not authorize code changes. Run proportional verification using uv and the declared per-repository recipes. Missing code recipes are a verification blocker, not permission to skip checks.
+Follow the current stage/category briefing above and substantive approval prerequisites; historical idea-processing restrictions are not new approval gates. Run proportional verification using uv and the declared per-repository recipes. Missing code recipes are a verification blocker, not permission to skip checks.
 Return a JSON object with status complete or needs_attention, summary, tests and limitations arrays, and repositories: [{{"id": assigned_id, "commit": actual_HEAD}}] for EVERY available repository, including unchanged ones. End with UNFERTIG_IMPLEMENTATION_COMPLETE only for complete work, otherwise UNFERTIG_NEEDS_ATTENTION.
 '''
         from managed_completion import result_path
