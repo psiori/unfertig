@@ -51,7 +51,7 @@ class Conformance:
             config.write_text(json.dumps(value))
             resolved = board_context(resolve(self.boards[1].root, config=config), self.boards[1].root)
             self.boards[1].context = resolved
-            snapshot = exchange(source)
+            snapshot = self.router.inspect_source(source)
             self.assertEqual(snapshot['context']['workflow']['max_workers'], 4 if limit is None else limit)
             self.assertNotIn('capacity_state', snapshot)
             self.assertEqual(self.boards[1].path.read_bytes(), before)
@@ -79,7 +79,7 @@ class Conformance:
     def discovered_router(self, omit_beta=False):
         for source, board in zip(self.sources, self.boards[1:]):
             config = json.loads(board.config.read_text())
-            config['aggregation_source'] = dict(app_root='.', url=source['url'])
+            config['aggregation_source'] = dict(app_root='.', **({'url': source['url']} if 'url' in source else {}))
             board.config.write_text(json.dumps(config))
         if omit_beta:
             self.hidden_beta = self.beta.config.read_bytes()
