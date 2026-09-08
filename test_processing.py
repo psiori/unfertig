@@ -32,6 +32,8 @@ class ProcessingTests(unittest.TestCase):
         self.assertIn(processing_guidance(), text)
         self.assertIn('Select and persist effort', text)
         self.assertIn('Planning only', text)
+        self.assertIn('Do not copy session restrictions', text)
+        self.assertIn('Persist actual user constraints', text)
 
     def test_only_capturing_system_and_manual_legacy(self):
         self.snapshot['data']['ideas'] += [dict(id='I0003', captured_system=OTHER), dict(id='I0004')]

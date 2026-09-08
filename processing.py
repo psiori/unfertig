@@ -170,6 +170,7 @@ class Processor:
         context = snapshot['context']
         return f'''Process only these saved idea IDs: {json.dumps(ids)}.
 This run is authorized to translate ideas into todos and commit board changes locally. Planning only: do not implement todos, modify application code, push, merge, or send messages.
+{chr(10).join(json.loads(Path(__file__).with_name('agent_advice.json').read_text())['processing'])}
 Working directory: {self.options['working_directory']}
 Selected developer: {self.options['developer'] or 'not configured; follow explicit repository selection, report if required'}.
 Read the working directory AGENTS.md, node.json and its declared current design, rules and saved context when present. Use the selected developer's current compiled rules if available; report missing inputs honestly. Conversation history is not supplied.

@@ -218,6 +218,24 @@ class VersionTests(unittest.TestCase):
             self.assertIn(DEFINITIONS['boundary'], text)
         self.assertNotEqual(scope_digest(dict(todo, category='design')), scope_digest(dict(todo, category='implementation')))
 
+    def test_managed_category_stage_preserves_real_gates_and_legacy_task_text(self):
+        from categories import managed_briefing
+        for category in ('implementation', 'bugfix', 'refactoring', 'concept', 'research', 'ideation', 'design', ''):
+            with self.subTest(category=category):
+                todo = dict(category=category, description='Planning only in this run; implementation requires separate authorization. Obtain design signoff before changing the API.')
+                before = dict(todo)
+                text = managed_briefing(todo)
+                self.assertEqual(todo, before)
+                self.assertIn('Current stage: owner-authorized Implement/Retry', text)
+                self.assertIn('named design approval', text)
+                self.assertIn('rejected execution approval', text)
+                code = category in ('implementation', 'bugfix', 'refactoring')
+                self.assertEqual('this action supplies that implementation authorization' in text, code)
+                self.assertEqual('Never label incomplete work complete' in text, code)
+                if category == 'concept':
+                    self.assertIn('A proposal describing', text)
+                    self.assertIn('do not turn them into product implementation', text)
+
     def test_bugfix_migration_preserves_categories_and_blocks_old_writers(self):
         from categories import CATEGORIES
         from versions import MIGRATIONS
