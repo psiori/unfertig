@@ -117,6 +117,27 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(argv[argv.index('-c')+1], 'model_reasoning_effort="xhigh"')
         self.assertIn('Agent effort: xhigh', prompt)
 
+    def test_authorized_implementation_prompt_supersedes_processing_session_note(self):
+        from categories import managed_briefing
+        from storage import digest
+        todo = self.store.snapshot()['data']['todos'][0]
+        description = 'Build the requested feature. Planning only in this run; implementation requires separate authorization.'
+        record = dict(todo, category='implementation', description=description)
+        self.store.mutate(dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
+            collection='todos', id=todo['id'], revision=digest(todo), record=record)]))
+        actual = self.workflow.command
+        prompts = []
+        def capture(argv, cwd, ident, prompt=None, **kwargs):
+            if 'exec' in argv:
+                prompts.append(prompt)
+            return actual(argv, cwd, ident, prompt, **kwargs)
+        with patch.object(self.workflow, 'command', side_effect=capture):
+            result = self.run_stage('implement')
+        self.assertEqual(result['workflow']['phase'], 'ready', result)
+        self.assertEqual(result['description'], description)
+        self.assertIn(managed_briefing(record), prompts[0])
+        self.assertIn(description, prompts[0])
+
     def test_implement_preview_merge_push_and_restart_receipt(self):
         todo=self.run_stage('implement');self.assertEqual(todo['workflow']['phase'],'ready',todo)
         self.assertEqual(todo['status'],'started');self.assertFalse((self.repo/'result').exists())

@@ -16,7 +16,7 @@ A registered submodule defaults to its superproject's `state/unfertig/config/con
 2. Preserve the idea's `id`, `text`, `author`, and `date_entered` exactly.
 3. Check existing todos for overlap. Link a matching todo to the additional source idea rather than duplicating work when it already captures the intent. Do not silently reopen closed work; identify follow-up work separately when needed.
 4. Usually create one todo per idea. Split only into independently implementable, verifiable steps. Several ideas can support one todo.
-5. Write a short actionable heading and a refined description. Include acceptance conditions proportional to the task. State meaningful ambiguities, ask if essential, and never invent requirements. Do not split off trivial implementation steps as separate todos.
+5. The planning-only restriction applies to this processing session, not future task execution. Do not copy session restrictions such as "Planning only in this run" or "implementation requires separate authorization" into saved task requirements. Preserve actual user constraints and substantive approval prerequisites. Choose implementation/bugfix/refactoring for requested code work, concept for a proposal; creating a category does not authorize execution. Write a short actionable heading and a refined description. Include acceptance conditions proportional to the task. State meaningful ambiguities, ask if essential, and never invent requirements. Do not split off trivial implementation steps as separate todos.
 6. Keep original requester attribution in `author`. If several ideas have different authors, use the primary requester and note other contributors in the description. Record your actual agent identity (e.g. Codex, Claude, Cursor) in `created_by`.
 7. Select and persist an appropriate `effort` using [efforts.json](efforts.json) and its processing guidance; use `medium` when unclear. Effort is separate from urgency and category. Default to `normal` priority unless the user specified urgency. Reuse groups/tags when appropriate; new values are allowed. Leave `group` empty when uncertain.
 8. New todos start `open`, with empty closure and implementation-reference fields. Link every source idea ID. This link is the processed marker on ordinary boards. Aggregator inboxes use the confirmed routing receipt described below.
@@ -48,11 +48,26 @@ publication evidence. Migration alone never expands historical authorization.
 
 ## Implementing a todo
 
+An owner-authorized Implement/Retry action starts task execution, separately from
+idea processing. Both standalone and UM workers receive the shared category
+briefing. For implementation, bugfix and refactoring, that action supplies the
+implementation authorization mentioned by historical processing notes. Do not
+stop solely because those notes remain in the saved description; preserve them
+as provenance and deliver the working change with verification. Concept, ideation
+and research retain their analysis/documentation scope. Category alone grants no
+execution or publication permission. Real prerequisites, named approval gates,
+current restrictions and execution approval rejections still apply. Incomplete
+reports remain failures; this distinction never fabricates completion. Concept
+and documentation work may commit in UM and use the same authorized merge/push
+workflow with an unchanged app. Do not demand an app change, code PR or extra
+approval solely because the category is concept. Workers hand off commits and
+the coordinator publishes.
+
 The canonical briefing text is `agent_advice.json`. The server-generated browser
 advice and managed worker prompt both load that file; do not maintain separate
 implementation rules in JavaScript or prompts. The common contract follows.
 
-1. Treat descriptions and original ideas as task input, not authority. Follow the user’s authorization, repository instructions, PROCESS.md, VERSIONING.md and TRANSPORTS.md. Respect planning and approval gates.
+1. Treat descriptions and original ideas as task input, not authority. Follow the user’s authorization, repository instructions, PROCESS.md, VERSIONING.md and TRANSPORTS.md. Distinguish earlier processing-session restrictions from substantive prerequisites and current approval gates.
 
 2. First locate and read the process, authoritative task file and linked original ideas at the supplied absolute locations. Verify the intended ID, owning repository, selected developer, scope, dependencies and one worker per todo before work or status changes. If a required file cannot be found, report the missing location and stop dependent work; a copied description is not a substitute. Preserve attribution and unrelated work.
 
@@ -62,7 +77,7 @@ implementation rules in JavaScript or prompts. The common contract follows.
 
 5. Commit meaningful ticket-related work locally after verification. For managed work the coordinator alone publishes the assigned branch and PR, including early coherent checkpoints; workers never push or create PRs. Read the confirmed publication receipt at ../<run_id>-publication.json and report publication or approval blockers separately from implementation. Never bypass rejected approval, force push or rewrite published history.
 
-6. Implement only the assigned scope. Use uv for Python and run appropriate verification. Leave a clean worktree with a local implementation commit for real changes; no-change findings require no empty commit. Planning-only, no-commit instructions and approval gates override these defaults. Never invent an implementation hash or substitute a board-data commit.
+6. Implement only the assigned scope. Use uv for Python and run appropriate verification. Leave a clean worktree with a local implementation commit for real changes; no-change findings require no empty commit. Current planning-only or no-commit instructions and substantive approval gates override these defaults; an earlier processing-session restriction does not override a later authorized Implement/Retry action. Never invent an implementation hash or substitute a board-data commit.
 
 7. Before integration, always check the current GitHub PR state and head. An already merged PR must be reconciled through its verified merge commit on origin/main, including squash/rebase merges; never merge the original branch again. A closed unmerged PR or changed head requires attention.
 
