@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.12.0`.
+`format_version` is a major.minor.build string. Current storage is `1.13.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -192,3 +192,33 @@ Earlier minor writers become read-only. Protocol remains 2.0.0. HTTP and filesys
 share validation, defaults, revisions, journal recovery and receipt semantics.
 Filesystem discovery still requires an explicitly migrated source. Use the separate
 stopped-instance rollout above; do not migrate a live board as part of development.
+
+## Storage 1.13.0 — integration queue recovery
+
+The sequential 1.12→1.13 step advances metadata only. Original records, claims,
+queue timestamps, action request IDs, scope, approvals and extensions are retained.
+Outstanding merge/push/deployment failures and migration reviews are durable
+repository queue barriers; closed historical runs do not become new barriers.
+Explicit retry/recovery retains ordering. Explicit Skip & continue records a
+protected queue_skip decision without erasing the failure or deployment evidence.
+No automatic migration or publication permission is introduced.
+
+Protected phases resolving_conflict, testing_resolution and resolution_blocked
+retain the integration candidate, revisions, conflicted paths, bounded Git stdout
+and stderr, reports and previous candidate locations. Resolution resumes after
+restart only when the retained process receipt proves no live/uncertain worker.
+No-progress verification retains a blocker; successful resolution continues the
+authorized integration after combined verification and fresh main/PR checks.
+Older minor writers become read-only, including for process/deployment receipts;
+an old coordinator cannot consume newer completion evidence. HTTP/filesystem
+read and write protection share BoardStore. Protocol stays 2.0.0. Use the existing
+stopped-instance migration/preflight/recovery contract; keep unchanged-storage
+startup and exact backups.
+
+Published main owns migration version assignments. Parallel workers may propose
+a successor but integration must assign competing unpublished steps sequentially
+after main. The integration check parses literal registry entries before Python
+can overwrite duplicate keys and requires every parent migration feature to
+remain registered. The agent reconciles collisions and runs the complete combined
+suite and all supported upgrade paths, including original/extension preservation.
+This static check supplements, never replaces, migration tests and T0039 preflight.

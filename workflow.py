@@ -18,8 +18,11 @@ from urllib.parse import urlsplit
 from processing import Processor, system_id
 from codex_runtime import resolve_executable
 from storage import Conflict, digest, OperationLock, atomic, encode
+from integration import GitFailure, StaleCandidate, migration_issues
 
 ACTIVE = {'implementing', 'testing', 'merging'}
+DELIVERY_BLOCKS = {'merge_failed', 'push_failed', 'restart_failed', 'migration_required', 'resolution_blocked'}
+DELIVERY_ACTIVE = {'merging', 'resolving_conflict', 'testing_resolution', 'restarting', 'migrating', 'recovering'}
 
 
 def settings(value, base, processing, mode):
@@ -105,6 +108,7 @@ class Workflow:
         with self.lock:
             runs = {}
             snapshot = self.store.snapshot()
+            blocker = self.queue_blocker(snapshot)
             for todo in snapshot['data']['todos']:
                 if 'workflow' not in todo:
                     continue
@@ -117,6 +121,9 @@ class Workflow:
                     run.update(phase='interrupted', message='Service stopped during this stage. Inspect the retained branch before retrying.')
                 if run['phase'] == 'queued':
                     run['message'] = self.dependency_block(todo, snapshot) or run['message']
+                if run['phase'] == 'merge_queued' and blocker and blocker['id'] != todo['id']:
+                    run['waiting_for'] = blocker['id']
+                    run['message'] = 'Waiting for '+blocker['id']+': '+blocker['workflow']['message']
                 run['active'] = todo['id'] in self.active_workers()
                 run.update(self.live.get(todo['id'], {}))
                 if todo['id'] not in self.previews or self.previews[todo['id']].poll() is not None:
@@ -125,7 +132,9 @@ class Workflow:
             return dict(enabled=self.options['enabled'], automatic=self.options['automatic'], repository=self.options['repository'],
                         web_preview=bool(self.options['preview_url']), configured=bool(self.options['test'] and self.options['preview'] and self.options['restart']),
                         busy=bool(self.active_workers()), active_count=len(self.active_workers()),
-                        max_workers=self.options['max_workers'], draining=self.draining(), runs=runs)
+                        max_workers=self.options['max_workers'], draining=self.draining(), runs=runs,
+                        queue_blocked_by=blocker['id'] if blocker else None,
+                        integration_protocol=1)
 
     def save(self, ident, run, **fields):
         snap = self.snapshot()
@@ -141,7 +150,7 @@ class Workflow:
         result = subprocess.run(['git', '-C', str(cwd or self.options['repository']), *args],
                                 capture_output=True, text=True, timeout=120)
         if result.returncode:
-            raise ValueError(result.stderr.strip() or result.stdout.strip() or 'Git operation failed.')
+            raise GitFailure(args, result)
         return result.stdout.strip()
 
     def github(self, *args, cwd=None):
@@ -239,9 +248,19 @@ class Workflow:
         return {key: worker for key, worker in self.workers.items() if worker.is_alive()}
 
     def draining(self):
-        return any(t.get('workflow', {}).get('phase') in ('merge_queued', 'merging', 'restarting', 'migrating', 'recovering')
+        return any(t.get('workflow', {}).get('phase') in DELIVERY_ACTIVE | {'merge_queued'}
                    and t['workflow'].get('system') == system_id()
                    for t in self.store.snapshot()['data']['todos'])
+
+    def queue_blocker(self, snapshot):
+        # Derive the durable barrier from the protected claim, including legacy
+        # failures. Closed historical runs are reconciliation's responsibility.
+        entries = [t for t in snapshot['data']['todos']
+                   if t.get('status') != 'closed'
+                   and t.get('workflow', {}).get('system') == system_id()
+                   and not t['workflow'].get('queue_skip')
+                   and t['workflow'].get('phase') in DELIVERY_ACTIVE | DELIVERY_BLOCKS]
+        return min(entries, key=lambda t: (t['workflow'].get('queued_at', ''), t['id'])) if entries else None
 
     def dependency_block(self, todo, snapshot):
         by_id = {t['id']: t for t in snapshot['data']['todos']}
@@ -284,10 +303,22 @@ class Workflow:
                              if t.get('workflow', {}).get('phase') in ('queued', 'merge_queued')
                              and t['workflow']['system'] == system_id()),
                             key=lambda t: (t['workflow']['queued_at'], t['id']))
-            if any(t.get('workflow', {}).get('phase') in ('merging', 'restarting', 'migrating', 'recovering')
+            # Resolution survives a coordinator restart. Never duplicate a live
+            # or uncertain child; process receipts retain that distinction.
+            for todo in snap['data']['todos']:
+                run = todo.get('workflow', {})
+                if run.get('system') == system_id() and run.get('phase') in ('resolving_conflict', 'testing_resolution') and todo['id'] not in self.active_workers():
+                    self.guard_process(run)
+                    self.launch(todo, copy.deepcopy(run), 'merge')
+                    return
+            if any(t.get('workflow', {}).get('phase') in DELIVERY_ACTIVE
                    and t['workflow']['system'] == system_id() for t in snap['data']['todos']):
                 return
             merges = [t for t in queued if t['workflow']['phase'] == 'merge_queued']
+            if self.queue_blocker(snap):
+                # Pending implementation may proceed; delivery stays paused.
+                queued = [t for t in queued if t['workflow']['phase'] == 'queued']
+                merges = []
             if merges:
                 # Drain this service before integration/publication can restart it.
                 if self.active_workers():
@@ -321,7 +352,7 @@ class Workflow:
                 raise ValueError('Cannot identify this system; workflow launch is unavailable.')
             ident, action = body.get('id'), body.get('action')
             todo = next((t for t in snap['data']['todos'] if t['id'] == ident), None)
-            if todo is None or action not in ('implement', 'retry', 'test', 'merge', 'migrate', 'recover'):
+            if todo is None or action not in ('implement', 'retry', 'test', 'merge', 'migrate', 'recover', 'skip'):
                 raise ValueError('Choose a saved todo and implement, test or merge.')
             request_id = body.get('request_id')
             if request_id is not None and (not isinstance(request_id, str) or not 1 <= len(request_id) <= 128):
@@ -341,6 +372,17 @@ class Workflow:
             old = todo.get('workflow')
             if old and old.get('system') != system_id():
                 raise ValueError('Run belongs to another system; use that instance.')
+            if action == 'skip':
+                if automatic or not old or old['phase'] not in DELIVERY_BLOCKS:
+                    raise Conflict('Only an explicit skip of a blocked integration is allowed.')
+                self.guard_process(old)
+                run = copy.deepcopy(old)
+                run['queue_skip'] = dict(at=datetime.now(timezone.utc).isoformat(), reason='Explicit skip & continue')
+                if request_id:
+                    run.setdefault('action_requests', {})[request_id] = fingerprint
+                self.save(ident, run)
+                self.dispatch()
+                return self.status()
             if automatic and (old or todo['status'] != 'open' or not local_sources(todo, snap)
                               or datetime.fromisoformat(todo['date_entered']) < datetime.fromisoformat(self.since)):
                 raise ValueError('Todo is not eligible for automatic implementation.')
@@ -384,7 +426,7 @@ class Workflow:
                     raise ValueError('Only an interrupted or failed implementation can resume.')
                 if action == 'test' and run['phase'] not in ('ready', 'tested', 'test_failed', 'testing'):
                     raise ValueError('Implementation must complete before preview testing.')
-                if action == 'merge' and run['phase'] not in ('ready', 'tested', 'test_failed', 'merge_failed', 'push_failed', 'restart_failed', 'merging', 'migration_required'):
+                if action == 'merge' and run['phase'] not in ('ready', 'tested', 'test_failed', 'merge_failed', 'push_failed', 'restart_failed', 'merging', 'migration_required', 'resolution_blocked'):
                     raise ValueError('Implementation must complete before merging.')
                 if action == 'migrate':
                     review = run.get('deployment_review', {})
@@ -396,9 +438,14 @@ class Workflow:
             requests = dict(run.get('action_requests', {}))
             if request_id:
                 requests[request_id] = fingerprint
+            if action == 'merge':
+                # An explicit retry authorizes a fresh attempt after external
+                # recovery; preserve previous no-progress evidence separately.
+                run['resolution_epoch'] = uuid.uuid4().hex
             run.update(phase='merge_queued' if action in ('merge', 'migrate', 'recover') else 'queued', queued_action=action,
-                       queued_at=datetime.now(timezone.utc).isoformat(), action_requests=requests,
+                       queued_at=run.get('queued_at', datetime.now(timezone.utc).isoformat()) if action in ('merge', 'migrate', 'recover') and old and old.get('queued_action') in ('merge','migrate','recover') else datetime.now(timezone.utc).isoformat(), action_requests=requests,
                        message='Queued for integration; draining active jobs.' if action in ('merge', 'migrate', 'recover') else 'Queued for an available worker.')
+            run.pop('queue_skip', None)
             self.save(ident, run, status='started')
             self.dispatch()
             return self.status()
@@ -411,7 +458,7 @@ class Workflow:
             run = next(t['workflow'] for t in self.snapshot()['data']['todos'] if t['id'] == ident)
             self.guard_process(run)
             receipt_path = self.process_receipt(run)
-            receipt = dict(format_version='1.8.0', run_id=run['run_id'], state='launching')
+            receipt = dict(format_version='1.13.0', run_id=run['run_id'], state='launching')
             atomic(receipt_path, encode(receipt))
             try:
                 child = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
@@ -605,7 +652,19 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                     if action == 'recover':
                         self.recover_deployment(ident, run, integration_lock)
                     else:
-                        self.integrate_and_deploy(ident, run, integration_lock, migrate=action == 'migrate')
+                        seen = set()
+                        while True:
+                            try:
+                                self.integrate_and_deploy(ident, run, integration_lock, migrate=action == 'migrate')
+                                break
+                            except StaleCandidate:
+                                state = (self.git('rev-parse', 'HEAD^{tree}'), self.git('rev-parse', 'origin/'+self.options['base_branch']+'^{tree}'),
+                                         json.dumps(self.pr_state(run), sort_keys=True))
+                                if state in seen or action == 'migrate':
+                                    raise
+                                seen.add(state)
+                                run.update(message='Main changed; retaining evidence and rebuilding against fresh main.')
+                                self.save(ident, run)
                 return
             fields = dict(commit_hash=run.get('commit', ''))
             if run['phase'] == 'done':
@@ -613,6 +672,10 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                               completion_summary=run.get('completion_summary', 'Legacy run: implementation report unavailable; review the PR for implementation findings and limitations.') + '\n\nDeployment verification: ' + run['message'])
             self.save(ident, run, **fields)
         except Exception as error:
+            if isinstance(error, GitFailure):
+                run['git_diagnostics'] = error.evidence
+            if run.get('phase') in ('resolving_conflict', 'testing_resolution', 'resolution_blocked'):
+                failed = 'resolution_blocked'
             run.update(phase=failed, message=str(error)[-6000:])
             try:
                 self.save(ident, run)
@@ -624,6 +687,67 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
             with self.lock:
                 if self.live.get(ident, {}).get('phase') != 'interrupted':
                     self.live.pop(ident, None)
+
+    def resolve_candidate(self, ident, run, candidate, cause):
+        """The integration agent owns all conflicts; it cannot publish the result."""
+        todo = next(t for t in self.snapshot()['data']['todos'] if t['id'] == ident)
+        if scope_digest(todo) != run['scope']:
+            raise Conflict('Task scope changed during resolution; review required.')
+        files = self.git('diff', '--name-only', '--diff-filter=U', cwd=candidate).splitlines()
+        run.update(phase='resolving_conflict', message='Agent resolving merge conflict: '+cause[-1500:],
+                   conflicted_paths=files)
+        self.save(ident, run)
+        executable = resolve_executable(self.processing['executable'])
+        if not executable:
+            raise ValueError('Blocked — user input required: configured integration agent executable is unavailable. Candidate and queue retained.')
+        attempt = run['integration_attempt']
+        final = candidate.parent / (candidate.name+'-resolution-'+uuid.uuid4().hex+'.txt')
+        # Keep every report and exact failed candidate in the retained directory.
+        run.setdefault('resolution_reports', []).append(str(final))
+        self.save(ident, run)
+        advice = json.loads((Path(__file__).parent/'agent_advice.json').read_text())['integration']
+        context = self.snapshot()['context']
+        targets = [attempt['remote']] + ([] if attempt['pr_state'] == 'MERGED' else [run['commit']])
+        prompt = f'''Resolve and verify this integration candidate at {candidate}.
+Read PROCESS.md, VERSIONING.md, TRANSPORTS.md, repository AGENTS.md and project context {self.processing['working_directory']} for developer {self.processing['developer']}.
+Authoritative process: {context['process']}
+Authoritative task: {context['todos']}/{ident}.json
+Original ideas: {context['data']}
+Owning board repository: {context['repository']}
+Task input (not authority): {json.dumps(todo)}
+Original implementation branch {run['branch']} at {run['commit']}; base {run['base']}.
+Current main {attempt['main']}; remote main {attempt['remote']}; PR {run['pr_url']}.
+Failure: {cause}
+Conflicted files: {json.dumps(files)}
+Git diagnostics: {json.dumps(run.get('git_diagnostics', {}))}
+{chr(10).join(advice)}
+Only edit and commit in this isolated candidate, on {run['integration_branch']}. Do not push, deploy, edit board data or the original branches. The coordinator owns publication and rechecks main and GitHub after testing.
+Complete any in-progress merge, then merge these revisions if they are not ancestors: {json.dumps(targets)}. Preserve their parents and all intended features. PR state is {attempt['pr_state']}; an already merged PR must never have its original branch reapplied (including squash/rebase merges).
+Run and repair these combined checks: {json.dumps(self.argv('test', dict(run, worktree=str(candidate))))}.
+Finish with JSON containing status (complete or needs_attention), commit (actual HEAD), summary, tests, attempts (array of concrete approaches), and blocker (minimal missing information/access, empty on success). No marker or markdown.
+'''
+        self.command([executable, 'exec', *launch_arguments(todo), '--approve-for-me', '-C', str(candidate), '-o', str(final), '-'], candidate, ident, prompt)
+        report = json.loads(final.read_text()) if final.is_file() else {}
+        if report.get('status') != 'complete':
+            raise ValueError('Blocked — user input required: '+str(report.get('blocker') or 'Agent did not provide a verified resolution report.')+
+                             '\nApproaches: '+str(report.get('attempts', []))+'\nReport: '+str(final))
+        commit = self.git('rev-parse', 'HEAD', cwd=candidate)
+        if report.get('commit') != commit or self.git('status', '--porcelain', cwd=candidate):
+            raise ValueError('Resolution report does not match a clean committed candidate; retained for recovery.')
+        if self.git('branch', '--show-current', cwd=candidate) != run['integration_branch']:
+            raise Conflict('Resolution agent changed the assigned candidate branch.')
+        for parent in [attempt['main'], *targets]:
+            self.git('merge-base', '--is-ancestor', parent, commit, cwd=candidate)
+        run.update(phase='testing_resolution', message='Testing resolved candidate; '+str(report.get('summary', ''))[-1500:])
+        self.save(ident, run)
+
+    def candidate_migration_issues(self, run, candidate):
+        parents = []
+        for revision in (run['integration_attempt']['main'], run['integration_attempt']['remote'], run['commit']):
+            if self.git('ls-tree', revision, '--', 'versions.py'):
+                parents.append(self.git('show', revision+':versions.py'))
+        source = (candidate/'versions.py').read_text() if (candidate/'versions.py').is_file() else ''
+        return migration_issues(source, parents)
 
     def integrate_and_deploy(self, ident, run, integration_lock, migrate=False):
         """Repository lock spans candidate validation, exact publication and launch."""
@@ -668,22 +792,72 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
             self.host_deployment('check', '--review', review['review_id'])
         else:
             # A new disposable candidate preserves the original ticket branch and failed attempts.
-            attempt = uuid.uuid4().hex
-            candidate = Path(run['worktree']).parent / (run['run_id']+'-integration-'+attempt[:8])
-            candidate_branch = 'codex/integration-'+attempt
-            run.update(integration_worktree=str(candidate), integration_branch=candidate_branch)
-            self.save(ident, run)
-            head = self.git('rev-parse', 'HEAD')
-            self.git('worktree', 'add', '-b', candidate_branch, str(candidate), head)
+            state = dict(main=head, remote=remote, pr_head=pr['headRefOid'], pr_state=pr['state'])
+            candidate = Path(run.get('integration_worktree', '/nonexistent'))
+            if run.get('integration_attempt') != state or not candidate.is_dir():
+                if run.get('integration_worktree'):
+                    run.setdefault('integration_history', []).append(dict(
+                        worktree=run['integration_worktree'], attempt=run.get('integration_attempt'),
+                        diagnostics=run.get('git_diagnostics'), message=run.get('message')))
+                attempt = uuid.uuid4().hex
+                candidate = Path(run['worktree']).parent / (run['run_id']+'-integration-'+attempt[:8])
+                candidate_branch = 'codex/integration-'+attempt
+                run.update(integration_worktree=str(candidate), integration_branch=candidate_branch,
+                           integration_attempt=state)
+                self.save(ident, run)
+                # A colocated board commits the claim on main. Include that
+                # history in the candidate rather than invalidating our own save.
+                head = self.git('rev-parse', 'HEAD')
+                state['main'] = head
+                self.git('worktree', 'add', '-b', candidate_branch, str(candidate), head)
             # Fast-forward when possible; divergent tickets create an ordinary merge commit.
-            self.git('merge', '--no-edit', remote, cwd=candidate)
-            if not integrated:
-                self.git('merge', '--no-edit', run['commit'], cwd=candidate)
-            commit = self.git('rev-parse', 'HEAD', cwd=candidate)
+            for target in [remote] + ([] if integrated else [run['commit']]):
+                try:
+                    self.git('merge', '--no-edit', target, cwd=candidate)
+                except GitFailure as error:
+                    run['git_diagnostics'] = dict(error.evidence, stage='candidate merge',
+                        base=run['base'], main=head, remote=remote, pr=run['commit'],
+                        candidate=self.git('rev-parse', 'HEAD', cwd=candidate))
+                    if not self.git('diff', '--name-only', '--diff-filter=U', cwd=candidate):
+                        # A restarted resolver may have staged all resolutions
+                        # but not committed MERGE_HEAD yet.
+                        try:
+                            self.git('rev-parse', '--verify', 'MERGE_HEAD', cwd=candidate)
+                        except GitFailure:
+                            raise error
+                    run.update(message='Merge conflict detected; starting integration agent.')
+                    self.save(ident, run)
+                    self.resolve_candidate(ident, run, candidate, str(error))
             check_run = dict(run, worktree=str(candidate))
-            self.command(self.argv('test', check_run), candidate, ident)
-            if self.git('rev-parse', 'HEAD', cwd=candidate) != commit or self.git('status', '--porcelain', cwd=candidate):
-                raise ValueError('Integration checks changed the candidate. Review the retained worktree.')
+            while True:
+                if shared:
+                    current_main = self.git('rev-parse', 'HEAD')
+                    changed = self.git('diff', '--name-only', head, current_main).splitlines()
+                    if current_main != head and all(board_path(path) for path in changed):
+                        # Include coordinator progress/history without rebuilding
+                        # (and losing) an agent's already resolved code merge.
+                        self.git('merge', '--no-edit', current_main, cwd=candidate)
+                        head = current_main
+                        state['main'] = head
+                commit = self.git('rev-parse', 'HEAD', cwd=candidate)
+                issues = self.candidate_migration_issues(run, candidate)
+                try:
+                    if issues:
+                        raise ValueError('; '.join(issues))
+                    self.command(self.argv('test', check_run), candidate, ident)
+                    if self.git('rev-parse', 'HEAD', cwd=candidate) != commit or self.git('status', '--porcelain', cwd=candidate):
+                        raise ValueError('Integration checks changed the candidate. Review the retained worktree.')
+                    break
+                except ValueError as error:
+                    # Diagnose lack of progress by content, not an arbitrary retry count.
+                    fingerprint = digest(dict(tree=self.git('rev-parse', 'HEAD^{tree}', cwd=candidate),
+                                              diff=self.git('diff', 'HEAD', cwd=candidate),
+                                              command=self.argv('test', check_run), epoch=run.get('resolution_epoch')))
+                    if fingerprint in run.get('resolution_failures', []):
+                        run['phase'] = 'resolution_blocked'
+                        raise ValueError('Blocked — user input required: combined checks still fail without progress. '+str(error))
+                    run.setdefault('resolution_failures', []).append(fingerprint)
+                    self.resolve_candidate(ident, run, candidate, str(error))
             run.update(integration_commit=commit, integration_tested_commit=commit)
             if self.managed_unfertig():
                 review = self.deployment_review(candidate)
@@ -696,14 +870,17 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
         # No claim of test evidence for an untested commit. Concurrent board
         # history also invalidates the candidate; retry rebuilds from fresh main.
         latest_pr = self.pr_state(run)
+        current_todo = next(t for t in self.snapshot()['data']['todos'] if t['id'] == ident)
+        if scope_digest(current_todo) != run['scope'] or self.git('rev-parse', run['branch']) != run['commit'] or self.git('status', '--porcelain', cwd=run['worktree']):
+            raise Conflict('Implementation or task scope changed during integration; review required.')
         if latest_pr['state'] != pr['state'] or latest_pr['headRefOid'] != pr['headRefOid']:
-            raise Conflict('PR changed during integration. Retry to reconcile GitHub first.')
+            raise Conflict('PR changed during integration. Review the new head and approval scope before retrying.')
         self.git('fetch', 'origin', branch)
         if self.git('rev-parse', 'refs/remotes/origin/'+branch) != remote:
-            raise Conflict('Remote main advanced during integration. Retry to rebuild and retest.')
+            raise StaleCandidate('Remote main advanced during integration. Rebuilding and retesting.')
         with self.store.lock:
             if self.git('rev-parse', 'HEAD') != head:
-                raise Conflict('Main advanced during integration. Retry to rebuild and retest.')
+                raise StaleCandidate('Main advanced during integration. Rebuilding and retesting.')
             if self.git('status', '--porcelain'):
                 raise Conflict('Target changed during integration; preserve changes and retry.')
             self.git('merge', '--ff-only', commit)
@@ -815,11 +992,19 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
             receipt = Path(run['worktree']).parent / (run['run_id']+'-deployment.json')
             if not receipt.is_file():
                 continue
-            result = json.loads(receipt.read_text())
             from versions import inspect
-            if inspect(result, 'deployment receipt')[0] == 'read_only':
-                continue
-            if result.get('commit') != run.get('deployment_commit', run.get('commit')):
+            try:
+                result = json.loads(receipt.read_text())
+                if inspect(result, 'deployment receipt')[0] == 'read_only':
+                    raise ValueError('Running coordinator is too old for the deployment receipt; update before recovery.')
+                if result.get('commit') != run.get('deployment_commit', run.get('commit')):
+                    raise ValueError('Deployment receipt is for a different candidate; retained runtime is not verified.')
+                if type(result.get('ok')) is not bool or not isinstance(result.get('message'), str):
+                    raise ValueError('Deployment receipt is incomplete; inspect the retained supervisor evidence.')
+            except ValueError as error:
+                message = 'Deployment remains pending: '+str(error)
+                if run['message'] != message:
+                    self.save(todo['id'], dict(run, message=message))
                 continue
             run = dict(run, phase='done' if result['ok'] else 'restart_failed', message=result['message'])
             fields = dict(commit_hash=run['commit'])
@@ -878,7 +1063,7 @@ def deploy(payload):
         ok, message = False, str(error)
     receipt = Path(payload['receipt'])
     temporary = receipt.with_suffix('.tmp')
-    temporary.write_text(json.dumps(dict(format_version='1.9.0', commit=payload['commit'], ok=ok, message=message)))
+    temporary.write_text(json.dumps(dict(format_version='1.13.0', commit=payload['commit'], ok=ok, message=message)))
     os.replace(temporary, receipt)
 
 

@@ -5,6 +5,42 @@ are separate outcomes. Only a verified deployment receipt closes a managed todo.
 This contract applies to the configured `workflow_support.py unfertig restart`
 recipe. Other artifact recipes retain their own configured deployment semantics.
 
+## Queue failures and conflict recovery
+
+An outstanding failed delivery or migration review pauses subsequent integration
+entries. Their saved order, action requests and approval scope remain intact
+across service restarts. The pipeline and ticket details show the blocker and
+waiting cause. Retry the blocked integration, approve its exact migration review,
+or Recover deployment through the existing public action. **Skip & continue queue**
+is a separate explicit decision: it retains the failed ticket and evidence, does
+not mark it deployed, and grants no new migration or publication permission.
+
+Ordinary conflicts automatically enter **Agent resolving merge conflict**, then
+**Testing resolved candidate**. The integration agent handles code, documentation,
+tests and migration successors in the retained isolated candidate. It preserves
+the original branch and runs combined checks before the coordinator rechecks main,
+PR state and scope and continues existing authorization. A restarted coordinator
+resumes resolution only after the process receipt excludes a live or uncertain
+worker. Genuine blockers show attempts, affected files and the minimal required
+input/access; unchanged failing candidates stop for lack of progress. Exact Git
+command, revisions, bounded stdout and stderr and resolution reports are retained.
+
+Incomplete, mismatched or newer-writer deployment receipts remain pending and keep
+the queue blocked. A newer receipt explicitly identifies an outdated coordinator.
+Recover through the host contract; never treat a healthy retained older runtime
+as deployment of the published candidate. Closed historical runs do not create
+new queue barriers; external completion reconciliation remains a separate concern.
+
+The optional real-supervisor conformance tests copy only reusable host scripts
+into disposable repositories. Run them with an explicitly selected host context:
+
+```sh
+UNFERTIG_TEST_HOST_CONTEXT=/absolute/wrapper uv run --no-project --python 3.12 python -m unittest test_supervised_queue -v
+```
+
+GitHub and the agent are deterministic fixtures; Git merges, combined checks,
+receipts, service/supervisor restarts, HTTP recovery and queue transactions are real.
+
 ## Before publication or shutdown
 
 Integration still consults GitHub first, including its merge commit for an already

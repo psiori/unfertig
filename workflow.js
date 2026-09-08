@@ -23,7 +23,7 @@
     });
   }
   function canMerge(run) {
-    return ['ready','tested','test_failed','merge_failed','push_failed','restart_failed'].includes(run?.phase) || run?.resume_action === 'merge';
+    return ['ready','tested','test_failed','merge_failed','push_failed','restart_failed','resolution_blocked'].includes(run?.phase) || run?.resume_action === 'merge';
   }
   function testStatus(run) {
     return run?.commit && run.tested_commit === run.commit
@@ -33,6 +33,8 @@
   function nextStep(todo, run) {
     if (!run) return todo.status !== 'closed' ? ['implement','Implement',todo.status === 'open'] : null;
     if (run.phase === 'queued' || run.phase === 'merge_queued') return ['', run.phase === 'merge_queued' ? 'Queued for integration' : 'Queued', false];
+    if (['resolving_conflict','testing_resolution'].includes(run.phase)) return ['',run.phase === 'resolving_conflict' ? 'Agent resolving merge conflict' : 'Testing resolved candidate',false];
+    if (run.phase === 'resolution_blocked') return ['merge','Retry resolution',true];
     if (run.phase === 'migration_required') return ['migrate','Migrate & deploy',Boolean(run.deployment_review?.review_id)];
     if (['restart_failed','restarting','migrating','recovering'].includes(run.phase) && run.published_commit) return ['recover','Recover deployment',true];
     if (run.resume_action) return [run.resume_action, {retry:'Retry implementation',test:'Preview',merge:'Merge & restart'}[run.resume_action],true];
@@ -67,7 +69,7 @@
       const button = (action, label, allowed) => `<button type="button" class="button small" data-workflow-action="${action}" data-todo="${id}" ${disabled || !allowed ? 'disabled' : ''}>${label}</button>`;
       const expanded = panel.querySelector('details')?.open;
       const scroll = panel.querySelector('pre')?.scrollTop || 0;
-      const html = `<div class="workflow-actions"><strong>Implementation</strong>${button('implement','Implement with Codex', !run && todo.status === 'open' && latest.configured)}${run && (run.phase === 'implementation_failed' || run.resume_action === 'retry') ? button('retry','Retry implementation',true) : ''}${button('test','Test branch', (['ready','tested','test_failed'].includes(run?.phase) || run?.resume_action === 'test'))}${button('merge','Merge & restart', canMerge(run) || run?.phase === 'migration_required')}${run?.phase === 'migration_required' ? button('migrate','Migrate & deploy',Boolean(run.deployment_review?.review_id)) : ''}${['restart_failed','restarting','migrating','recovering'].includes(run?.phase) && run?.published_commit ? button('recover','Recover deployment',true) : ''}${run?.pr_url ? `<a class="button small" href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">GitHub PR ↗</a>` : ''}${run?.preview_url ? `<a class="button small" href="${escapeHTML(run.preview_url)}" target="_blank" rel="noopener">Open preview ↗</a>` : ''}</div><p class="muted">${escapeHTML(run ? ({implementing:'Implementing…',ready:'Ready to preview or merge',testing:'Preparing preview…',tested:'Ready for your review',merging:'Merging and publishing…',restarting:'Restarting artifact…',migrating:'Migrating reviewed storage…',recovering:'Recovering published deployment…',done:'Completed',interrupted:'Interrupted — review and retry'}[run.phase] || run.phase.replaceAll('_',' ')) : !latest.configured ? 'Configure project test, preview and restart commands to enable this workflow.' : latest.automatic ? 'Automatic implementation is on for new ideas captured on this system.' : 'Automatic implementation is off.')}</p>${testStatus(run) ? `<p class="muted">${testStatus(run)}</p>` : ''}${run ? `<details><summary>Progress & branch details</summary><pre>${escapeHTML(`${run.branch}\n${run.commit || ''}\n${run.worktree}\n\n${run.message}`)}</pre></details>` : ''}`;
+      const html = `<div class="workflow-actions"><strong>Implementation</strong>${button('implement','Implement with Codex', !run && todo.status === 'open' && latest.configured)}${run && (run.phase === 'implementation_failed' || run.resume_action === 'retry') ? button('retry','Retry implementation',true) : ''}${button('test','Test branch', (['ready','tested','test_failed'].includes(run?.phase) || run?.resume_action === 'test'))}${button('merge','Merge & restart', canMerge(run) || run?.phase === 'migration_required')}${run?.phase === 'migration_required' ? button('migrate','Migrate & deploy',Boolean(run.deployment_review?.review_id)) : ''}${['restart_failed','restarting','migrating','recovering'].includes(run?.phase) && run?.published_commit ? button('recover','Recover deployment',true) : ''}${['merge_failed','push_failed','restart_failed','migration_required','resolution_blocked'].includes(run?.phase) && !run.queue_skip ? button('skip','Skip & continue queue',true) : ''}${run?.pr_url ? `<a class="button small" href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">GitHub PR ↗</a>` : ''}${run?.preview_url ? `<a class="button small" href="${escapeHTML(run.preview_url)}" target="_blank" rel="noopener">Open preview ↗</a>` : ''}</div><p class="muted">${escapeHTML(run ? ({implementing:'Implementing…',ready:'Ready to preview or merge',testing:'Preparing preview…',tested:'Ready for your review',resolving_conflict:'Agent resolving merge conflict',testing_resolution:'Testing resolved candidate',resolution_blocked:'Blocked — user input required',merging:'Merging and publishing…',restarting:'Restarting artifact…',migrating:'Migrating reviewed storage…',recovering:'Recovering published deployment…',done:'Completed',interrupted:'Interrupted — review and retry'}[run.phase] || run.phase.replaceAll('_',' ')) : !latest.configured ? 'Configure project test, preview and restart commands to enable this workflow.' : latest.automatic ? 'Automatic implementation is on for new ideas captured on this system.' : 'Automatic implementation is off.')}</p>${testStatus(run) ? `<p class="muted">${testStatus(run)}</p>` : ''}${run ? `<details><summary>Progress & branch details</summary><pre>${escapeHTML(`${run.branch}\n${run.commit || ''}\n${run.worktree}\nPublished: ${run.published_commit || 'pending'}\nDeployment: ${run.phase === 'done' ? 'verified' : 'unverified / pending'}\nAffected files: ${(run.conflicted_paths || []).join(', ')}\n\n${run.message}\n\nGit diagnostics: ${JSON.stringify(run.git_diagnostics || {}, null, 2)}\nResolution reports: ${(run.resolution_reports || []).join('\n')}`)}</pre></details>` : ''}`;
       if (panel.dataset.rendered === html) return;
       panel.dataset.rendered = html; panel.innerHTML = html;
       if (expanded && panel.querySelector('details')) panel.querySelector('details').open = true;
@@ -83,15 +85,15 @@
         ['Working', ['queued','implementing','testing']],
         ['Ready', ['ready','tested']],
         ['Integration queue', ['merge_queued']],
-        ['Integrating', ['merging']],
+        ['Integrating', ['merging','resolving_conflict','testing_resolution']],
         ['Migration review', ['migration_required']],
         ['Published / deploying', ['migrating','recovering','restarting']],
         ['Done', ['done']],
-        ['Needs attention', ['implementation_failed','test_failed','merge_failed','push_failed','restart_failed','interrupted']]
+        ['Needs attention', ['implementation_failed','test_failed','merge_failed','push_failed','restart_failed','resolution_blocked','interrupted']]
       ];
-      row.innerHTML = `<p><strong>Integration pipeline</strong> · ${latest.active_count || 0}/${latest.max_workers || 1} workers${latest.draining ? ' · Draining before integration & restart' : ''}</p><div class="pipeline-stages">` + stages.map(([label, phases]) => {
+      row.innerHTML = `<p><strong>Integration pipeline</strong>${latest.queue_blocked_by ? ` · Waiting for ${escapeHTML(latest.queue_blocked_by)}` : ''} · ${latest.active_count || 0}/${latest.max_workers || 1} workers${latest.draining ? ' · Draining before integration & restart' : ''}</p><div class="pipeline-stages">` + stages.map(([label, phases]) => {
         const items = runs.filter(([,run]) => phases.includes(run.phase));
-        return `<section class="pipeline-stage"><h3>${label} <span>${items.length}</span></h3>${items.map(([id,run]) => `<div class="pipeline-ticket"><a href="#todo-${escapeHTML(id)}" title="${escapeHTML(run.message)}">${escapeHTML(id)}</a>${run.pr_url ? ` <a href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">PR ↗</a>` : ''}${run.foreign ? ' · other system' : ''}</div>`).join('') || '<span class="muted">—</span>'}</section>`;
+        return `<section class="pipeline-stage"><h3>${label} <span>${items.length}</span></h3>${items.map(([id,run]) => `<div class="pipeline-ticket"><a href="#todo-${escapeHTML(id)}" title="${escapeHTML(run.message)}">${escapeHTML(id)}</a>${run.pr_url ? ` <a href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">PR ↗</a>` : ''}${run.foreign ? ' · other system' : ''}<p class="muted">${escapeHTML((run.message || '').slice(0,300))}${run.conflicted_paths?.length ? ` · ${escapeHTML(run.conflicted_paths.join(', '))}` : ''}${run.queue_skip ? ' · Skipped by explicit request' : ''}</p></div>`).join('') || '<span class="muted">—</span>'}</section>`;
       }).join('') + '</div>';
     }
   }
@@ -129,6 +131,7 @@
     event.preventDefault(); event.stopPropagation();
     if (!latest?.enabled || sending.has(button.dataset.todo) || button.disabled || hasTicketDraft(button.dataset.todo)) return;
     const id = button.dataset.todo, action = button.dataset.workflowAction, run = latest.runs[id];
+    if (action === 'skip' && !confirm(`Skip ${id} and continue the already-authorized integration queue? Its failure, branch and deployment evidence remain retained. This does not mark it deployed or approve any migration.`)) return;
     if (action === 'merge' && !confirm(`Merge ${run.branch} at ${run.commit}, push it and restart the configured artifact?${testStatus(run) ? `\n\n${testStatus(run)}` : ''}`)) return;
     if (action === 'migrate' && !confirm(`Migrate & deploy ${run.deployment_review.candidate_commit}?\n\n${run.deployment_review.message}\n\nThis publishes the reviewed candidate, stops writers, retains an exact local backup, migrates storage, commits both wrapper pins and verifies restart. Failure retains a reservation for explicit recovery.`)) return;
     if (action === 'recover' && !confirm(`Recover the published deployment ${run.published_commit}? The host verifies existing deployment or resumes its retained migration; it does not remerge the ticket.`)) return;
