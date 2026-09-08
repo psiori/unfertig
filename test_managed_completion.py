@@ -172,7 +172,8 @@ class ManagedCompletionTests(unittest.TestCase):
     def test_migration_preserves_evidence_no_invented_permission(self):
         old=dict(format_version='1.15.0',workflow=dict(phase='implementation_failed',message='Retained'),extension={'x':[1]})
         expected=dict(old,format_version=FORMAT_VERSION)
-        self.assertEqual(MIGRATIONS['1.15.0'](copy.deepcopy(old),'todo'),expected)
+        self.assertEqual(MIGRATIONS['1.15.0'](copy.deepcopy(old),'todo'),dict(old,format_version='1.16.0'))
+        self.assertEqual(migrate(old,'todo'),expected)
         self.assertEqual(migrate(expected,'todo'),expected)
         self.assertEqual(inspect(expected,supported='1.15.0')[0],'read_only')
 

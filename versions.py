@@ -3,7 +3,7 @@ import copy
 import re
 from efforts import DEFAULT_EFFORT
 
-FORMAT_VERSION = '1.16.0'
+FORMAT_VERSION = '1.17.0'
 PROTOCOL_VERSION = '2.0.0'
 
 
@@ -156,13 +156,20 @@ def managed_completion_format(value, kind):
     return value
 
 
+def context_repositories_format(value, kind):
+    # Historical single-repository claims retain their original authorization.
+    # Only a new owner-authorized run receives a context repository manifest.
+    value['format_version'] = '1.17.0'
+    return value
+
+
 MIGRATIONS = {'0.0.0': introduce_version, '1.0.0': useful_defaults,
               '1.1.0': aggregation_format, '1.2.0': transport_format, '1.3.0': processing_format,
               '1.4.0': workflow_format, '1.5.0': workflow_switch_format, '1.6.0': category_format,
               '1.7.0': parallel_workflow_format, '1.8.0': deployment_format,
               '1.9.0': completion_format, '1.10.0': discovery_format, '1.11.0': effort_format,
               '1.12.0': integration_queue_format, '1.13.0': automatic_startup_format,
-              '1.14.0': external_completion_format, '1.15.0': managed_completion_format}
+              '1.14.0': external_completion_format, '1.15.0': managed_completion_format, '1.16.0': context_repositories_format}
 
 
 def migrate(value, kind, label='data'):

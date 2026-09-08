@@ -215,6 +215,21 @@ test('closed history, external completion and uncertain activity agree across al
   assert.match(pipeline.innerHTML,/Needs attention <span>1/);
 });
 
+test('context run shows separate repository results and PRs', async()=>{
+  let poll;
+  const panel={dataset:{workflow:'T0001'},querySelector:()=>null};
+  const run={phase:'ready',branch:'codex/task',commit:'a'.repeat(40),repositories:[
+    {id:'context',role:'context',available:true,changed:true,verification:{status:'passed'},pr_url:'https://github.com/test/um/pull/1'},
+    {id:'child',role:'project',available:true,changed:false},
+    {id:'missing',role:'project',available:false}]};
+  const result={enabled:true,configured:true,runs:{T0001:run}};
+  const context={document:{querySelectorAll:s=>s==='[data-workflow]'?[panel]:[],addEventListener:()=>{}},
+    AbortSignal,token:'token',data:{todos:[{id:'T0001',status:'started',workflow:run}]},compatibility:{read_only:false},history:{pending:false},escapeHTML:s=>s,
+    setInterval:f=>poll=f,setTimeout:()=>{},fetch:async()=>({ok:true,json:async()=>result})};
+  vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);await poll();
+  assert.match(panel.innerHTML,/UM context/);assert.match(panel.innerHTML,/No changes/);assert.match(panel.innerHTML,/Not checked out/);assert.match(panel.innerHTML,/test\/um\/pull\/1/);
+});
+
 test('Done shows local-day completions and expires them after midnight',async()=>{
   let poll;const row={};let now=new Date(2026,8,8,23,59,59).getTime();
   class Clock extends Date { constructor(...args){super(...(args.length?args:[now]));} static now(){return now;} }
