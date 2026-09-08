@@ -153,3 +153,10 @@ saved selection, and explicit empty text clears it. The shared conformance
 matrix covers all seven values, clearing, invalid values, stale revisions and
 receipt retries after switching transports. Filesystem access never migrates a
 source during discovery; upgrade sources explicitly before use.
+
+
+Format 1.8 adds protected queued workflow claims, PR/integration evidence and
+optional owner-local depends_on IDs. Both transports validate dependencies and
+preserve the exact backend-owned workflow through edits and uncertain retries.
+Only the owning HTTP service launches jobs; filesystem clients cannot forge or
+advance claims. Filesystem discovery never migrates a 1.7 source implicitly.

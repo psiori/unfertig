@@ -126,7 +126,7 @@ class ConfigurationTests(unittest.TestCase):
         config.unlink()
         with patch('configuration.port_occupied',return_value=False), patch('builtins.input',return_value=''), patch('sys.stdout',new_callable=StringIO):
             configure_port(resolve(self.root),self.root)
-        self.assertEqual(json.loads(config.read_text()),{'format_version':FORMAT_VERSION,'port':DEFAULT_PORT,'workflow':{'automatic':False,'enabled':False},'processing':{'enabled':True,'automatic':False,'idle_seconds':600,'closed_seconds':90}})
+        self.assertEqual(json.loads(config.read_text()),{'format_version':FORMAT_VERSION,'port':DEFAULT_PORT,'workflow':{'automatic':False,'enabled':False,'max_workers':2,'automatic_merge':False,'automatic_publish':False,'automatic_deploy':False},'processing':{'enabled':True,'automatic':False,'idle_seconds':600,'closed_seconds':90}})
         self.assertTrue(resolve(self.root)['bootstrap'])
         with patch('configuration.port_occupied',side_effect=lambda p:p==8765), patch('builtins.input',side_effect=['bad','0','8765','8799']), patch('sys.stdout',new_callable=StringIO) as output:
             self.assertEqual(choose_port(),8799)

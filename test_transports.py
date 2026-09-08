@@ -112,6 +112,27 @@ class Conformance:
         self.assertEqual(retry['data']['todos'][0]['workflow'], claim)
         self.assertEqual(self.router.inspect_source(switched)['data']['todos'][0]['workflow'], claim)
 
+    def test_queued_claim_evidence_survives_switch_and_cannot_be_changed(self):
+        source = self.sources[0]
+        snapshot = self.alpha.snapshot(); old = snapshot['data']['todos'][0]
+        claim = dict(phase='merge_queued', queued_action='merge', queued_at='2026-09-08T00:00:00Z',
+                     commit='a'*40, run_id='b'*32, system='c'*64, repository=str(self.alpha.root),
+                     worktree=str(self.alpha.root/'preview'), branch=f"codex/{old['id'].lower()}-bbbbbbbb",
+                     base='d'*40, message='Waiting', action_requests={'request':'e'*64},
+                     pr_url='https://github.com/test/code/pull/1', integration_commit='f'*40)
+        self.alpha.mutate(dict(actor='Codex',request_id=uuid.uuid4().hex,changes=[dict(collection='todos',id=old['id'],revision=digest(old),record=dict(old,workflow=claim))]),workflow=True)
+        snapshot=self.router.inspect_source(source); old=snapshot['data']['todos'][0]
+        request=dict(actor='Test',request_id=uuid.uuid4().hex,changes=[dict(collection='todos',id=old['id'],revision=digest(old),record=dict(old,depends_on=[],priority='high'))])
+        expected=preflight_context(snapshot['context'])
+        self.router.transfer(source,'/api/changes',request,snapshot.get('token'),expected)
+        switched=dict(source,transports=dict(http=False,filesystem=True))
+        retry=self.router.transfer(switched,'/api/changes',request,None,expected)
+        self.assertEqual(retry['data']['todos'][0]['workflow'],claim)
+        current=retry['data']['todos'][0]
+        forged=dict(actor='Test',request_id=uuid.uuid4().hex,changes=[dict(collection='todos',id=old['id'],revision=digest(current),record=dict(current,workflow=dict(claim,phase='done')))])
+        with self.assertRaises((ValueError,Conflict)):
+            self.router.transfer(source,'/api/changes',forged,snapshot.get('token'),expected)
+
     def test_same_and_different_record_revisions(self):
         source = self.sources[0]
         snapshot = self.router.inspect_source(source)

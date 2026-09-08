@@ -4,7 +4,7 @@ const fs = require('node:fs'), vm = require('node:vm');
 const app = fs.readFileSync(__dirname+'/app.js','utf8');
 const definitions = JSON.parse(fs.readFileSync(__dirname+'/categories.json','utf8'));
 function setup() {
-  const context = {categoryDefinitions:definitions, escapeHTML:s=>String(s).replaceAll('<','&lt;'),
+  const context = {agentAdvice:JSON.parse(fs.readFileSync(__dirname+'/agent_advice.json','utf8')),categoryDefinitions:definitions, escapeHTML:s=>String(s).replaceAll('<','&lt;'),
     boardContext:{process:'/p/PROCESS.md',data:'/p/data.json',todos:'/p/todos',repository:'/p'},
     data:{ideas:[]}, date:s=>s};
   vm.createContext(context);
