@@ -277,3 +277,5 @@ main { padding-top:18px; }
 .masthead{flex-wrap:wrap}
 .header-right{flex-wrap:wrap;flex-shrink:0;max-width:100%}
 @media(max-width:600px){.brand-group{flex-basis:100%}}
+
+#workflow-merge-all-state { white-space: pre-wrap; max-height: 22rem; overflow: auto; }

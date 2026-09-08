@@ -311,3 +311,13 @@ Local-ahead startup uses the existing per-repository `base` and publication gran
 it adds no stored fields or format. Selection is saved before worktree creation,
 and retained worktrees keep their base. PR prose reports inherited history without
 introducing a durable publication manifest. Existing integration checks remain.
+
+## Bulk integration actions (unchanged storage 1.18)
+
+The additive owner-local merge-review/merge-batch API reuses ordinary merge
+action bodies, workflow.action_requests fingerprints and merge_queued claims.
+It adds no persisted board fields, defaults or migration step. Protocol remains
+2.0.0; old readers/writers retain the same durable per-todo recovery semantics.
+Browser recovery is disposable sessionStorage under a versioned `merge-batch.v1`
+key; board receipts remain authoritative. HTTP and filesystem record writers
+continue to protect claims identically; aggregation cannot launch source work.

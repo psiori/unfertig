@@ -281,6 +281,9 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/agent-advice.js':
                 advice = json.loads((Path(__file__).resolve().parent / 'agent_advice.json').read_text())
                 self.reply(200, ('const agentAdvice = ' + json.dumps(advice) + ';').encode(), 'text/javascript; charset=utf-8')
+            elif path == '/api/workflow/merge-review' and self.server.workflow:
+                from bulk_merge import review
+                self.reply(200, review(self.server.workflow))
             elif path == '/api/workflow' and self.server.workflow:
                 self.reply(200, self.server.workflow.status())
             elif path == '/api/processing' and self.server.processing:
@@ -293,7 +296,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, ('const effortDefinitions = ' + json.dumps(EFFORT_DEFINITIONS) + ';').encode(), 'text/javascript; charset=utf-8')
             elif path == '/categories-data.js':
                 self.reply(200, ('const categoryDefinitions = ' + json.dumps(DEFINITIONS) + ';').encode(), 'text/javascript; charset=utf-8')
-            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/workflow.js", "/worker-capacity.js", "/aggregation.js", "/style.css", "/favicon.svg"):
+            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/workflow.js", "/bulk-merge.js", "/worker-capacity.js", "/aggregation.js", "/style.css", "/favicon.svg"):
                 name = "index.html" if path == "/" else path[1:]
                 mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}[Path(name).suffix]
                 body = (ROOT / name).read_bytes()
@@ -308,7 +311,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         if not self.local_request():
             return
-        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action', '/api/workflow/settings'):
+        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action', '/api/workflow/merge-batch', '/api/workflow/settings'):
             self.reply(404, {"error": "Not found."})
             return
         if not secrets.compare_digest(self.headers.get("X-Board-Token", ""), self.server.token):
@@ -329,12 +332,16 @@ class Handler(BaseHTTPRequestHandler):
                     from worker_capacity import WorkerSettings
                     self.reply(200, WorkerSettings(self.server.workflow).save(body))
                     return
-                if self.path == '/api/workflow/action':
+                if self.path in ('/api/workflow/action', '/api/workflow/merge-batch'):
                     require(self.server.workflow is not None, 'Workflow is unavailable.')
                     if not self.server.workflow.options['enabled']:
                         self.reply(403, {'error': 'Implementation workflow is disabled in configuration.'})
                         return
-                    self.reply(200, self.server.workflow.start(body))
+                    if self.path == '/api/workflow/merge-batch':
+                        from bulk_merge import enqueue
+                        self.reply(200, enqueue(self.server.workflow, body))
+                    else:
+                        self.reply(200, self.server.workflow.start(body))
                     return
                 if self.path in ('/api/processing/start', '/api/processing/presence'):
                     require(self.server.processing is not None, 'Processing is unavailable.')

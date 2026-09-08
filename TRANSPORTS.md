@@ -260,3 +260,8 @@ Live capacity and token-protected `/api/workflow/settings` are owner-service
 operations, like workflow actions; offline/aggregate snapshots do not assert
 readiness or dispatch workers. Transport switches preserve records, claims and
 queues unchanged. See README.md for host-local persistence and effective timing.
+
+Owner-local bulk integration uses `/api/workflow/merge-review` and token-protected
+`/api/workflow/merge-batch`; aggregation never forwards these actions to a source.
+Both record adapters preserve the existing protected queue claims and action
+receipts. There is no filesystem batch writer or new stored record contract.
