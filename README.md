@@ -837,3 +837,19 @@ service restarts. If browser session storage is lost, inspect the pipeline befor
 reviewing again; existing queued/active stages cannot be enqueued a second time.
 Aggregators cannot enqueue source work through either transport; use its owning
 instance. No board format change is introduced.
+
+### Maintenance visibility
+
+The Instance maintenance panel hides completely when a recent published-revision
+observation confirms this process is current and all maintenance is idle/healthy.
+Updates, pending work, blockers, errors and unavailable status remain visible.
+Successful historical hooks and installed/current host receipts remain stored
+but do not keep a healthy panel open. Polling and retry controls remain active.
+
+A Git-backed instance observes the application's origin/main with a bounded,
+read-only `git ls-remote` in a background thread, at most once per minute. It
+uses that checkout's existing Git/SSH configuration and never fetches, changes
+refs, installs or requests restart. Observations expire after two minutes; errors
+are unknown, never current. API reads do no network work. No-Git previews cannot
+claim currency and do not contact the remote. Deployment remains independent
+from task publication.
