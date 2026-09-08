@@ -10,6 +10,7 @@ from deployment_preflight import assess, command, files, require_unchanged
 from server import validate
 from storage import BoardStore
 from test_server import fixture
+from versions import FORMAT_VERSION
 
 
 class DeploymentPreflightTests(unittest.TestCase):
@@ -36,7 +37,7 @@ class DeploymentPreflightTests(unittest.TestCase):
         self.data.mkdir(parents=True)
         self.config = self.context / 'state/unfertig/config/config.json'
         self.config.parent.mkdir(parents=True)
-        self.config.write_text(json.dumps(dict(format_version='1.10.0', mode='embedded',
+        self.config.write_text(json.dumps(dict(format_version=FORMAT_VERSION, mode='embedded',
                                                repository='../../..', data='../data/data.json',
                                                extension={'keep': ['all', 'values']})))
         (self.data / 'data.json').write_text(json.dumps(fixture()))
@@ -48,7 +49,7 @@ class DeploymentPreflightTests(unittest.TestCase):
             store.close()
         (self.data / '.receipts').mkdir(exist_ok=True)
         (self.data / '.receipts/request-1234567890.json').write_text(json.dumps(dict(
-            format_version='1.10.0', request_id='request-1234567890', fingerprint='original', assigned=[],
+            format_version=FORMAT_VERSION, request_id='request-1234567890', fingerprint='original', assigned=[],
             extension={'keep': True})))
 
     def downgrade(self):
@@ -61,7 +62,7 @@ class DeploymentPreflightTests(unittest.TestCase):
                 value['format_version'] = '1.8.0'
                 path.write_text(json.dumps(value))
         path = self.installed / 'versions.py'
-        path.write_text(path.read_text().replace("FORMAT_VERSION = '1.10.0'", "FORMAT_VERSION = '1.8.0'"))
+        path.write_text(path.read_text().replace(f"FORMAT_VERSION = {FORMAT_VERSION!r}", "FORMAT_VERSION = '1.8.0'"))
         command(['git', 'add', '.'], self.installed)
         command(['git', 'commit', '-qm', 'Simulate older writer'], self.installed)
 
@@ -71,13 +72,13 @@ class DeploymentPreflightTests(unittest.TestCase):
         self.assertEqual(result['state'], 'unchanged_storage')
         self.assertEqual((files(self.data), files(self.config.parent)), before)
 
-    def test_18_to_110_preserves_live_board_receipts_and_config(self):
+    def test_18_to_current_preserves_live_board_receipts_and_config(self):
         self.downgrade()
         before = files(self.data), files(self.config.parent)
         result = assess(self.candidate, self.context)
         self.assertEqual(result['state'], 'migration_required')
         self.assertEqual(result['current_formats'], ['1.8.0'])
-        self.assertEqual(result['target_format'], '1.10.0')
+        self.assertEqual(result['target_format'], FORMAT_VERSION)
         self.assertEqual((files(self.data), files(self.config.parent)), before)
         with self.assertRaisesRegex(ValueError, 'Ordinary Merge & restart cannot'):
             require_unchanged(self.candidate, self.context)
@@ -117,7 +118,7 @@ class DeploymentPreflightTests(unittest.TestCase):
         self.config.write_text(json.dumps(value))
         result = assess(self.candidate, self.context)
         self.assertEqual(result['state'], 'migration_required')
-        self.assertEqual(result['current_formats'], ['1.8.0', '1.10.0'])
+        self.assertEqual(result['current_formats'], ['1.8.0', FORMAT_VERSION])
 
     def test_normal_restart_does_not_stop_on_migration(self):
         import workflow_support
