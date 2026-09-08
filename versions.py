@@ -3,7 +3,7 @@ import copy
 import re
 from efforts import DEFAULT_EFFORT
 
-FORMAT_VERSION = '1.14.0'
+FORMAT_VERSION = '1.15.0'
 PROTOCOL_VERSION = '2.0.0'
 
 
@@ -144,12 +144,19 @@ def automatic_startup_format(value, kind):
     return value
 
 
+def external_completion_format(value, kind):
+    # Preserve old failures and attribution; manual closure is no evidence.
+    value['format_version'] = '1.15.0'
+    return value
+
+
 MIGRATIONS = {'0.0.0': introduce_version, '1.0.0': useful_defaults,
               '1.1.0': aggregation_format, '1.2.0': transport_format, '1.3.0': processing_format,
               '1.4.0': workflow_format, '1.5.0': workflow_switch_format, '1.6.0': category_format,
               '1.7.0': parallel_workflow_format, '1.8.0': deployment_format,
               '1.9.0': completion_format, '1.10.0': discovery_format, '1.11.0': effort_format,
-              '1.12.0': integration_queue_format, '1.13.0': automatic_startup_format}
+              '1.12.0': integration_queue_format, '1.13.0': automatic_startup_format,
+              '1.14.0': external_completion_format}
 
 
 def migrate(value, kind, label='data'):

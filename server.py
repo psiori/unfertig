@@ -88,6 +88,9 @@ def validate(data, previous=None):
                     require(run.get('queued_action') in ('implement', 'retry', 'test', 'merge', 'migrate', 'recover'), 'Invalid queued action.')
                     require((run['phase'] == 'merge_queued') == (run['queued_action'] in ('merge', 'migrate', 'recover')), 'Invalid queue phase.')
                     timestamp(run.get('queued_at'), 'workflow.queued_at')
+                if 'external_completions' in run:
+                    from external_completion import validate as validate_external
+                    validate_external(run['external_completions'])
                 if 'action_requests' in run:
                     require(isinstance(run['action_requests'], dict) and all(isinstance(k, str) and isinstance(v, str) for k,v in run['action_requests'].items()), 'Invalid action receipts.')
                 for key in ('integration_commit', 'integration_tested_commit', 'deployment_commit', 'published_commit'):

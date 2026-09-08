@@ -584,3 +584,47 @@ Unfertig intentionally exposes the four reasoning levels used for coding tasks.
 Storage 1.12 uses automatic startup migration described in
 [VERSIONING.md](VERSIONING.md). Development tests use disposable fixtures; live
 migration and deployment remain separate coordinator actions.
+
+### Completed externally
+
+Use **Completed externally** in owner ticket details when a failed/interrupted
+attempt was completed through another branch or PR. Supply a reason, your identity,
+and any actual replacement PR, implementation, integration and deployment commits.
+Unknown references may be left empty. Original failure, scope, branch and attribution
+remain inspectable; the action appends reconciliation history and marks the attempt
+superseded, without closing/reopening the ticket or running implementation/deployment.
+
+Token-protected `PUT /api/workflow/action` accepts:
+
+```json
+{
+  "id": "T0040",
+  "action": "complete_external",
+  "revision": "current saved todo revision",
+  "request_id": "stable-unique-request-id",
+  "actor": "SL",
+  "reason": "Completed through a replacement PR",
+  "pr_url": "https://github.com/owner/repository/pull/123",
+  "implementation_commit": "",
+  "integration_commit": "",
+  "deployment_commit": ""
+}
+```
+
+Use full actual commit hashes or empty strings. Retry uncertain delivery with the
+identical body; revision conflicts require reloading and reviewing. Live/uncertain
+workers and queued/deploying stages must be resolved first. Reconciliation needs
+the enabled owning service, writable records and completed history, but does not
+require configured launch recipes. Aggregators can inspect the protected evidence;
+perform the action on the owner. Closed historical failures have no retry button.
+Reopening an unreconciled failure restores recovery; superseded attempts remain
+history even when reopened, with new work assigned a follow-up todo.
+
+GitHub's current PR identity, target, state and merge revision are checked against
+the configured repository and fetched origin branch. Squash/rebase merges use that
+merge revision; the old failed branch need not contain it or even have a completed
+commit. Integration and deployment are displayed separately as verified/unverified.
+For managed Unfertig, deployment verification checks both committed wrapper pins,
+installed runtime, startup-captured running revision, owner and writable history.
+Other artifact recipes retain supplied deployment references explicitly unverified.
+No code merge, restart, deployment recovery or storage migration is invoked.
