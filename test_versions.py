@@ -44,6 +44,38 @@ class VersionTests(unittest.TestCase):
         return dict(request_id=uuid.uuid4().hex, protocol_version=PROTOCOL_VERSION,
                     changes=[dict(collection='todos',id='T0001',revision=old,record=record)])
 
+    def test_profiles_migrate_every_supported_version_preserving_manual_values(self):
+        from versions import MIGRATIONS
+        for version in MIGRATIONS:
+            for profile in (None, 'auto', 'terra-medium', 'sol-medium', 'astra-medium', 'astra-high'):
+                old = dict(fixture()['todos'][0], format_version=version, effort='low', extension={'keep':True})
+                if profile is not None:
+                    old['execution_profile'] = profile
+                new = migrate(old, 'todo')
+                self.assertEqual(semantic(new), dict(semantic(old), execution_profile=profile or 'auto'))
+                self.assertEqual(migrate(new, 'todo'), new)
+                self.assertEqual(inspect(new, supported='1.20.0')[0], 'read_only')
+
+    def test_profile_migration_interrupted_recovery_and_invalid_explicit_value(self):
+        self.store.initialize()
+        old = dict(self.store.snapshot()['data']['todos'][0], format_version='1.20.0', execution_profile=None)
+        self.write(self.todo, old); before=self.files()
+        with self.assertRaisesRegex(ValueError, 'Unsupported execution profile'):
+            self.store.initialize()
+        self.assertEqual(self.files(), before)
+        old['execution_profile']='terra-medium'; self.write(self.todo, old)
+        atomic=storage.atomic
+        def interrupt(path, raw):
+            if path.resolve()==self.todo.resolve():
+                raise OSError('Interrupted profile migration')
+            return atomic(path,raw)
+        with patch('storage.atomic', side_effect=interrupt), self.assertRaises(OSError):
+            self.store.initialize()
+        self.assertTrue(self.store.journal.exists())
+        self.store.initialize()
+        self.assertEqual(self.store.snapshot()['data']['todos'][0]['execution_profile'], 'terra-medium')
+        before=self.files(); self.store.initialize(); self.assertEqual(self.files(),before)
+
     def test_sequential_legacy_migration_and_defaults(self):
         original = fixture()['todos'][0]
         partial = copy.deepcopy(original)
@@ -114,10 +146,10 @@ class VersionTests(unittest.TestCase):
 
     def test_mixed_supported_versions_and_future_build(self):
         data = json.loads(self.todo.read_text()); data['format_version']='1.0.0'; self.write(self.todo,data)
-        header = json.loads(self.path.read_text()); header['format_version']='1.20.9'; self.write(self.path,header)
+        header = json.loads(self.path.read_text()); header['format_version']='1.21.9'; self.write(self.path,header)
         self.store.initialize()
         self.assertEqual(json.loads(self.todo.read_text())['format_version'],FORMAT_VERSION)
-        self.assertEqual(json.loads(self.path.read_text())['format_version'],'1.20.9')
+        self.assertEqual(json.loads(self.path.read_text())['format_version'],'1.21.9')
         self.assertFalse(self.store.snapshot()['compatibility']['read_only'])
         self.assertTrue(self.store.snapshot()['compatibility']['warnings'])
 
@@ -137,7 +169,7 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.files(),originals)
 
     def test_future_minor_read_only_preserves_mixed_old_bytes(self):
-        data = json.loads(self.todo.read_text()); data['format_version']='1.21.0'; self.write(self.todo,data)
+        data = json.loads(self.todo.read_text()); data['format_version']='1.22.0'; self.write(self.todo,data)
         before = self.files(); self.store.initialize()
         snap = self.store.snapshot()
         self.assertTrue(snap['compatibility']['read_only'])
@@ -146,7 +178,7 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.files(),before)
 
     def test_future_build_edit_preserves_unknown_fields_and_version(self):
-        data = json.loads(self.todo.read_text()); data.update(format_version='1.20.42', extension={'nested':[1,2]})
+        data = json.loads(self.todo.read_text()); data.update(format_version='1.21.42', extension={'nested':[1,2]})
         self.write(self.todo,data); self.store.initialize()
         request = self.edit(name='Changed')
         request['changes'][0]['record'].pop('extension')
@@ -154,7 +186,7 @@ class VersionTests(unittest.TestCase):
         self.store.mutate(request)
         saved = json.loads(self.todo.read_text())
         self.assertEqual(saved['extension'],data['extension'])
-        self.assertEqual(saved['format_version'],'1.20.42')
+        self.assertEqual(saved['format_version'],'1.21.42')
         request = self.edit(format_version='1.1.0')
         with self.assertRaisesRegex(VersionError,'downgrade'): self.store.mutate(request)
 
@@ -165,7 +197,7 @@ class VersionTests(unittest.TestCase):
         result = self.store.mutate(dict(actor='Codex', request_id=uuid.uuid4().hex,
             changes=[dict(collection='todos', id=None, record=todo)]))
         self.assertEqual(result['data']['todos'][-1]['effort'], 'medium')
-        future = dict(result['data']['todos'][0], format_version='1.21.0', effort='future')
+        future = dict(result['data']['todos'][0], format_version='1.22.0', effort='future')
         self.write(self.todo, future)
         before = self.files(); self.store.initialize()
         snapshot = self.store.snapshot()
@@ -182,7 +214,7 @@ class VersionTests(unittest.TestCase):
             if effort is not None:
                 old['effort'] = effort
             migrated = migrate(old, 'todo')
-            self.assertEqual(semantic(migrated), dict(semantic(old), effort=effort or 'medium'))
+            self.assertEqual(semantic(migrated), dict(semantic(old), effort=effort or 'medium', execution_profile='auto'))
             self.assertEqual(migrate(migrated, 'todo'), migrated)
         old = dict(fixture()['todos'][0], format_version='1.11.0', completion_summary='Preserve outcome', effort='unsupported')
         self.write(self.todo, old); before = self.files()
@@ -245,7 +277,7 @@ class VersionTests(unittest.TestCase):
                 original['category'] = category
             for version in MIGRATIONS:
                 migrated = migrate(dict(original, format_version=version), 'todo')
-                self.assertEqual(semantic(migrated), original)
+                self.assertEqual(semantic(migrated), dict(original, execution_profile='auto'))
                 self.assertEqual(migrate(migrated, 'todo'), migrated)
                 self.assertEqual(inspect(migrated, supported='1.18.0')[0], 'read_only')
 
@@ -255,7 +287,7 @@ class VersionTests(unittest.TestCase):
             if category is not None:
                 todo['category'] = category
             migrated = migrate(todo, 'todo')
-            self.assertEqual(semantic(migrated), dict(semantic(todo), effort='medium'))
+            self.assertEqual(semantic(migrated), dict(semantic(todo), effort='medium', execution_profile='auto'))
             self.assertEqual(migrate(migrated, 'todo'), migrated)
         self.store.initialize()
         self.store.mutate(self.edit(category='research'))

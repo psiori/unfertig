@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.20.0`.
+`format_version` is a major.minor.build string. Current storage is `1.21.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -218,7 +218,7 @@ after main. The integration check parses literal registry entries before Python
 can overwrite duplicate keys and requires every parent migration feature to
 remain registered. The agent reconciles collisions and runs the complete combined
 suite and all supported upgrade paths, including original/extension preservation.
-This static check supplements, never replaces, migration tests and T0039 preflight.
+This static check supplements, never replaces, migration tests and deployment preflight.
 
 ## Storage 1.14.0 — automatic startup deployment
 
@@ -364,3 +364,16 @@ It adds no persisted board fields, defaults or migration step. Protocol remains
 Browser recovery is disposable sessionStorage under a versioned `merge-batch.v1`
 key; board receipts remain authoritative. HTTP and filesystem record writers
 continue to protect claims identically; aggregation cannot launch source work.
+
+## Storage 1.21.0 — explicit execution profiles
+
+Sequential 1.20→1.21 inserts todo `execution_profile: "auto"` only when absent.
+Preserve every explicit profile, old complexity hint, original, extension and
+receipt identity; invalid explicit values remain errors. New records default to
+Automatic. Older writers become read-only. Protected workflow `agent_runs` adds
+per-launch model/effort and timing observations without fabricating past runs or
+changing historical claims. Missing observations mean unavailable, not zero.
+HTTP/filesystem share validation, revision checks, journal/history recovery and
+omitted-field preservation. Startup migrates under the existing writer lock;
+interrupted migration resumes forward. No API-major change or authority cache.
+See [execution selection](PROCESS_REFERENCE.md#agent-effort-format-121).

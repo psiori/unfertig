@@ -31,21 +31,27 @@ test('all categories have identical intent in both briefings and editor help',()
   assert.match(c.categoryEditor(),/Unclassified/);
   assert.match(c.categoryBrief({category:'future-type'}),/future-type/);
 });
-test('effort vocabulary, defaults, unsupported values and both fresh owner briefings',()=>{
+test('four manual profiles, Automatic, unsupported values and both saved briefings',()=>{
   const c=setup(), efforts=JSON.parse(fs.readFileSync(__dirname+'/efforts.json','utf8'));
   const todo={id:'T0001',name:'Task',description:'Bounded change',tags:[],source_ideas:[]};
-  assert.match(c.effortEditor(todo), /value="medium" selected/);
-  for(const effort of efforts.values){
-    todo.effort=effort;
-    assert.ok(c.effortEditor(todo).includes(`value="${effort}" selected`));
-    for(const render of [c.implementationBrief,c.humanBrief]) assert.ok(render(todo).includes(`Agent effort: ${effort}`));
-    assert.ok(c.effortProcessingGuidance().includes(effort));
+  assert.match(c.effortEditor(todo), /value="auto" selected/);
+  assert.equal(Object.keys(efforts.profiles).length, 4);
+  for(const [execution_profile,p] of Object.entries(efforts.profiles)){
+    todo.execution_profile=execution_profile;
+    assert.ok(c.effortEditor(todo).includes(`value="${execution_profile}" selected`));
+    for(const render of [c.implementationBrief,c.humanBrief]) assert.ok(render(todo).includes(`Agent effort: ${p.label}`));
   }
-  for(const effort of ['',null,'future']){
-    todo.effort=effort;
+  for(const execution_profile of ['',null,'future','__proto__']){
+    todo.execution_profile=execution_profile;
     assert.match(c.effortEditor(todo),/Unsupported:/);
-    for(const render of [c.implementationBrief,c.humanBrief]) assert.throws(()=>render(todo),/Unsupported effort/);
+    for(const render of [c.implementationBrief,c.humanBrief]) assert.throws(()=>render(todo),/Unsupported execution profile/);
   }
+  for(const effort of ['',null,'future']) assert.throws(()=>c.effortBrief({effort}),/Unsupported effort/);
+});
+test('automatic browser routing matches the shared acceptance cases',()=>{
+  const c=setup();
+  for(const [todo,role,expected] of JSON.parse(fs.readFileSync(__dirname+'/test_profile_cases.json','utf8')))
+    assert.equal(c.executionProfile(todo,role).profile,expected,JSON.stringify(todo));
 });
 
 test('completion summaries and exact preflight locations appear in both handoffs',()=>{

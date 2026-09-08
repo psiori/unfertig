@@ -118,6 +118,30 @@ class ContextWorkflowTests(unittest.TestCase):
             collection='todos', id=todo['id'], revision=digest(todo), record=record)]))
         return record
 
+    def test_um_profile_is_reloaded_after_prepare_and_frozen_on_launch(self):
+        from storage import digest
+        import context_workflow
+        self.um(); self.changed={'project'}
+        original=context_workflow.prepare; captured=[]
+        def select(value):
+            t=self.store.snapshot()['data']['todos'][0]
+            self.store.mutate(dict(actor='SL',request_id=uuid.uuid4().hex,changes=[dict(
+                collection='todos',id=t['id'],revision=digest(t),record=dict(t,execution_profile=value))]))
+        def prepare(*args):
+            original(*args); select('terra-medium')
+        def agent(argv,cwd,ident,stdin=None,**kwargs):
+            captured.append((argv,stdin)); select('astra-high')
+            return self.agent(argv,cwd,ident,stdin,**kwargs)
+        with patch('context_workflow.prepare',side_effect=prepare), patch.object(self.workflow,'command',side_effect=agent):
+            todo=self.run_stage('implement')
+        self.assertEqual(todo['workflow']['phase'],'ready',todo['workflow']['message'])
+        self.assertEqual(todo['execution_profile'],'astra-high')
+        self.assertEqual(todo['workflow']['agent_runs'][-1]['profile'],'terra-medium')
+        self.assertEqual(captured[0][0][captured[0][0].index('-m')+1],'gpt-5.6-terra')
+        self.assertIn('Agent effort: Terra medium',captured[0][1])
+        self.assertIn('well-structured, concise',captured[0][1])
+        self.assertNotIn('TRANSPORTS.md',captured[0][1])
+
     def test_um_worker_receives_authorized_code_stage_with_original_provenance(self):
         from categories import managed_briefing
         self.um(); self.changed = {'project'}

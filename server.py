@@ -19,7 +19,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from application_version import application_build
-from efforts import DEFINITIONS as EFFORT_DEFINITIONS, saved_effort
+from efforts import DEFINITIONS as EFFORT_DEFINITIONS, saved_effort, saved_profile
 from categories import CATEGORIES, DEFINITIONS
 from storage import BoardStore, Conflict
 from publication import Publication
@@ -113,6 +113,7 @@ def validate(data, previous=None):
             require(len(dependencies) == len(set(dependencies)) and ident not in dependencies, 'Duplicate or self dependency.')
             if inspect(item)[0] != 'read_only':
                 saved_effort(item)
+                saved_profile(item)
             category = item.get('category', '')
             string(category, 'Category')
             require(not category or category in CATEGORIES or inspect(item)[0] == 'read_only', 'Invalid category.')

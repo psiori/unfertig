@@ -212,7 +212,7 @@ class ExternalCompletionTests(unittest.TestCase):
         self.assertEqual(result, dict(old, format_version='1.15.0'))
         self.assertEqual(migrate(result, 'todo'), dict(result, format_version=FORMAT_VERSION))
         self.assertEqual(inspect(result, supported='1.14.0')[0], 'read_only')
-        self.assertEqual(inspect(dict(result, format_version='1.20.1'))[0], 'compatible')
+        self.assertEqual(inspect(dict(result, format_version='1.21.1'))[0], 'compatible')
 
     def test_public_http_action_and_token_guard(self):
         from server import Server

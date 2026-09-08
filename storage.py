@@ -448,6 +448,7 @@ class BoardStore:
                 if ident is None:
                     if kind == 'todos':
                         record.setdefault('effort', DEFAULT_EFFORT)
+                        record.setdefault('execution_profile', 'auto')
                         record = migrate(record, 'todo')
                     prefix = 'I' if kind == 'ideas' else 'T'
                     initials = body.get('initials', '')

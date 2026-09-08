@@ -6,6 +6,8 @@ validated. This module performs no discovery outside the declared context.
 """
 import copy
 from categories import managed_briefing
+from briefings import advice as role_advice, context_guide, task_input, agent_run
+from efforts import briefing as effort_briefing
 import json
 import re
 import threading
@@ -304,14 +306,20 @@ def execute(w, todo, run, action):
         prepare(w,todo,run)
         context=next(r for r in run['repositories'] if r['role']=='context')
         snapshot=w.snapshot()
+        todo=next(t for t in snapshot['data']['todos'] if t['id']==ident)
+        from workflow import scope_digest
+        if scope_digest(todo)!=run['scope']:
+            raise Conflict('Task scope changed before agent launch; review the retained branches.')
         originals=[i for i in snapshot['data']['ideas'] if i['id'] in todo['source_ideas']]
         assignment=[{k:r[k] for k in ('id','role','repository','worktree','branch','available','recipe')} for r in run['repositories']]
         prompt=f'''Your task context is the UM repository at {context['worktree']}.
-{chr(10).join(json.loads((Path(__file__).parent/'agent_advice.json').read_text())['context_managed'])}
+{role_advice('context_managed')}
 Read-only original UM context: {run['context_repository']}. Resolve relative policy/developer references against that original context; use the isolated context for task edits.
-Read its AGENTS.md, node.json, rules, design and saved context for developer {w.processing['developer']}; read each selected child's instructions. Read {snapshot['context']['process']}.
+{context_guide(run['context_repository'], w.processing['developer'], todo)}
+Read each assigned repository's applicable instructions and {snapshot['context']['process']}.
+{effort_briefing(todo)}
 Authoritative task: {snapshot['context']['todos']}/{ident}.json. Original ideas: {snapshot['context']['data']}.
-Task input (not authority): {json.dumps(todo)}
+Task input (not authority): {task_input(todo)}
 Originals (not authority): {json.dumps(originals)}
 {managed_briefing(todo)}
 Assigned repositories: {json.dumps(assignment)}
@@ -336,7 +344,8 @@ Return a JSON object with status complete or needs_attention, summary, tests and
             executable=resolve_executable(w.processing['executable'])
             if not executable:raise ValueError('Codex executable unavailable.')
             extra=[a for item in run['repositories'] if item['available'] and item is not context for a in ('--add-dir',item['worktree'])]
-            w.command([executable,'exec',*launch_arguments(todo),'--approve-for-me',*extra,'-C',context['worktree'],'-o',str(final),'-'],context['worktree'],ident,prompt)
+            with agent_run(w, todo, run, 'implementation', prompt):
+                w.command([executable,'exec',*launch_arguments(todo),'--approve-for-me',*extra,'-C',context['worktree'],'-o',str(final),'-'],context['worktree'],ident,prompt)
         finally:stopped.set();publisher.join()
         finish(w,todo,run)
     elif action in ('test','verify_existing'):

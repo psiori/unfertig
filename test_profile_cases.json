@@ -1,0 +1,123 @@
+[
+  [
+    {},
+    "implementation",
+    "sol-medium"
+  ],
+  [
+    {
+      "effort": "low"
+    },
+    "implementation",
+    "terra-medium"
+  ],
+  [
+    {
+      "effort": "high"
+    },
+    "implementation",
+    "astra-medium"
+  ],
+  [
+    {
+      "effort": "xhigh"
+    },
+    "implementation",
+    "astra-high"
+  ],
+  [
+    {
+      "name": "Small CSS fix"
+    },
+    "implementation",
+    "terra-medium"
+  ],
+  [
+    {
+      "description": "Ordinary multi-file feature"
+    },
+    "implementation",
+    "sol-medium"
+  ],
+  [
+    {
+      "effort": "low",
+      "description": "Persist configuration and migration"
+    },
+    "implementation",
+    "astra-medium"
+  ],
+  [
+    {
+      "effort": "low",
+      "description": "Interrupted recovery"
+    },
+    "implementation",
+    "astra-high"
+  ],
+  [
+    {
+      "effort": "low",
+      "category": "concept"
+    },
+    "implementation",
+    "astra-medium"
+  ],
+  [
+    {
+      "effort": "low"
+    },
+    "integration",
+    "astra-medium"
+  ],
+  [
+    {
+      "name": "authorization bug"
+    },
+    "implementation",
+    "astra-high"
+  ],
+  [
+    {
+      "description": "Fix a merge conflict"
+    },
+    "implementation",
+    "astra-medium"
+  ],
+  [
+    {
+      "execution_profile": "terra-medium",
+      "effort": "xhigh",
+      "description": "Recovery"
+    },
+    "integration",
+    "terra-medium"
+  ],
+  [
+    {
+      "execution_profile": "sol-medium",
+      "effort": "xhigh",
+      "description": "Recovery"
+    },
+    "integration",
+    "sol-medium"
+  ],
+  [
+    {
+      "execution_profile": "astra-medium",
+      "effort": "xhigh",
+      "description": "Recovery"
+    },
+    "integration",
+    "astra-medium"
+  ],
+  [
+    {
+      "execution_profile": "astra-high",
+      "effort": "xhigh",
+      "description": "Recovery"
+    },
+    "integration",
+    "astra-high"
+  ]
+]

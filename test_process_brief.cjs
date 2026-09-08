@@ -6,6 +6,7 @@ const app = fs.readFileSync(__dirname + '/app.js', 'utf8');
 function setup() {
   const c = {boardContext:{process:'/temporary/app/PROCESS.md', data:'/temporary/board/data.json',
     todos:'/temporary/board/todos', repository:'/temporary'}, data:{ideas:[], todos:[]}};
+  c.agentAdvice = JSON.parse(fs.readFileSync(__dirname + '/agent_advice.json', 'utf8'));
   c.effortDefinitions = JSON.parse(fs.readFileSync(__dirname + '/efforts.json', 'utf8'));
   vm.createContext(c);
   vm.runInContext(app.slice(app.indexOf('function effortValue('), app.indexOf("document.addEventListener('change'")), c);
