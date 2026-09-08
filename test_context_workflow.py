@@ -110,6 +110,65 @@ class ContextWorkflowTests(unittest.TestCase):
     def implement(self):
         with patch.object(self.workflow,'command',side_effect=self.agent):todo=self.run_stage('implement')
         self.assertEqual(todo['workflow']['phase'],'ready',todo['workflow']['message']);return todo
+    def stage_task(self, category):
+        from storage import digest
+        todo = self.store.snapshot()['data']['todos'][0]
+        record = dict(todo, category=category, description='Planning only in this run; implementation requires separate authorization.')
+        self.store.mutate(dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
+            collection='todos', id=todo['id'], revision=digest(todo), record=record)]))
+        return record
+
+    def test_um_worker_receives_authorized_code_stage_with_original_provenance(self):
+        from categories import managed_briefing
+        self.um(); self.changed = {'project'}
+        record = self.stage_task('implementation'); prompts = []
+        def agent(argv, cwd, ident, stdin=None, **kwargs):
+            if 'exec' in argv:
+                prompts.append(stdin)
+            return self.agent(argv, cwd, ident, stdin, **kwargs)
+        with patch.object(self.workflow, 'command', side_effect=agent):
+            todo = self.run_stage('implement')
+        self.assertEqual(todo['workflow']['phase'], 'ready', todo['workflow']['message'])
+        self.assertEqual(todo['description'], record['description'])
+        self.assertIn(managed_briefing(record), prompts[0])
+        self.assertIn(record['description'], prompts[0])
+        self.assertTrue(next(r for r in todo['workflow']['repositories'] if r['id']=='project')['changed'])
+
+    def test_um_concept_keeps_context_only_scope(self):
+        from categories import managed_briefing
+        self.um(); record = self.stage_task('concept'); prompts = []
+        def agent(argv, cwd, ident, stdin=None, **kwargs):
+            if 'exec' in argv:
+                prompts.append(stdin)
+            return self.agent(argv, cwd, ident, stdin, **kwargs)
+        with patch.object(self.workflow, 'command', side_effect=agent):
+            todo = self.run_stage('implement')
+        self.assertEqual(todo['workflow']['phase'], 'ready', todo['workflow']['message'])
+        self.assertIn(managed_briefing(record), prompts[0])
+        self.assertNotIn('this action supplies that implementation authorization', prompts[0])
+        self.assertFalse(next(r for r in todo['workflow']['repositories'] if r['id']=='project')['changed'])
+        todo = self.run_stage('merge')
+        self.assertEqual(todo['workflow']['phase'], 'done', todo['workflow']['message'])
+        self.assertEqual(todo['status'], 'closed')
+        context = next(r for r in todo['workflow']['repositories'] if r['id']=='context')
+        self.assertTrue(context['published_commit'])
+        self.assertEqual(len(self.prs), 1)
+
+    def test_implementation_category_does_not_accept_incomplete_report(self):
+        self.um(); self.stage_task('implementation')
+        def agent(argv, cwd, ident, stdin=None, **kwargs):
+            result = self.agent(argv, cwd, ident, stdin, **kwargs)
+            if 'exec' in argv:
+                path = Path(argv[argv.index('-o')+1])
+                report = json.loads(path.read_text().split('\nUNFERTIG')[0])
+                report.update(status='needs_attention', summary='Named design approval is missing.')
+                path.write_text(json.dumps(report)+'\nUNFERTIG_NEEDS_ATTENTION')
+            return result
+        with patch.object(self.workflow, 'command', side_effect=agent):
+            todo = self.run_stage('implement')
+        self.assertEqual(todo['workflow']['phase'], 'implementation_failed')
+        self.assertIn('Named design approval is missing', todo['workflow']['message'])
+
     def test_context_only_one_pr_and_integration(self):
         self.um();todo=self.implement();self.assertEqual(len(self.prs),1);self.assertFalse((self.context/'design/proposal.md').exists())
         todo=self.run_stage('merge');self.assertEqual(todo['workflow']['phase'],'done',todo['workflow']['message']);self.assertTrue((self.context/'design/proposal.md').exists());self.assertEqual(todo['status'],'closed')
