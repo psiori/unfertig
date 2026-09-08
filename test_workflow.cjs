@@ -144,7 +144,7 @@ test('parallel activity leaves another ticket actionable and pipeline links each
   result.enabled=false;await poll();assert.equal(row.hidden,true);
 });
 
-test('migration review requires separate confirmation and sends the exact review ID',async()=>{
+test('legacy migration wait resumes through ordinary merge and restart',async()=>{
   const events={};let poll,approved=false,confirmation='',submitted;
   const todo={id:'T0001',status:'started',name:'Migration',description:'Preserve originals'};
   const slot={dataset:{workflowNext:todo.id}},row={};
@@ -159,10 +159,10 @@ test('migration review requires separate confirmation and sends the exact review
       return {ok:true,json:async()=>result};
     }};
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
-  await poll();assert.match(slot.innerHTML,/Migrate & deploy/);assert.match(row.innerHTML,/Migration review/);
-  const click=()=>events.click({target:{closest:()=>({dataset:{todo:todo.id,workflowAction:'migrate'}})},preventDefault(){},stopPropagation(){}});
-  await click();assert.equal(submitted,undefined);assert.ok(confirmation.includes(run.deployment_review.candidate_commit));
-  approved=true;await click();assert.equal(submitted.review_id,run.deployment_review.review_id);assert.equal(submitted.action,'migrate');
+  await poll();assert.match(slot.innerHTML,/Merge & restart/);assert.match(row.innerHTML,/Awaiting restart/);
+  const click=()=>events.click({target:{closest:()=>({dataset:{todo:todo.id,workflowAction:'merge'}})},preventDefault(){},stopPropagation(){}});
+  await click();assert.equal(submitted,undefined);assert.ok(confirmation.includes(run.commit));
+  approved=true;await click();assert.equal(submitted.review_id,undefined);assert.equal(submitted.action,'merge');
   run.phase='restart_failed';run.published_commit=run.deployment_review.candidate_commit;await poll();
   assert.match(slot.innerHTML,/Recover deployment/);
 });

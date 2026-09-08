@@ -12,7 +12,7 @@ class ManagedRestartTests(unittest.TestCase):
         calls = []
         argv = ['workflow_support.py', 'unfertig', 'restart',
                 '--repository', '/tmp/artifact', '--context', '/tmp/wrapper', *extra]
-        with patch('deployment_preflight.require_unchanged', return_value={}), patch('sys.argv', argv), patch.object(workflow_support, 'run', lambda argv, cwd: calls.append(argv)), \
+        with patch('deployment_preflight.assess', return_value={}), patch('sys.argv', argv), patch.object(workflow_support, 'run', lambda argv, cwd: calls.append(argv)), \
              patch.object(workflow_support, 'start_managed', side_effect=start_error) as start, \
              patch.object(workflow_support.subprocess, 'check_output', side_effect=['a'*40, revision, '']):
             workflow_support.main()

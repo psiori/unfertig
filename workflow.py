@@ -458,7 +458,7 @@ class Workflow:
             run = next(t['workflow'] for t in self.snapshot()['data']['todos'] if t['id'] == ident)
             self.guard_process(run)
             receipt_path = self.process_receipt(run)
-            receipt = dict(format_version='1.13.0', run_id=run['run_id'], state='launching')
+            receipt = dict(format_version='1.14.0', run_id=run['run_id'], state='launching')
             atomic(receipt_path, encode(receipt))
             try:
                 child = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
@@ -862,11 +862,9 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
             if self.managed_unfertig():
                 review = self.deployment_review(candidate)
                 run['deployment_review'] = review
-                if review['state'] == 'migration_required':
-                    run.update(phase='migration_required', message=review['message'],
-                               review_main=head, review_remote=remote, review_pr_state=pr['state'])
-                    self.save(ident, run)
-                    return
+                run['deployment_driver'] = 'startup'
+                # Supported migrations run programmatically during the authorized
+                # restart. A schema version change is not a separate approval gate.
         # No claim of test evidence for an untested commit. Concurrent board
         # history also invalidates the candidate; retry rebuilds from fresh main.
         latest_pr = self.pr_state(run)
@@ -926,7 +924,7 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
         context = Path(self.processing['working_directory'])
         script = context / 'scripts/managed_deployment.py'
         if not script.is_file():
-            raise ValueError('Install the host migration contract before approving this migration; see DEPLOYMENT.md.')
+            raise ValueError('Install the host recovery contract for this legacy deployment; see DEPLOYMENT.md.')
         return ['sh', str(context / 'scripts/run_uv.sh'), str(script), action, *args]
 
     def host_deployment(self, action, *args):
@@ -943,8 +941,6 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
         from deployment_preflight import assess
         review = assess(candidate, context)
         review.pop('storage_digest', None)
-        if review['state'] == 'migration_required':
-            review['message'] += ' Install the host migration contract, then request a fresh assessment.'
         return review
 
     def recover_deployment(self, ident, run, integration_lock):
@@ -962,7 +958,7 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
             self.git('merge-base', '--is-ancestor', (pr.get('mergeCommit') or {})['oid'], published)
         run['deployment_commit'] = published
         self.launch_deployment(ident, run, integration_lock,
-                               'recover' if run.get('deployment_review', {}).get('review_id') else None)
+                               'recover' if run.get('deployment_driver') != 'startup' and run.get('deployment_review', {}).get('review_id') else None)
 
     def stop_preview(self, ident):
         child = self.previews.pop(ident, None)
@@ -1063,7 +1059,7 @@ def deploy(payload):
         ok, message = False, str(error)
     receipt = Path(payload['receipt'])
     temporary = receipt.with_suffix('.tmp')
-    temporary.write_text(json.dumps(dict(format_version='1.13.0', commit=payload['commit'], ok=ok, message=message)))
+    temporary.write_text(json.dumps(dict(format_version='1.14.0', commit=payload['commit'], ok=ok, message=message)))
     os.replace(temporary, receipt)
 
 
