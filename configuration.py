@@ -93,6 +93,7 @@ def configure_mode(configuration, app_root):
         settings['sources'] = json.loads(input('Sources: '))
     else:
         settings.pop('sources', None)
+        settings.pop('search_paths', None)
     if (path.read_bytes() if path.exists() else None) != before:
         raise ValueError('Configuration changed during setup; rerun.')
     # Validate the proposed file using a sibling temporary file so paths retain
@@ -223,6 +224,8 @@ def normalize_sources(values, base, path, project_id, enabled):
             raise ValueError('Each source requires data (JSON file) and project_id.')
         if 'transports' in source:
             raise ValueError('Transport enablement is global; source overrides are not supported.')
+        if any(any(c in source.get(field, '') for c in '*?[]') for field in ('data', 'config', 'app_root') if isinstance(source.get(field, ''), str)):
+            raise ValueError('Exact source paths cannot contain wildcards; use search_paths for config discovery.')
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', source['project_id']):
             raise ValueError('Invalid source project_id.')
         location = (base / source['data']).resolve()

@@ -86,6 +86,17 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(before, {p: p.read_bytes() for p in self.root.glob('*/*.json')})
         self.assertFalse(list(self.root.glob('*/.server.lock')))
 
+    def test_alias_conflicting_with_two_boards_blocks_both_identities(self):
+        config = self.child(project_id='alpha')
+        value = json.loads(config.read_bytes())
+        config.rename(config.with_name('config-a.json'))
+        (config.parent / 'other.json').write_text('{}')
+        config.with_name('config-b.json').write_text(json.dumps(dict(value, project_id='beta', data='other.json')))
+        config.with_name('config-c.json').write_text(json.dumps(dict(value, project_id='beta')))
+        sources, reports = self.scan(['um-a/config-*.json'])
+        self.assertEqual(sources, [])
+        self.assertTrue(any('Conflicting' in r['error'] for r in reports))
+
     def test_bounds_hidden_entries_and_unsupported_patterns(self):
         self.child('.hidden', project_id='hidden'); self.child('um-a')
         self.assertEqual(len(self.scan(['*/config.json'])[0]), 1)

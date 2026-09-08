@@ -43,7 +43,7 @@ def matches(pattern, budget):
         if '*' not in component and '?' not in component:
             yield from walk(parent / component, tail)
             return
-        expression = re.compile('^' + ''.join('.*' if c == '*' else '.' if c == '?' else re.escape(c) for c in component) + '$')
+        expression = re.compile('^' + ''.join('.*' if c == '*' else '.' if c == '?' else re.escape(c) for c in component) + '$', re.DOTALL)
         try:
             with os.scandir(parent) as entries:
                 selected = []
@@ -112,12 +112,13 @@ def discover(context, explicit):
     for path, pattern in sorted(candidates.items()):
         try:
             source = source_from_config(path, context)
-            prior = next((s for s in sources if s['data'] == source['data'] or s['project_id'] == source['project_id']), None)
-            if prior:
-                if not compatible(prior, source):
-                    invalid.add(prior['project_id'])
+            aliases = [s for s in sources if s['data'] == source['data'] or s['project_id'] == source['project_id']]
+            if aliases:
+                if any(not compatible(prior, source) for prior in aliases):
+                    invalid.update(s['project_id'] for s in aliases)
+                    invalid.add(source['project_id'])
                     raise ValueError('Conflicting source identity or metadata; all conflicting matches are blocked.')
-                prior.update(source)
+                aliases[0].update(source)
             else:
                 sources.append(source)
         except (OSError, ValueError, TypeError, RuntimeError) as error:

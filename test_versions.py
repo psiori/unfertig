@@ -67,6 +67,45 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(json.loads(self.config.read_text())['format_version'], FORMAT_VERSION)
         before = self.files(); self.store.initialize(); self.assertEqual(self.files(),before)
 
+    def test_discovery_step_defaults_preserves_explicit_settings_and_old_writer_guard(self):
+        import versions
+        for patterns in (None, [], ['../um-?/config.json']):
+            config = dict(format_version='1.9.0', mode='aggregation', sources=[], extension={'keep': True})
+            if patterns is not None:
+                config['search_paths'] = patterns
+            result = versions.MIGRATIONS['1.9.0'](copy.deepcopy(config), 'config')
+            self.assertEqual(result['format_version'], '1.10.0')
+            self.assertEqual(result['search_paths'], patterns or [])
+            self.assertEqual(result['extension'], config['extension'])
+            self.assertEqual(inspect(result, supported='1.9.0')[0], 'read_only')
+            self.assertEqual(migrate(result, 'config'), result)
+
+    def test_discovery_migration_interruption_retains_config_and_receipt(self):
+        self.store.initialize()
+        for path in (self.path, self.todo, self.config):
+            value = json.loads(path.read_bytes())
+            value['format_version'] = '1.9.0'
+            if path == self.config:
+                value.update(mode='aggregation', search_paths=['../um-*/config.json'])
+            self.write(path, value)
+        receipt = dict(format_version='1.9.0', request_id='a'*16, fingerprint='same-request', assigned=[])
+        receipt_path = self.store.receipts / ('a'*16 + '.json')
+        self.write(receipt_path, receipt)
+        originals = self.store.read()[0]['ideas']
+        real = storage.atomic
+        def interrupt(path, raw):
+            if path.resolve() == self.config.resolve():
+                raise OSError('Interrupted config migration')
+            return real(path, raw)
+        with patch('storage.atomic', side_effect=interrupt), self.assertRaises(OSError):
+            self.store.initialize()
+        self.assertTrue(self.store.journal.exists())
+        self.store.initialize()
+        self.assertEqual(self.store.read()[0]['ideas'], originals)
+        self.assertEqual(semantic(json.loads(receipt_path.read_bytes())), semantic(receipt))
+        self.assertEqual(json.loads(self.config.read_bytes())['search_paths'], ['../um-*/config.json'])
+        before = self.files(); self.store.initialize(); self.assertEqual(self.files(), before)
+
     def test_missing_required_content_is_not_fabricated(self):
         data = json.loads(self.todo.read_text()); data.pop('author'); self.write(self.todo,data)
         before = self.files()
