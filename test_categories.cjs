@@ -30,3 +30,15 @@ test('all categories have identical intent in both briefings and editor help',()
   assert.match(c.categoryEditor(),/Unclassified/);
   assert.match(c.categoryBrief({category:'future-type'}),/future-type/);
 });
+
+test('completion summaries and exact preflight locations appear in both handoffs',()=>{
+  const c=setup();
+  const todo={id:'T0018',name:'Reporting',description:'Keep requirements',completion_summary:'Verified outcome <safe>',tags:[],source_ideas:[]};
+  for (const render of [c.implementationBrief,c.humanBrief]) {
+    const text=render(todo);
+    for (const value of ['/p/PROCESS.md','/p/todos/T0018.json','/p/data.json','Keep requirements','COMPLETION SUMMARY','Verified outcome <safe>','stop dependent work','Never push','no empty commit','Never delete a pre-existing branch']) assert.ok(text.includes(value),value);
+  }
+  assert.match(app,/name="completion_summary"/);
+  assert.match(app,/escapeHTML\(todo.completion_summary/);
+  assert.match(fs.readFileSync(__dirname+'/aggregation.js','utf8'),/escapeHTML\(t.completion_summary/);
+});

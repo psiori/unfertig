@@ -41,6 +41,26 @@ class Conformance:
     test_duplicate_provenance = fixtures.AggregationTests.test_duplicate_source_provenance_rejected_with_new_request_id
     test_inbox_history_recovery = fixtures.AggregationTests.test_local_history_failure_after_destination_save
 
+    def test_completion_summary_history_and_switch_retry(self):
+        source = self.sources[0]
+        snapshot = self.router.inspect_source(source)
+        old = snapshot['data']['todos'][0]
+        closed = dict(old, status='closed', closed_by='Test', date_closed='2026-09-08T12:00:00Z')
+        request = dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
+            collection='todos', id=old['id'], revision=digest(old), record=closed)])
+        expected = preflight_context(snapshot['context'])
+        with self.assertRaises(ValueError):
+            self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
+        closed['completion_summary'] = 'Implemented reporting. Transport checks passed. No limitations.'
+        result = self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
+        switched = dict(source, transports=dict(http=False, filesystem=True))
+        retry = self.router.transfer(switched, '/api/changes', request, None, expected)
+        self.assertEqual(result['data'], retry['data'])
+        self.assertEqual(retry['data']['todos'][0]['completion_summary'], closed['completion_summary'])
+        self.assertFalse(retry['history']['pending'])
+        history = subprocess.check_output(['git', 'show', 'HEAD:todos/'+old['id']+'.json'], cwd=self.boards[1].root, text=True)
+        self.assertIn(closed['completion_summary'], history)
+
     def test_capture_system_is_authoritative_and_preserved(self):
         source = self.sources[0]
         snapshot = self.router.inspect_source(source)

@@ -98,6 +98,9 @@ class WorkflowTests(unittest.TestCase):
             if todo['status']=='closed':break
             time.sleep(.1)
         self.assertEqual(todo['status'],'closed',todo)
+        self.assertIn('Done', todo['completion_summary'])
+        self.assertIn('fake agent', todo['completion_summary'])
+        self.assertIn('Deployment verification:', todo['completion_summary'])
         self.assertEqual(self.git('rev-parse','HEAD'),todo['workflow']['tested_commit'])
         self.assertEqual(self.git('ls-remote','origin','refs/heads/main').split()[0],todo['commit_hash'])
         self.assertEqual((self.repo/'result').read_text(),'implemented')
