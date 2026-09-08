@@ -251,3 +251,16 @@ main { padding-top:18px; }
 .pipeline-stage h3 span { opacity: .6; }
 .pipeline-ticket { font-size: 13px; margin: 6px 0; }
 .pipeline-ticket a { color: inherit; }
+
+.header-right{flex-wrap:wrap;gap:16px}.local-label{white-space:nowrap}
+#worker-capacity{display:flex;align-items:center;gap:3px;margin:0}
+#worker-capacity label{display:flex;align-items:center;gap:3px}
+#worker-capacity input{width:52px;padding:6px 3px;background:transparent;letter-spacing:0}
+#worker-capacity .live-dot{background:#85877d;flex-shrink:0}
+#worker-capacity .live-dot[data-state="ready"]{background:#608450}
+#worker-capacity .live-dot[data-state="occupied"]{background:#d98b22}
+#worker-capacity .live-dot[data-state="full"]{background:#c84d3c}
+#worker-capacity .live-dot[data-state="unknown"],#worker-capacity .live-dot[data-state="unavailable"]{background:transparent;outline:1px solid #85877d}
+.capacity-message{max-width:1200px;margin:4px auto;padding:0 28px;font-size:12px;color:var(--muted)}
+.capacity-message:empty{display:none}
+@media(max-width:600px){.masthead{flex-wrap:wrap}.header-right{width:100%;gap:12px}.identity input{width:75px}}

@@ -463,7 +463,7 @@ without a shell. Named placeholders are `{worktree}`, `{repository}`, `{context}
 "workflow": {
   "enabled": false,
   "automatic": false,
-  "max_workers": 2,
+  "max_workers": 4,
   "automatic_merge": false,
   "automatic_publish": false,
   "automatic_deploy": false,
@@ -511,7 +511,7 @@ These are CLI runs with output in Unfertig. A shared live Codex desktop session
 has not been demonstrated. See [Codex session interoperability](CODEX_SESSIONS.md)
 for the checked interfaces, reproduction procedure, and sequential handoff.
 
-Parallel execution defaults to two workers (`max_workers`, range 1–8), with a
+Parallel execution defaults to four workers (`max_workers`, range 1–8), with a
 durable queue for additional tickets. Dependencies can be entered as ticket IDs
 in the expanded editor; dependent work waits until prerequisites are published
 (or closed unmanaged work whose commit is on origin/main). Cycles and unknown dependencies are rejected.
@@ -628,3 +628,34 @@ For managed Unfertig, deployment verification checks both committed wrapper pins
 installed runtime, startup-captured running revision, owner and writable history.
 Other artifact recipes retain supplied deployment references explicitly unverified.
 No code merge, restart, deployment recovery or storage migration is invoked.
+
+### Header worker capacity
+
+After Local & yours and before Initials, Workers shows owner-local occupied slots
+and the editable `workflow.max_workers` limit (integer 1–8, default four). Green
+means configured and ready with no slots occupied; orange means occupied with
+capacity remaining; red means at or above the limit; solid grey means disabled
+or stopping. A hollow dot and Unknown/Unavailable label covers stale requests,
+uncertain retained processes, missing launcher/recipes, history blocks and draining.
+Queued tickets are never counted as occupied slots. Status expires after six seconds.
+
+Edit the number and press Enter or Save. Escape discards the draft and adopts the
+latest saved revision. Errors retain the draft; after a conflict, review the saved
+value with Escape before applying another edit. The existing scheduler uses saved
+limits on its next dispatch (normally within its next tick); increasing allows
+queued work to start, while lowering never cancels running workers or drops queues.
+No restart or new implementation/publication permission is granted by this edit.
+
+The token-protected owner-only `PUT /api/workflow/settings` accepts exactly
+`{max_workers: integer, revision: string}`. `GET /api/workflow` exposes only the
+capacity, configuration revision/editability and local/instance persistence layer.
+For UM's documented `state/unfertig/config/{config,machine.local}.json` layout,
+edits atomically update the ignored, untracked durable
+`state/local/unfertig/config/config.json` override, preserving other fields. The
+generated effective config and baseline remain untouched; normal supervisor
+restart merges the durable override. A crash after saving but before live apply
+is recovered on restart. Unsupported generated layouts or divergent baselines
+block editing. Other explicit instance configs use the BoardStore transaction
+and local history recovery. No-config launches display capacity but cannot save.
+This narrow allowlist is the shared foundation for the future SL_I0037 settings
+panel; there is no separate concurrency preference or generic config editor.
