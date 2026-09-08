@@ -372,7 +372,9 @@ action immediately; activity remains batched into the existing heartbeats.
 ## Implementation workflow
 
 Use **Implement with Codex → optional Test branch → Merge & restart**.
-Both collapsed rows and expanded controls offer direct merge after implementation.
+After implementation, collapsed rows show only **Preview** as the next workflow
+action. Successful Preview advances that action to **Merge & restart**. Unfold
+the row to choose direct merge without Preview; expanded controls retain both choices.
 Implementation runs in a `codex/…` branch in a locally excluded
 `.worktrees/unfertig/` checkout. It receives the host's instructions, design,
 developer rules, saved context and original ideas. It uses the configured Codex
@@ -392,7 +394,8 @@ response. Existing progress details remain available during connection loss.
 The optional Test branch step reruns checks and launches an isolated preview,
 opening web previews in a new tab or launching a native window. Data and logs live beside the worktree,
 never in the live board. Stopping the board stops previews. Merge confirms the
-exact selected commit and shows whether it passed Test branch / Preview. It
+exact selected commit. A successful Test branch / Preview is shown only when
+it matches that commit; no notice or message space is shown for an untested commit. It
 fast-forwards a clean checkout on the configured base, pushes without force,
 then runs the configured artifact restart. Concurrent main
 changes require reconciliation and retesting. A detached supervisor retains

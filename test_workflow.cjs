@@ -68,41 +68,63 @@ test('collapsed row follows workflow stages and respects execution guards',async
   await poll(); assert.equal(slot.hidden,false); assert.match(slot.innerHTML,/data-workflow-action="implement"/);
   for(const [phase,action,label] of [['ready','test','Preview'],['tested','merge','Merge & restart'],['implementation_failed','retry','Retry implementation'],['test_failed','test','Preview'],['push_failed','merge','Merge & restart']]) {
     result.runs.T0001={phase}; await poll();
+    assert.equal((slot.innerHTML.match(/<button/g)||[]).length,1);
     assert.match(slot.innerHTML,new RegExp(`data-workflow-action="${action}"`)); assert.ok(slot.innerHTML.includes(label)); assert.doesNotMatch(slot.innerHTML,/ disabled/);
   }
   draft=true; events.input(); assert.match(slot.innerHTML,/ disabled/);
   draft=false; events.change(); assert.doesNotMatch(slot.innerHTML,/ disabled/);
-  result.runs.T0001={phase:'implementing'}; await poll(); assert.match(slot.innerHTML,/Implementing…/); assert.match(slot.innerHTML,/ disabled/);
+  for(const [object,key,value] of [[result,'busy',true],[result,'configured',false],[context.compatibility,'read_only',true],[context.history,'pending',true]]) {
+    const previous=object[key];object[key]=value;await poll();assert.match(slot.innerHTML,/ disabled/);object[key]=previous;
+  }
+  for(const [phase,label] of [['implementing','Implementing…'],['testing','Preparing preview…'],['merging','Merging…'],['restarting','Restarting…']]) {
+    result.runs.T0001={phase};await poll();assert.ok(slot.innerHTML.includes(label));assert.match(slot.innerHTML,/ disabled/);
+  }
+  for(const action of ['retry','test','merge']) {
+    result.runs.T0001={phase:'interrupted',resume_action:action};await poll();
+    assert.equal((slot.innerHTML.match(/<button/g)||[]).length,1);
+    assert.match(slot.innerHTML,new RegExp(`data-workflow-action="${action}"`));
+  }
   result.runs.T0001={phase:'ready',foreign:true}; await poll(); assert.match(slot.innerHTML,/ disabled/);
   result.runs.T0001={phase:'done'}; await poll(); assert.equal(slot.hidden,true);
   result.runs={}; result.enabled=false; await poll(); assert.equal(slot.hidden,true); assert.equal(slot.innerHTML,'');
 });
 
-test('both entry points offer optional preview and confirmed direct merge with truthful status',async()=>{
-  const events={};let poll,confirmation='',approved=false,submitted;
+test('collapsed next action and expanded optional preview retain confirmed direct merge',async()=>{
+  const events={};let poll,confirmation='',approved=false,submitted,failure='',alerted='';
   const commit='a'.repeat(40),todo={id:'T0001',status:'started',name:'Task',description:'Scope'};
   const slot={dataset:{workflowNext:todo.id}},panel={dataset:{workflow:todo.id},querySelector:()=>null};
   let result={enabled:true,configured:true,runs:{T0001:{phase:'ready',commit,branch:'codex/task'}}};
   const context={document:{querySelectorAll:s=>s==='[data-workflow-next]'?[slot]:s==='[data-workflow]'?[panel]:[],addEventListener:(n,f)=>events[n]=f},
     AbortSignal,token:'token',data:{todos:[todo]},compatibility:{read_only:false},history:{pending:false},hasDraft:()=>false,
-    escapeHTML:s=>s,setInterval:f=>poll=f,setTimeout:()=>{},load:async()=>{},alert:assert.fail,
+    escapeHTML:s=>s,setInterval:f=>poll=f,setTimeout:()=>{},load:async()=>{},alert:message=>alerted=message,
     confirm:s=>{confirmation=s;return approved;},fetch:async(url,options)=>{
       if(url==='/api/state')return {ok:true,json:async()=>({data:{todos:[todo]},token:'fresh',revisions:{todos:{T0001:'revision'}}})};
-      if(options?.body)submitted=JSON.parse(options.body);
+      if(options?.body) { submitted=JSON.parse(options.body);if(failure)return {ok:false,json:async()=>({error:failure})}; }
       return {ok:true,json:async()=>result};
     }};
   vm.runInNewContext(fs.readFileSync(__dirname+'/workflow.js','utf8'),context);
   for(const phase of ['ready','test_failed','tested','merge_failed','push_failed','restart_failed']){
     result.runs.T0001.phase=phase;await poll();
-    for(const surface of [slot,panel]){
-      assert.match(surface.innerHTML,/data-workflow-action="merge"[^>]* >Merge & restart/);
-      assert.match(surface.innerHTML,/has not passed Test branch/);
+    assert.match(panel.innerHTML,/data-workflow-action="merge"[^>]* >Merge & restart/);
+    assert.equal((slot.innerHTML.match(/<button/g)||[]).length,1);
+    assert.match(slot.innerHTML,new RegExp(`data-workflow-action="${['ready','test_failed'].includes(phase)?'test':'merge'}"`));
+    for(const surface of [slot,panel]) {
+      assert.doesNotMatch(surface.innerHTML,/has not passed|<p class="muted"><\/p>|<span class="muted">/);
     }
   }
+  result.runs.T0001.phase='ready';await poll();
+  assert.match(slot.innerHTML,/data-workflow-action="test"/);
+  assert.doesNotMatch(slot.innerHTML,/data-workflow-action="merge"/);
   const click=()=>events.click({target:{closest:()=>({dataset:{todo:todo.id,workflowAction:'merge'}})},preventDefault(){},stopPropagation(){}});
-  await click();assert.equal(submitted,undefined);assert.ok(confirmation.includes(commit));assert.match(confirmation,/has not passed/);
+  await click();assert.equal(submitted,undefined);assert.ok(confirmation.includes(commit));assert.doesNotMatch(confirmation,/has not passed|\n\n$/);
   approved=true;await click();assert.equal(submitted.commit,commit);assert.equal(submitted.revision,'revision');
-  result.runs.T0001.tested_commit=commit;await poll();
-  for(const surface of [slot,panel])assert.match(surface.innerHTML,/This commit passed Test branch/);
-  result.runs.T0001.tested_commit='b'.repeat(40);await poll();assert.match(panel.innerHTML,/has not passed/);
+  assert.equal(result.runs.T0001.tested_commit,undefined,'direct merge does not invent test evidence');
+  failure='Target checkout is dirty. Merge did not run.';await click();assert.equal(alerted,failure);
+  result.runs.T0001.message=failure;await poll();assert.ok(panel.innerHTML.includes(failure));
+  result.runs.T0001.phase='tested';result.runs.T0001.tested_commit=commit;await poll();
+  assert.match(slot.innerHTML,/data-workflow-action="merge"/);
+  assert.match(panel.innerHTML,/This commit passed Test branch/);
+  assert.doesNotMatch(slot.innerHTML,/This commit/);
+  assert.equal(submitted.tested_commit,undefined);
+  result.runs.T0001.tested_commit='b'.repeat(40);await poll();assert.doesNotMatch(panel.innerHTML,/This commit|<p class="muted"><\/p>/);
 });
