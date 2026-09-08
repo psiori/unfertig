@@ -31,6 +31,7 @@ class RecordTests(unittest.TestCase):
         self.expected = copy.deepcopy(data)
         for todo in self.expected['todos']:
             todo['effort'] = 'medium'
+            todo['execution_profile'] = 'auto'
         self.path.write_text(json.dumps(data))
         self.store = BoardStore(self.path, validate, git=False)
         self.store.acquire(); self.addCleanup(self.store.close)

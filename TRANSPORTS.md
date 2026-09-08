@@ -281,3 +281,17 @@ Owner-local bulk integration uses `/api/workflow/merge-review` and token-protect
 `/api/workflow/merge-batch`; aggregation never forwards these actions to a source.
 Both record adapters preserve the existing protected queue claims and action
 receipts. There is no filesystem batch writer or new stored record contract.
+
+## Execution profiles (format 1.21)
+
+Todo `execution_profile` defaults to `auto` on creation and migration; omitted
+edits preserve the saved selection. Explicit empty, null or unsupported values
+fail through the common validator. Both adapters retain old complexity hints,
+originals, extensions and protected launch observations. Conformance covers all
+four overrides, Automatic, stale revisions, reload, omitted-field preservation
+and identical receipt retries after switching transports. Aggregate details show
+the owner selection and tolerate unknown future values in read-only snapshots;
+fresh briefings require supported values. Use the owning board's expanded editor
+to change the profile. Only owner services launch workers, re-reading the saved
+selection immediately before launch. Normal filesystem inspection never migrates
+a source or starts agents.

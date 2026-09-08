@@ -35,6 +35,19 @@ class ProcessingTests(unittest.TestCase):
         self.assertIn('Do not copy session restrictions', text)
         self.assertIn('Persist actual user constraints', text)
 
+    def test_processor_and_router_launch_explicit_profiles_without_fallback(self):
+        for mode, model in [('embedded', 'gpt-5.6-terra'), ('aggregation', 'gpt-6-astra')]:
+            self.store.context={'mode':mode}
+            with patch('processing.subprocess.Popen') as launch:
+                launch.return_value.returncode=1
+                self.processor.run('codex', 'Disposable prompt')
+            launch.assert_called_once()
+            argv=launch.call_args.args[0]
+            self.assertEqual(argv[argv.index('-m')+1],model)
+            self.assertEqual(argv[argv.index('-c')+1],'model_reasoning_effort="medium"')
+            self.assertEqual(self.processor.state['status'],'failed')
+            self.assertEqual(self.processor.state['agent_profile']['model'],model)
+
     def test_only_capturing_system_and_manual_legacy(self):
         self.snapshot['data']['ideas'] += [dict(id='I0003', captured_system=OTHER), dict(id='I0004')]
         self.assertEqual([i['id'] for i in pending(self.snapshot, True)], ['I0002'])

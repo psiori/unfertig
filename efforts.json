@@ -6,5 +6,75 @@
     "high",
     "xhigh"
   ],
-  "processing": "Select and persist effort for the task: low for straightforward bounded changes, medium for ordinary work or unclear complexity, high for complex work, xhigh for exceptionally difficult reasoning. Keep effort separate from priority and work category."
+  "processing": "Select and persist effort as a complexity hint: low for clear bounded work, medium for ordinary multi-file work or unclear complexity, high for complex reasoning, xhigh for exceptional difficulty. Keep urgency and category separate. Leave execution_profile as auto unless the user explicitly selects one of the four profiles. Automatic routing also examines task scope for architecture, persistence, recovery and authorization; it never runs below Terra medium. Write well-structured, concise headings, descriptions, documentation and reports; retain necessary acceptance conditions and constraints.",
+  "profiles": {
+    "terra-medium": {
+      "label": "Terra medium",
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "medium"
+    },
+    "sol-medium": {
+      "label": "Sol medium",
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "medium"
+    },
+    "astra-medium": {
+      "label": "Astra medium",
+      "model": "gpt-6-astra",
+      "reasoning_effort": "medium"
+    },
+    "astra-high": {
+      "label": "Astra high",
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high"
+    }
+  },
+  "automatic": [
+    {
+      "profile": "astra-high",
+      "efforts": [
+        "xhigh"
+      ],
+      "reason": "Exceptional complexity"
+    },
+    {
+      "profile": "astra-high",
+      "pattern": "\\b(data loss|recovery|authorization|authentication|security|race condition|deadlock)\\b",
+      "reason": "Sensitive correctness or recovery work"
+    },
+    {
+      "profile": "astra-medium",
+      "pattern": "\\b(architectur\\w*|persist\\w*|migration\\w*|storage|protocol|compatibility|merge conflict\\w*)\\b",
+      "reason": "Architecture, persistence or compatibility work"
+    },
+    {
+      "profile": "astra-medium",
+      "roles": [
+        "integration"
+      ],
+      "reason": "Integration repair"
+    },
+    {
+      "profile": "astra-medium",
+      "efforts": [
+        "high"
+      ],
+      "categories": [
+        "research",
+        "concept",
+        "design",
+        "debugging"
+      ],
+      "reason": "Complex reasoning or exploratory work"
+    },
+    {
+      "profile": "terra-medium",
+      "efforts": [
+        "low"
+      ],
+      "pattern": "\\b(typo|copy edit\\w*|small (css|ui|local)|bounded (fix|change)|local bug with a reproducer)\\b",
+      "reason": "Clear, bounded work"
+    }
+  ],
+  "automatic_default": "sol-medium"
 }

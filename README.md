@@ -10,24 +10,10 @@ Install once with `install.command` on macOS, `install.bat` on Windows, or `sh i
 
 In a standalone checkout, the default board is `board/data.json` plus `board/todos/`. A missing default board initializes one onboarding todo, “Add your first idea”. Existing data is never replaced or reseeded. Git must be installed and the checkout must belong to a Git repository with a configured identity. Each meaningful save is committed locally; remote pushes require the explicit Push action.
 
-Unfertig's own development backlog belongs to **psiori/um-unfertig**, in
-`state/unfertig/data/`. In that wrapper, start the independently pinned tool:
-
-```sh
-cd /absolute/path/to/um-unfertig
-sh start_tools.sh
-```
-
-The wrapper runs `tools/unfertig/`; its separate `unfertig/` development checkout
-can switch branches without changing the board server. Configuration lives in
-`state/unfertig/config/config.json`. The former `development/` board was relocated
-with its IDs, attribution, and records preserved. Its remaining file is a retired
-marker, and historical branches are not the authoritative development backlog.
-The obsolete `unfertig-development.json` selector has been removed.
-
-Test feature branches against a separate temporary board and port using `--data`
-and `--no-git`. Keep the real development board on the wrapper's managed runtime.
-The default standalone starter board remains available for ordinary app users.
+For hosted installations, keep runtime code independent of development branches
+and store configuration/backlog in the owning host repository. Follow that host's
+launch instructions. Test feature branches with a separate temporary board and
+port using `--data` and `--no-git`.
 
 ## Embed as a submodule
 
@@ -236,7 +222,7 @@ metadata agrees. The limit remains 20 unique current boards. Unmatched/invalid
 patterns appear in source status; removed boards retain cached rows and project
 filters, with writes blocked. Returning matches recover without restart. Saved
 routing claims keep their destination and retry request even across restart.
-See [TRANSPORTS.md](TRANSPORTS.md#config-search-paths-format-110) for all bounds,
+See [TRANSPORTS.md](TRANSPORTS.md#config-search-paths-format-111) for all bounds,
 refresh scheduling, identity conflicts, symlink behavior and recovery. Configure
 and migrate explicitly under [VERSIONING.md](VERSIONING.md); discovery itself
 never migrates sources or grants write authorization.
@@ -500,9 +486,8 @@ Explicit Retry implementation uses the retained branch. Task-scope changes
 require reviewing and reconciling that branch. Preview remains manual. Unattended
 Merge & push requires both explicit publication grants described below.
 
-These are CLI runs with output in Unfertig. A shared live Codex desktop session
-has not been demonstrated. See [Codex session interoperability](CODEX_SESSIONS.md)
-for the checked interfaces, reproduction procedure, and sequential handoff.
+These are independent CLI runs with output in Unfertig. See
+[agent execution](CODEX_SESSIONS.md) for the supported launch contract.
 
 Parallel execution defaults to four workers (`max_workers`, range 1–8), with a
 durable queue for additional tickets. Dependencies can be entered as ticket IDs
@@ -537,13 +522,13 @@ A configured hook has its own execution authorization; a task cannot supply comm
 
 The canonical implementation advice is [agent_advice.json](agent_advice.json),
 loaded by both the browser briefings and managed worker prompts. See
-[PROCESS.md](PROCESS.md#implementing-a-todo) for authorization, closure and recovery.
+[task execution](PROCESS_REFERENCE.md#implementing-a-todo) for authorization, closure and recovery.
 
 Work categories describe the kind of deliverable independently of Group and
 Status. Choose one in the new-todo or expanded editor; Unclassified is the safe
 default. Guidance explains the expected result and completion criteria, and is
 included in human and AI handoffs. Search includes the selected category. See
-[PROCESS.md](PROCESS.md#work-categories-format-17) and the canonical
+[work categories](PROCESS_REFERENCE.md#work-categories-format-17) and the canonical
 [categories.json](categories.json). Format 1.7 requires an explicit supported
 migration before rollout; see [VERSIONING.md](VERSIONING.md).
 
@@ -560,29 +545,49 @@ for review. It remains unmerged until the integration action is authorized.
 
 Completion summaries are edited separately from task requirements in the expanded todo and included in AI/human briefings and aggregate details. Closing requires an outcome, verification and limitations/follow-up; reopening clears the summary, with its previous text retained in Git history. Legacy closed tickets stay editable without fabricated summaries. Format 1.10 migrates automatically on the owning instance’s next restart (VERSIONING.md). Before work, locate/read the actual process, task and originals and verify the repository. Commit verified implementation changes locally; never push without explicit authorization. No-change findings require neither an empty implementation commit nor a new branch. Existing managed branches/PRs stay with the coordinator for review.
 
-### Saved agent effort
+## Agent effort (format 1.21)
 
-Expand a todo to select **Agent effort**, then Save. Supported values are `low`,
-`medium`, `high`, and `xhigh`; `medium` is the default for old/manual todos and
-unclear processing work. The single vocabulary and selection guidance are in
-[efforts.json](efforts.json). Effort describes agent reasoning, independently of
-priority and work category. Idea processing selects and saves it for ordinary and
-routed todos. Both AI and Human briefings include the current saved value, including
-owner-qualified aggregate briefings. Aggregate details show effort; edit at its owner.
+Expand a todo and use **Agent effort**, then **Save**. Automatic is the default;
+it displays the profile selected for the saved task. Manual choices are Terra
+medium, Sol medium, Astra medium and Astra high. Returning to Automatic restores
+scope-based selection. The owner board edits this field; aggregate views and
+fresh copied briefings display the same selection.
 
-Implement and retry pass the latest saved value as an actual Codex configuration
-override: `codex exec -c 'model_reasoning_effort="high"' …`. Later changes affect
-subsequent launches and fresh briefings; running jobs keep their launch setting.
-Explicit unsupported values are rejected, not silently defaulted. A model that
-cannot honor the requested setting must be corrected by the operator; Unfertig
-does not retry with a different value. Codex CLI 0.153.2 `exec --help` confirms
-`-c` overrides; the [official configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
-documents `model_reasoning_effort` and model-dependent support (verified 2026-09-08).
-Unfertig intentionally exposes the four reasoning levels used for coding tasks.
+| Automatic task scope, in precedence order | Profile |
+| --- | --- |
+| Exceptional complexity (`xhigh`); recovery, authorization, security or concurrency hazards | Astra high |
+| Architecture, persistence, migration, storage, protocol or compatibility; integration repair | Astra medium |
+| High complexity; research, concept, design or exploratory debugging | Astra medium |
+| Low complexity or an explicitly bounded local/UI/copy fix | Terra medium |
+| Ordinary multi-file work or unspecified scope | Sol medium |
 
-Storage 1.12 uses automatic startup migration described in
-[VERSIONING.md](VERSIONING.md). Development tests use disposable fixtures; live
-migration and deployment remain separate coordinator actions.
+These deterministic rules are in `efforts.json`, shared by Python and the browser.
+Scope matching uses the saved heading and description; the old `effort` field
+remains a complexity hint (`low`, `medium`, `high`, `xhigh`), independent of priority.
+It never directly requests low or xhigh model reasoning. Text matching is a
+conservative heuristic, not a correctness guarantee or authorization check. A
+manual selection overrides automatic routing, including for integration repair.
+
+`execution_profile` accepts `auto`, `terra-medium`, `sol-medium`, `astra-medium`
+or `astra-high`. Missing means `auto`; explicit null/empty/unknown values fail
+validation. Existing explicit hints and extensions survive migration. Edits
+omitting the new field retain its saved value. Both HTTP and filesystem writers
+use the same validation and recovery contract.
+
+Every implementation/retry reads the latest saved task after worktree preparation
+and passes both `-m <model>` and `-c 'model_reasoning_effort="<effort>"'` to Codex.
+A queued job uses the latest saved selection; a running job keeps its launch
+profile. Integration repair follows the same contract. An unavailable model fails
+visibly; there is no silent substitution. Ordinary idea processing launches Terra
+medium; aggregator routing launches Astra medium. Processing suggests complexity
+hints and leaves profile selection Automatic unless the user requested an override.
+
+Protected `workflow.agent_runs` records each implementation/repair launch's model,
+reasoning effort, requested/effective profile, selection reason, start, duration,
+exit status and prompt byte count/hash. These are launch observations, not proof
+of task acceptance or provider-reported token usage. Verification and publication
+retain their separate evidence. Processing exposes its profile in runtime status.
+No persistent session, authority cache or cross-task transcript is introduced.
 
 ### Completed externally
 
@@ -702,8 +707,8 @@ restart merges the durable override. A crash after saving but before live apply
 is recovered on restart. Unsupported generated layouts or divergent baselines
 block editing. Other explicit instance configs use the BoardStore transaction
 and local history recovery. No-config launches display capacity but cannot save.
-This narrow allowlist is the shared foundation for the future SL_I0037 settings
-panel; there is no separate concurrency preference or generic config editor.
+This narrow allowlist supplies the capacity setting; there is no separate
+concurrency preference or generic config editor.
 
 ## Application build in the header
 

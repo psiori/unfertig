@@ -280,7 +280,7 @@ class Conformance:
 
     def test_routed_effort_default_and_explicit_selection(self):
         from efforts import EFFORTS, processing_guidance
-        self.assertIn('medium for ordinary work or unclear complexity', processing_guidance())
+        self.assertIn('medium for ordinary multi-file work or unclear complexity', processing_guidance())
         for effort in [None, *EFFORTS]:
             if effort is not None:
                 self.inbox.mutate(dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
@@ -334,6 +334,43 @@ class Conformance:
             for invalid in ('', 'unsupported', None, [], 1):
                 request = dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
                     collection='todos', id=recovered['id'], revision=digest(recovered), record=dict(recovered, effort=invalid))])
+                with self.assertRaises((ValueError, Conflict)):
+                    self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
+
+    def test_profiles_creation_edit_conflict_and_switch(self):
+        from efforts import PROFILES
+        source = self.sources[0]
+        snapshot = self.router.inspect_source(source)
+        expected = preflight_context(snapshot['context'])
+        for profile in [None, 'auto', *PROFILES]:
+            record = dict(name='Effort task', description='Disposable processing result', author='SL',
+                          created_by='Codex', date_entered='2026-09-08T00:00:00Z', extension={'keep': True})
+            if profile is not None:
+                record['execution_profile'] = profile
+            request = dict(actor='Codex', request_id=uuid.uuid4().hex,
+                           changes=[dict(collection='todos', id=None, record=record)])
+            result = self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
+            old = result['data']['todos'][-1]
+            self.assertEqual(old['execution_profile'], profile or 'auto')
+            request = dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=old['id'], revision=digest(old), record=dict(old, execution_profile='astra-high', group='Changed'))])
+            saved = self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)['data']['todos'][-1]
+            switched = dict(source, transports=dict(http=False, filesystem=True))
+            self.assertEqual(self.router.transfer(switched, '/api/changes', request, None, expected)['data']['todos'][-1], saved)
+            self.assertEqual(self.router.inspect_source(switched)['data']['todos'][-1], saved)
+            with self.assertRaises((ValueError, Conflict)):
+                self.router.transfer(source, '/api/changes', dict(request, request_id=uuid.uuid4().hex), snapshot.get('token'), expected)
+            # An old client omitting the profile retains it, including recovery from a conflict.
+            edited = dict(saved, group='Recovered'); edited.pop('execution_profile')
+            request = dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=saved['id'], revision=digest(saved), record=edited)])
+            recovered = self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)['data']['todos'][-1]
+            self.assertEqual(recovered['execution_profile'], 'astra-high')
+            for field in ('author', 'created_by', 'source_ideas', 'extension'):
+                self.assertEqual(recovered[field], old[field])
+            for invalid in ('', 'unsupported', None, [], 1):
+                request = dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
+                    collection='todos', id=recovered['id'], revision=digest(recovered), record=dict(recovered, execution_profile=invalid))])
                 with self.assertRaises((ValueError, Conflict)):
                     self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
 

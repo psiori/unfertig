@@ -90,7 +90,7 @@ class WorkflowTests(unittest.TestCase):
         from efforts import EFFORTS, launch_arguments
         from storage import digest
         for value in EFFORTS:
-            self.assertEqual(launch_arguments({'effort': value}), ['-c', 'model_reasoning_effort="'+value+'"'])
+            self.assertEqual(launch_arguments({'effort': value}), ['-m', {'low':'gpt-5.6-terra','medium':'gpt-5.6-sol','high':'gpt-6-astra','xhigh':'gpt-6-astra'}[value], '-c', 'model_reasoning_effort='+json.dumps('high' if value == 'xhigh' else 'medium')])
         with self.assertRaisesRegex(ValueError, 'Unsupported effort'):
             launch_arguments({'effort': 'unsupported'})
         real_pr = self.workflow.ensure_pr
@@ -114,8 +114,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(todo['effort'], 'low')
         self.assertEqual(len(captured), 1)
         argv, prompt = captured[0]
-        self.assertEqual(argv[argv.index('-c')+1], 'model_reasoning_effort="xhigh"')
-        self.assertIn('Agent effort: xhigh', prompt)
+        self.assertEqual(argv[argv.index('-c')+1], 'model_reasoning_effort="high"')
+        self.assertEqual(argv[argv.index('-m')+1], 'gpt-6-astra')
+        self.assertIn('Agent effort: Astra high', prompt)
+        launch = todo['workflow']['agent_runs'][-1]
+        self.assertEqual(launch['profile'], 'astra-high')
+        self.assertEqual(launch['status'], 'exited')
+        self.assertGreater(launch['prompt_bytes'], 0)
+        self.assertGreaterEqual(launch['elapsed_seconds'], 0)
 
     def test_authorized_implementation_prompt_supersedes_processing_session_note(self):
         from categories import managed_briefing
@@ -365,6 +371,8 @@ class WorkflowTests(unittest.TestCase):
         todo=self.run_stage('implement')
         self.assertEqual(todo['workflow']['phase'],'implementation_failed')
         self.assertEqual(todo['status'],'started');self.assertFalse((self.repo/'result').exists())
+        self.assertEqual(len(todo['workflow']['agent_runs']),1)
+        self.assertEqual(todo['workflow']['agent_runs'][0]['status'],'failed')
 
     def test_explicit_retry_reuses_branch_and_legacy_restart_is_not_executed(self):
         executable=self.processing['executable'];self.processing['executable']='/usr/bin/false'
@@ -764,7 +772,7 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
         path = self.await_receipt(todo['id'])
         valid = json.loads(path.read_text())
         for receipt, reason in [('interrupted JSON', 'pending'),
-                                (json.dumps(dict(valid, format_version='1.21.0')), 'too old'),
+                                (json.dumps(dict(valid, format_version='1.22.0')), 'too old'),
                                 (json.dumps(dict(valid, commit='0'*40)), 'different candidate'),
                                 (json.dumps(dict(valid, ok='true')), 'incomplete')]:
             path.write_text(receipt)
