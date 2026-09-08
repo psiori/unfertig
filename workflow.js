@@ -1,15 +1,20 @@
 'use strict';
 (() => {
-  let latest = null, sending = false, previewWindow = null, previewId = null;
+  let latest = null;
+  const sending = new Set(), previews = new Map(), requests = new Map();
   let verifiedAt = null, refreshing = false;
   // A hung request or a suspended tab must not leave confirmed activity behind.
   const activityLifetime = 6000;
+  function hasTicketDraft(id) {
+    return Boolean(document.querySelector?.(`.todo-editor[data-id="${id}"][data-dirty="true"]`) ||
+      (typeof priorityDrafts !== 'undefined' && priorityDrafts.entries.has(id)));
+  }
   function renderActivity() {
     const fresh = verifiedAt !== null && Date.now() - verifiedAt < activityLifetime;
     document.querySelectorAll('[data-workflow-icon]').forEach(icon => {
       const todo = data.todos.find(t => t.id === icon.dataset.workflowIcon);
       const run = latest?.runs?.[todo?.id];
-      const running = Boolean(fresh && latest?.enabled === true && latest.busy === true &&
+      const running = Boolean(fresh && latest?.enabled === true && (run?.active ?? latest.busy) === true &&
         run?.phase === 'implementing' && !run.foreign && !run.resume_action);
       icon.classList.toggle('implementation-running', running);
       const label = running ? `${todo.status} — Implementation running` : (todo?.status || '');
@@ -27,6 +32,7 @@
   }
   function nextStep(todo, run) {
     if (!run) return todo.status !== 'closed' ? ['implement','Implement',todo.status === 'open'] : null;
+    if (run.phase === 'queued' || run.phase === 'merge_queued') return ['', run.phase === 'merge_queued' ? 'Queued for integration' : 'Queued', false];
     if (run.resume_action) return [run.resume_action, {retry:'Retry implementation',test:'Preview',merge:'Merge & restart'}[run.resume_action],true];
     if (run.phase === 'implementation_failed') return ['retry','Retry implementation',true];
     if (['ready','test_failed'].includes(run.phase)) return ['test','Preview',true];
@@ -37,6 +43,7 @@
   function render() {
     renderActivity();
     if (!latest) return;
+    renderPipeline();
     document.querySelectorAll('[data-workflow-next]').forEach(slot => {
       const todo = data.todos.find(t => t.id === slot.dataset.workflowNext);
       const run = latest.runs[todo?.id];
@@ -44,7 +51,7 @@
       slot.hidden = latest.enabled !== true || !next;
       if (slot.hidden) { slot.innerHTML = ''; return; }
       const [action,label,allowed] = next;
-      const disabled = sending || latest.busy || !allowed || !latest.configured || compatibility.read_only || history.pending || hasDraft() || run?.foreign;
+      const disabled = sending.has(todo.id) || run?.active || !allowed || !latest.configured || compatibility.read_only || history.pending || hasTicketDraft(todo.id) || run?.foreign;
       const html = `<button type="button" class="button small next-step" data-workflow-action="${action}" data-todo="${todo.id}" ${disabled ? 'disabled' : ''}>${label}${allowed ? ' ↗' : ''}</button>`;
       if (slot.innerHTML !== html) slot.innerHTML = html;
     });
@@ -54,31 +61,54 @@
       const id = panel.dataset.workflow, todo = data.todos.find(t => t.id === id);
       if (!todo) return;
       const run = latest.runs[id];
-      const disabled = sending || !latest.configured || latest.busy || compatibility.read_only || history.pending || hasDraft() || run?.foreign;
+      const disabled = sending.has(id) || !latest.configured || run?.active || compatibility.read_only || history.pending || hasTicketDraft(id) || run?.foreign;
       const button = (action, label, allowed) => `<button type="button" class="button small" data-workflow-action="${action}" data-todo="${id}" ${disabled || !allowed ? 'disabled' : ''}>${label}</button>`;
       const expanded = panel.querySelector('details')?.open;
       const scroll = panel.querySelector('pre')?.scrollTop || 0;
-      const html = `<div class="workflow-actions"><strong>Implementation</strong>${button('implement','Implement with Codex', !run && todo.status === 'open' && latest.configured)}${run && (run.phase === 'implementation_failed' || run.resume_action === 'retry') ? button('retry','Retry implementation',true) : ''}${button('test','Test branch', (['ready','tested','test_failed'].includes(run?.phase) || run?.resume_action === 'test'))}${button('merge','Merge & restart', canMerge(run))}${run?.preview_url ? `<a class="button small" href="${escapeHTML(run.preview_url)}" target="_blank" rel="noopener">Open preview ↗</a>` : ''}</div><p class="muted">${escapeHTML(run ? ({implementing:'Implementing…',ready:'Ready to preview or merge',testing:'Preparing preview…',tested:'Ready for your review',merging:'Merging and publishing…',restarting:'Restarting artifact…',done:'Completed',interrupted:'Interrupted — review and retry'}[run.phase] || run.phase.replaceAll('_',' ')) : !latest.configured ? 'Configure project test, preview and restart commands to enable this workflow.' : latest.automatic ? 'Automatic implementation is on for new ideas captured on this system.' : 'Automatic implementation is off.')}</p>${testStatus(run) ? `<p class="muted">${testStatus(run)}</p>` : ''}${run ? `<details><summary>Progress & branch details</summary><pre>${escapeHTML(`${run.branch}\n${run.commit || ''}\n${run.worktree}\n\n${run.message}`)}</pre></details>` : ''}`;
+      const html = `<div class="workflow-actions"><strong>Implementation</strong>${button('implement','Implement with Codex', !run && todo.status === 'open' && latest.configured)}${run && (run.phase === 'implementation_failed' || run.resume_action === 'retry') ? button('retry','Retry implementation',true) : ''}${button('test','Test branch', (['ready','tested','test_failed'].includes(run?.phase) || run?.resume_action === 'test'))}${button('merge','Merge & restart', canMerge(run))}${run?.pr_url ? `<a class="button small" href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">GitHub PR ↗</a>` : ''}${run?.preview_url ? `<a class="button small" href="${escapeHTML(run.preview_url)}" target="_blank" rel="noopener">Open preview ↗</a>` : ''}</div><p class="muted">${escapeHTML(run ? ({implementing:'Implementing…',ready:'Ready to preview or merge',testing:'Preparing preview…',tested:'Ready for your review',merging:'Merging and publishing…',restarting:'Restarting artifact…',done:'Completed',interrupted:'Interrupted — review and retry'}[run.phase] || run.phase.replaceAll('_',' ')) : !latest.configured ? 'Configure project test, preview and restart commands to enable this workflow.' : latest.automatic ? 'Automatic implementation is on for new ideas captured on this system.' : 'Automatic implementation is off.')}</p>${testStatus(run) ? `<p class="muted">${testStatus(run)}</p>` : ''}${run ? `<details><summary>Progress & branch details</summary><pre>${escapeHTML(`${run.branch}\n${run.commit || ''}\n${run.worktree}\n\n${run.message}`)}</pre></details>` : ''}`;
       if (panel.dataset.rendered === html) return;
       panel.dataset.rendered = html; panel.innerHTML = html;
       if (expanded && panel.querySelector('details')) panel.querySelector('details').open = true;
       if (panel.querySelector('pre')) panel.querySelector('pre').scrollTop = scroll;
     });
   }
+  function renderPipeline() {
+    for (const row of document.querySelectorAll('[data-integration-pipeline]')) {
+      row.hidden = latest.enabled !== true;
+      if (row.hidden) { row.innerHTML = ''; continue; }
+      const runs = Object.entries(latest.runs).sort((a,b) => (a[1].queued_at || '').localeCompare(b[1].queued_at || ''));
+      const stages = [
+        ['Working', ['queued','implementing','testing']],
+        ['Ready', ['ready','tested']],
+        ['Integration queue', ['merge_queued']],
+        ['Integrating', ['merging']],
+        ['Deploying', ['restarting']],
+        ['Done', ['done']],
+        ['Needs attention', ['implementation_failed','test_failed','merge_failed','push_failed','restart_failed','interrupted']]
+      ];
+      row.innerHTML = `<p><strong>Integration pipeline</strong> · ${latest.active_count || 0}/${latest.max_workers || 1} workers${latest.draining ? ' · Draining before integration & restart' : ''}</p><div class="pipeline-stages">` + stages.map(([label, phases]) => {
+        const items = runs.filter(([,run]) => phases.includes(run.phase));
+        return `<section class="pipeline-stage"><h3>${label} <span>${items.length}</span></h3>${items.map(([id,run]) => `<div class="pipeline-ticket"><a href="#todo-${escapeHTML(id)}" title="${escapeHTML(run.message)}">${escapeHTML(id)}</a>${run.pr_url ? ` <a href="${escapeHTML(run.pr_url)}" target="_blank" rel="noopener">PR ↗</a>` : ''}${run.foreign ? ' · other system' : ''}</div>`).join('') || '<span class="muted">—</span>'}</section>`;
+      }).join('') + '</div>';
+    }
+  }
   async function refresh() {
     renderActivity();
-    if (!token || sending || refreshing) return;
+    if (!token || refreshing) return;
     refreshing = true;
     const requestedAt = Date.now();
     try {
       const response = await fetch('/api/workflow', {cache:'no-store', signal:AbortSignal.timeout(activityLifetime)});
       if (!response.ok) throw new Error('Workflow activity unavailable');
       latest = await response.json();
+      for (const [id, body] of requests) {
+        if (latest.runs[id]?.action_requests?.[body.request_id]) requests.delete(id);
+      }
       verifiedAt = requestedAt;
-      if (previewWindow && previewId) {
-        const preview = latest.runs[previewId];
-        if (preview?.preview_url && preview.phase === 'tested') { previewWindow.location.href = preview.preview_url; previewWindow = null; previewId = null; }
-        else if (preview?.phase.endsWith('failed')) { previewWindow.close(); previewWindow = null; previewId = null; }
+      for (const [id, previewWindow] of previews) {
+        const preview = latest.runs[id];
+        if (preview?.preview_url && preview.phase === 'tested') { previewWindow.location.href = preview.preview_url; previews.delete(id); }
+        else if (preview?.phase.endsWith('failed')) { previewWindow.close(); previews.delete(id); }
       }
       render();
     } catch (_) {
@@ -94,11 +124,11 @@
     const button = event.target.closest('[data-workflow-action]');
     if (!button) return;
     event.preventDefault(); event.stopPropagation();
-    if (!latest?.enabled || sending || button.disabled || hasDraft()) return;
+    if (!latest?.enabled || sending.has(button.dataset.todo) || button.disabled || hasTicketDraft(button.dataset.todo)) return;
     const id = button.dataset.todo, action = button.dataset.workflowAction, run = latest.runs[id];
     if (action === 'merge' && !confirm(`Merge ${run.branch} at ${run.commit}, push it and restart the configured artifact?${testStatus(run) ? `\n\n${testStatus(run)}` : ''}`)) return;
-    sending = true; button.disabled = true;
-    if (action === 'test' && latest.web_preview) { previewId = id; previewWindow = window.open('about:blank','_blank'); if (previewWindow) { previewWindow.opener = null; previewWindow.document.title = 'Preparing branch preview…'; } }
+    sending.add(id); button.disabled = true;
+    if (action === 'test' && latest.web_preview) { const previewWindow = window.open('about:blank','_blank'); if (previewWindow) { previewWindow.opener = null; previewWindow.document.title = 'Preparing branch preview…'; previews.set(id, previewWindow); } }
     try {
       // A fresh snapshot supplies the revision; do not submit a stale editor's data.
       const snapshotResponse = await fetch('/api/state');
@@ -106,13 +136,15 @@
       if (!snapshotResponse.ok) throw new Error(snapshot.error || 'Cannot read the board.');
       const current = snapshot.data.todos.find(t => t.id === id);
       const saved = data.todos.find(t => t.id === id);
-      if (current.name !== saved.name || current.description !== saved.description) throw new Error('Task changed. Reload and review its scope first.');
-      const response = await fetch('/api/workflow/action', {method:'PUT',headers:{'Content-Type':'application/json','X-Board-Token':snapshot.token},body:JSON.stringify({id,action,revision:snapshot.revisions.todos[id],commit:run?.commit})});
+      if (['name','description','category','depends_on','source_ideas','source_refs'].some(key => JSON.stringify(current[key]) !== JSON.stringify(saved[key]))) throw new Error('Task changed. Reload and review its scope first.');
+      if (!requests.has(id)) requests.set(id, {id,action,revision:snapshot.revisions.todos[id],commit:run?.commit,request_id:globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`});
+      const response = await fetch('/api/workflow/action', {method:'PUT',headers:{'Content-Type':'application/json','X-Board-Token':snapshot.token},body:JSON.stringify(requests.get(id))});
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Could not start the stage.');
+      if (!response.ok) { if (response.status < 500) requests.delete(id); throw new Error(result.error || 'Could not start the stage.'); }
+      requests.delete(id);
       latest = result; verifiedAt = null; await load(); render();
-    } catch (error) { if (previewWindow) previewWindow.close(); previewWindow = null; previewId = null; alert(error.message); }
-    finally { sending = false; render(); }
+    } catch (error) { previews.get(id)?.close(); previews.delete(id); alert(error.message); }
+    finally { sending.delete(id); render(); }
   });
   setInterval(refresh, 2000);
   setTimeout(refresh, 1200);
