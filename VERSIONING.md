@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.17.0`.
+`format_version` is a major.minor.build string. Current storage is `1.18.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -290,3 +290,19 @@ The sequential 1.16 → 1.17 step changes only format metadata: it does not inve
 repository access or expand historical single-repository authorization. Record
 validation and HTTP/filesystem protection share the same backend. Prior minor
 writers become read-only; extensions, originals and existing runs are preserved.
+
+## Storage 1.18.0 — worker capacity defaults
+
+Sequential 1.17→1.18 supplies `workflow.max_workers:4` only when absent, preserving
+explicit limits (including two), extensions, originals, claims and receipt identity.
+The legacy parallel-default step now also supplies four for missing limits so
+all supported upgrade paths agree; already stored values remain explicit and
+unchanged. Current-format missing limits resolve to four in common validation.
+Older minor writers become read-only. Startup, interrupted journal/history
+recovery and repeated migration retain the existing BoardStore contract.
+
+Capacity status and settings revisions are ephemeral additive protocol-2 views.
+The settings API edits only the existing validated worker field. UM local override
+JSON remains the host-owned partial config contract; no app receipt or effective
+configuration mirror is added. A single atomic override replacement is durable;
+normal host startup recovers live application after interruption.

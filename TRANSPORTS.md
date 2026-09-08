@@ -252,3 +252,11 @@ Neither adapter permits ordinary writers to forge them. Only the token-protected
 owner workflow action can authorize Verify existing result and resume; filesystem
 access never launches work or bypasses an approval rejection. See VERSIONING.md
 for migration/defaults and PROCESS.md for publication ownership.
+
+Worker capacity (storage 1.18) uses the same common configuration defaults and
+version migration for HTTP and filesystem source resolution. Filesystem discovery
+requires the owner to upgrade first and never edits another owner's configuration.
+Live capacity and token-protected `/api/workflow/settings` are owner-service
+operations, like workflow actions; offline/aggregate snapshots do not assert
+readiness or dispatch workers. Transport switches preserve records, claims and
+queues unchanged. See README.md for host-local persistence and effective timing.
