@@ -299,3 +299,8 @@ main { padding-top:18px; }
 .masthead{flex-wrap:wrap}
 .header-right{flex-wrap:wrap;flex-shrink:0;max-width:100%}
 @media(max-width:600px){.brand-group{flex-basis:100%}}
+
+.instance-maintenance{margin:16px 0;padding:12px 16px;border:1px solid var(--line);border-radius:var(--radius);overflow-wrap:anywhere}
+.instance-maintenance summary{cursor:pointer;font-weight:600}
+.instance-maintenance p,.instance-maintenance ul{font-size:12px;color:var(--muted)}
+.instance-maintenance li{margin:8px 0}

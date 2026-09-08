@@ -15,7 +15,7 @@ import time
 import uuid
 from urllib.parse import urlsplit
 
-from processing import Processor, system_id
+from processing import Processor, system_id, child_environment
 from codex_runtime import resolve_executable
 from storage import Conflict, digest, OperationLock, atomic, encode
 from integration import GitFailure, StaleCandidate, migration_issues
@@ -30,7 +30,7 @@ def settings(value, base, processing, mode):
     if not isinstance(value, dict):
         raise ValueError('workflow must be an object.')
     result = dict(enabled=False, automatic=False, automatic_since='', repository='', base_branch='main',
-                  test=[], preview=[], preview_url='', restart=[], timeout_seconds=3600, max_workers=4, automatic_merge=False, automatic_publish=False, automatic_deploy=False)
+                  test=[], preview=[], preview_url='', restart=[], timeout_seconds=3600, max_workers=4, after_publish=[], automatic_merge=False, automatic_publish=False, automatic_deploy=False)
     result.update(value)
     for key in ('enabled', 'automatic', 'automatic_merge', 'automatic_publish', 'automatic_deploy'):
         if type(result[key]) is not bool:
@@ -63,6 +63,8 @@ def settings(value, base, processing, mode):
         if declared:
             repository = (context / declared).resolve()
     result['repository'] = str(repository)
+    from post_publish import settings as hook_settings
+    result['after_publish'] = hook_settings(result['after_publish'], base, str(repository), result['base_branch'])
     # An aggregator has no implementation records and must never launch jobs.
     result['enabled'] = result['enabled'] and mode != 'aggregation'
     result['automatic'] = result['automatic'] and result['enabled']
@@ -94,6 +96,7 @@ class Workflow:
         self.previews = {}
         self.live = {}
         self.stopping = False
+        self.restart_pending = False
         self.next_tick = 0
         self.next_dependency_fetch = 0
         # No implicit backlog sweep when an administrator first enables automation.
@@ -157,7 +160,7 @@ class Workflow:
             from worker_capacity import WorkerSettings
             count = len(self.active_workers())
             uncertain = any(run.get('activity_block') and not run.get('active') and not run.get('foreign') for run in runs.values())
-            configured = bool(self.options['test'] and self.options['preview'] and self.options['restart']) or (Path(snapshot.get('context', {}).get('repository', '')) / 'node.json').is_file()
+            configured = bool(self.options['test'] and self.options['preview']) or (Path(snapshot.get('context', {}).get('repository', '')) / 'node.json').is_file()
             writable = not snapshot['compatibility']['read_only'] and snapshot['history']['enabled'] and not snapshot['history']['pending']
             available = bool(resolve_executable(self.processing['executable']))
             state = ('unknown' if uncertain else 'full' if count >= self.options['max_workers'] else
@@ -168,7 +171,7 @@ class Workflow:
                         busy=bool(count), active_count=count,
                         max_workers=self.options['max_workers'], draining=self.draining(), runs=runs,
                         queue_blocked_by=blocker['id'] if blocker else None,
-                        integration_protocol=1)
+                        integration_protocol=1, completion_boundary='publication', restart_pending=self.restart_pending)
 
     def save(self, ident, run, **fields):
         snap = self.snapshot()
@@ -396,7 +399,7 @@ class Workflow:
 
     def dispatch(self):
         with self.lock:
-            if self.stopping or not self.options['enabled']:
+            if self.stopping or self.restart_pending or not self.options['enabled']:
                 return
             snap = self.snapshot()
             queued = sorted((t for t in snap['data']['todos']
@@ -421,7 +424,7 @@ class Workflow:
                 queued = [t for t in queued if t['workflow']['phase'] == 'queued']
                 merges = []
             if merges:
-                # Drain this service before integration/publication can restart it.
+                # Serialize integration against existing workers sharing repository state.
                 if self.active_workers():
                     return
                 queued = merges[:1]
@@ -444,6 +447,8 @@ class Workflow:
 
     def start(self, body, automatic=False):
         with self.lock:
+            if self.restart_pending:
+                raise ValueError('Restart pending; existing work is draining. Queued work is retained.')
             if not self.options['enabled']:
                 raise ValueError('Implementation workflow is disabled in configuration.')
             if self.stopping:
@@ -481,8 +486,8 @@ class Workflow:
             if todo.get('workflow', {}).get('external_completions'):
                 raise Conflict('This attempt is superseded. Create a follow-up todo for new implementation.')
             from context_workflow import declarations
-            if declarations(self) is None and not all(self.options[k] for k in ('test', 'preview', 'restart')):
-                raise ValueError('Configure workflow.test, preview and restart commands for this project first.')
+            if declarations(self) is None and not all(self.options[k] for k in ('test', 'preview')):
+                raise ValueError('Configure workflow.test and preview commands for this project first.')
             old = todo.get('workflow')
             if old and old.get('system') != system_id():
                 raise ValueError('Run belongs to another system; use that instance.')
@@ -567,9 +572,7 @@ class Workflow:
                 if action == 'merge' and run['phase'] not in ('ready', 'tested', 'test_failed', 'merge_failed', 'push_failed', 'restart_failed', 'merging', 'migration_required', 'resolution_blocked'):
                     raise ValueError('Implementation must complete before merging.')
                 if action == 'migrate':
-                    review = run.get('deployment_review', {})
-                    if automatic or run['phase'] != 'migration_required' or not review.get('review_id') or body.get('review_id') != review['review_id']:
-                        raise Conflict('Review the exact migration candidate and submit its review_id explicitly.')
+                    raise ValueError('Use Merge & push to validate and publish. Instance migration belongs to startup maintenance.')
                 if action == 'recover' and (run['phase'] not in ('restart_failed', 'restarting', 'migrating', 'recovering', 'merge_failed') or not run.get('published_commit')):
                     raise ValueError('Recovery requires retained publication evidence.')
                 run.update(phase='implementing' if action == 'retry' else 'testing' if action == 'test' else 'merging', message='Running '+action+'…')
@@ -599,7 +602,7 @@ class Workflow:
             receipt = dict(format_version=FORMAT_VERSION, run_id=run['run_id'], state='launching', purpose=purpose)
             atomic(receipt_path, encode(receipt))
             try:
-                child = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
+                child = subprocess.Popen(argv, cwd=cwd, env=child_environment(), stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=os.name != 'nt')
             except Exception:
                 receipt.update(state='exited', returncode=None)
@@ -735,7 +738,7 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                 try:
                     if self.stopping:
                         raise ValueError('Service is stopping.')
-                    child = subprocess.Popen(self.argv('preview', run, port), cwd=run['worktree'],
+                    child = subprocess.Popen(self.argv('preview', run, port), cwd=run['worktree'], env=child_environment(),
                         stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=os.name != 'nt')
                 finally:
                     log.close()
@@ -762,7 +765,7 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                     if child.poll() not in (None, 0):
                         raise ValueError('Native preview launch failed; inspect preview.log.')
                 run.update(phase='tested', tested_commit=run['commit'], preview_url=url,
-                           message='Checks passed. Inspect the launched branch before choosing Merge & restart.')
+                           message='Checks passed. Inspect the launched branch before choosing Merge & push.')
             else:
                 with self.repository_lock() as integration_lock:
                     if action == 'recover':
@@ -878,7 +881,7 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
         branch = self.options['base_branch']
         if self.git('branch', '--show-current') != branch or self.git('status', '--porcelain'):
             raise ValueError('Implementation is committed, but merge is blocked: target ' + self.options['repository'] +
-                             ' must be clean and on ' + branch + '. Preserve changes, then retry Merge & restart.')
+                             ' must be clean and on ' + branch + '. Preserve changes, then retry Merge & push.')
         if self.git('rev-parse', run['branch']) != run['commit'] or self.git('status', '--porcelain', cwd=run['worktree']):
             raise Conflict('Implementation changed since it was queued. Review its commit before retrying.')
         self.git('fetch', 'origin', branch)
@@ -902,7 +905,7 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
         if migrate:
             review = run['deployment_review']
             if head != run['review_main'] or remote != run['review_remote'] or pr['state'] != run['review_pr_state']:
-                raise Conflict('Main or PR changed since migration review. Run Merge & restart for a fresh assessment.')
+                raise Conflict('Main or PR changed since migration review. Run Merge & push for a fresh assessment.')
             candidate = Path(run['integration_worktree'])
             commit = self.git('rev-parse', 'HEAD', cwd=candidate)
             if commit != review['candidate_commit'] or commit != run['integration_tested_commit'] or self.git('status', '--porcelain', cwd=candidate):
@@ -977,12 +980,6 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
                     run.setdefault('resolution_failures', []).append(fingerprint)
                     self.resolve_candidate(ident, run, candidate, str(error))
             run.update(integration_commit=commit, integration_tested_commit=commit)
-            if self.managed_unfertig():
-                review = self.deployment_review(candidate)
-                run['deployment_review'] = review
-                run['deployment_driver'] = 'startup'
-                # Supported migrations run programmatically during the authorized
-                # restart. A schema version change is not a separate approval gate.
         # No claim of test evidence for an untested commit. Concurrent board
         # history also invalidates the candidate; retry rebuilds from fresh main.
         latest_pr = self.pr_state(run)
@@ -1001,7 +998,8 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
                 raise Conflict('Target changed during integration; preserve changes and retry.')
             self.git('merge', '--ff-only', commit)
             run.update(merge_commit=commit, deployment_commit=commit, phase='merging', message='Integrated and checked; publishing…')
-        # Persist before push for recovery, then include only subsequent board history.
+        # Retain exact tested publication intent before any uncertain network result.
+        self.save(ident, run)
         publish = commit
         if shared:
             if any(not board_path(path) for path in self.git('diff', '--name-only', commit, publish).splitlines()):
@@ -1014,7 +1012,18 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
             return
         run.update(published_commit=publish)
         self.save(ident, run)
-        self.launch_deployment(ident, run, integration_lock, 'deploy' if migrate else None)
+        self.complete_publication(ident, run)
+
+    def complete_publication(self, ident, run):
+        """Commit task completion and its hook outbox in the same board transaction."""
+        from post_publish import events
+        self.stop_preview(ident)
+        run.update(phase='done', completion_boundary='publication',
+                   message='All changed repositories merged, checked and pushed.')
+        run['post_publish'] = events(self, run)
+        self.save(ident, run, status='closed', closed_by='Codex',
+                  date_closed=datetime.now(timezone.utc).isoformat(),
+                  completion_summary=run.get('completion_summary', 'Legacy run: review the retained PR for implementation findings and limitations.') + '\n\n' + run['message'])
 
     def launch_deployment(self, ident, run, integration_lock, host_action=None):
         self.stop_preview(ident)
@@ -1035,6 +1044,9 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
         threading.Thread(target=supervisor.wait, daemon=True).start()
 
     def managed_unfertig(self):
+        context = Path(self.processing['working_directory'])
+        if (context / 'scripts/request_tool_update.py').is_file() and (context / 'tools/unfertig').is_dir() and Path(self.options['repository']).name == 'unfertig':
+            return True
         argv = self.options['restart']
         return 'unfertig' in argv and any(Path(arg).name == 'workflow_support.py' for arg in argv)
 
@@ -1068,15 +1080,20 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
         branch = self.options['base_branch']
         self.git('fetch', 'origin', branch)
         published = run['published_commit']
-        if (self.git('rev-parse', 'refs/remotes/origin/' + branch) != published
-                or self.git('rev-parse', 'HEAD') != published
-                or self.git('status', '--porcelain')):
-            raise Conflict('Recovery needs the exact published commit and a clean target. Review advanced main separately.')
+        if self.git('branch', '--show-current') != branch or self.git('status', '--porcelain'):
+            raise Conflict('Recovery needs a clean target on its configured main branch.')
+        self.git('merge-base', '--is-ancestor', published, 'refs/remotes/origin/'+branch)
+        tested = run.get('integration_tested_commit')
+        if not tested or tested != published:
+            raise Conflict('Retained publication has no matching combined test evidence. Use Merge & push to revalidate.')
         if pr['state'] == 'MERGED':
             self.git('merge-base', '--is-ancestor', (pr.get('mergeCommit') or {})['oid'], published)
-        run['deployment_commit'] = published
-        self.launch_deployment(ident, run, integration_lock,
-                               'recover' if run.get('deployment_driver') != 'startup' and run.get('deployment_review', {}).get('review_id') else None)
+        # Recovery acknowledges the publication boundary; it never reruns an old
+        # command that could replace the files of the service doing this write.
+        run.setdefault('publication_recovery', []).append(dict(published_commit=published,
+            deployment_driver=run.get('deployment_driver'), message=run.get('message', ''),
+            at=datetime.now(timezone.utc).isoformat()))
+        self.complete_publication(ident, run)
 
     def stop_preview(self, ident):
         child = self.previews.pop(ident, None)
@@ -1136,9 +1153,9 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
         except (OSError, ValueError, Conflict):
             pass
         now = time.monotonic()
-        if now < self.next_tick or self.stopping:
+        if now < self.next_tick or self.stopping or self.restart_pending:
             return
-        if all(self.options[k] for k in ('automatic_merge', 'automatic_publish', 'automatic_deploy')):
+        if all(self.options[k] for k in ('automatic_merge', 'automatic_publish')):
             try:
                 snap = self.snapshot()
                 for todo in snap['data']['todos']:

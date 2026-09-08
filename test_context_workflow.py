@@ -118,7 +118,7 @@ class ContextWorkflowTests(unittest.TestCase):
     def test_child_and_context_publish_and_pin(self):
         self.um(pinned=True);self.changed={'context','project'};todo=self.implement();self.assertEqual(len(self.prs),2)
         with patch.object(self.workflow,'launch_deployment') as deploy:todo=self.run_stage('merge')
-        self.assertTrue(deploy.called,todo['workflow']['message']);repos={x['id']:x for x in todo['workflow']['repositories']};self.assertTrue(repos['context'].get('published_commit'),todo['workflow']['message']);self.assertEqual(self.workflow.git('ls-tree','HEAD','code',cwd=self.context).split()[2],repos['project']['published_commit'])
+        self.assertFalse(deploy.called,todo['workflow']['message']);repos={x['id']:x for x in todo['workflow']['repositories']};self.assertTrue(repos['context'].get('published_commit'),todo['workflow']['message']);self.assertEqual(self.workflow.git('ls-tree','HEAD','code',cwd=self.context).split()[2],repos['project']['published_commit'])
     def test_secondary_code_requires_recipe(self):
         self.um(collection=True);self.changed={self.node['projects'][1]['id']}
         with patch.object(self.workflow,'command',side_effect=self.agent):todo=self.run_stage('implement')
@@ -289,3 +289,27 @@ class ContextWorkflowTests(unittest.TestCase):
         with patch.object(Workflow,'git',fail):todo=self.run_stage('implement')
         self.assertIn('object lookup failed',todo['workflow']['message'])
         self.assertNotIn('diverged',todo['workflow']['message'])
+
+    def test_context_pin_publication_resumes_without_new_pin_change(self):
+        from workflow import Workflow
+        self.um(pinned=True);self.changed={'context','project'};self.implement()
+        original=Workflow.publish_checkpoint;calls=[]
+        def lost(proxy,run):
+            old=run.get('publication',{}).copy()
+            result=original(proxy,run)
+            if Path(run['repository'])==self.context:
+                calls.append(run['commit'])
+                if len(calls)==1:
+                    run['publication']=old
+                    raise ValueError('Lost context pin publication response')
+            return result
+        with patch.object(Workflow,'publish_checkpoint',lost):
+            failed=self.run_stage('merge')
+            self.assertEqual(failed['workflow']['phase'],'merge_failed')
+            published=next(r['published_commit'] for r in failed['workflow']['repositories'] if r['role']=='project')
+            completed=self.run_stage('merge')
+        self.assertEqual(completed['status'],'closed',completed['workflow']['message'])
+        context=next(r for r in completed['workflow']['repositories'] if r['role']=='context')
+        self.assertEqual(calls,[context['commit'],context['commit']])
+        self.assertEqual(context['publication']['commit'],context['commit'])
+        self.assertEqual(next(r['published_commit'] for r in completed['workflow']['repositories'] if r['role']=='project'),published)

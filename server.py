@@ -217,6 +217,8 @@ class Server(ThreadingHTTPServer):
 
     def __init__(self, address, store):
         super().__init__(address, Handler)
+        from instance_maintenance import Maintenance
+        self.maintenance = Maintenance(self)
         self.processing = None
         self.workflow = None
         self.store = store
@@ -226,6 +228,9 @@ class Server(ThreadingHTTPServer):
         self.aggregation = Aggregation(store) if getattr(store, 'context', {}).get('mode') == 'aggregation' else None
 
     def service_actions(self):
+        self.maintenance.tick()
+        if self.maintenance.quiescing:
+            return
         if self.processing:
             self.processing.tick()
         if self.workflow and (not self.processing or self.processing.status()['status'] != 'running'):
@@ -281,6 +286,8 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/agent-advice.js':
                 advice = json.loads((Path(__file__).resolve().parent / 'agent_advice.json').read_text())
                 self.reply(200, ('const agentAdvice = ' + json.dumps(advice) + ';').encode(), 'text/javascript; charset=utf-8')
+            elif path == '/api/maintenance':
+                self.reply(200, self.server.maintenance.view())
             elif path == '/api/workflow' and self.server.workflow:
                 self.reply(200, self.server.workflow.status())
             elif path == '/api/processing' and self.server.processing:
@@ -293,7 +300,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, ('const effortDefinitions = ' + json.dumps(EFFORT_DEFINITIONS) + ';').encode(), 'text/javascript; charset=utf-8')
             elif path == '/categories-data.js':
                 self.reply(200, ('const categoryDefinitions = ' + json.dumps(DEFINITIONS) + ';').encode(), 'text/javascript; charset=utf-8')
-            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/workflow.js", "/worker-capacity.js", "/aggregation.js", "/style.css", "/favicon.svg"):
+            elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/workflow.js", "/maintenance.js", "/worker-capacity.js", "/aggregation.js", "/style.css", "/favicon.svg"):
                 name = "index.html" if path == "/" else path[1:]
                 mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}[Path(name).suffix]
                 body = (ROOT / name).read_bytes()
@@ -306,9 +313,16 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(500, {"error": f"Could not read data: {error}. Your file has not been changed."})
 
     def do_PUT(self):
+        with self.server.maintenance.mutation() as accepted:
+            if not accepted:
+                self.reply(503, {"error": "Restarting after drain. Retry this save when the instance returns."})
+                return
+            self.put()
+
+    def put(self):
         if not self.local_request():
             return
-        if self.path not in ("/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action', '/api/workflow/settings'):
+        if self.path not in ("/api/maintenance", "/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action', '/api/workflow/settings'):
             self.reply(404, {"error": "Not found."})
             return
         if not secrets.compare_digest(self.headers.get("X-Board-Token", ""), self.server.token):
@@ -324,6 +338,9 @@ class Handler(BaseHTTPRequestHandler):
                 protocol_state, _ = inspect(body, 'request', PROTOCOL_VERSION, 'protocol_version')
                 require(protocol_state != 'read_only', 'Newer minor request protocol: update Unfertig before writing.')
             if isinstance(self.server.store, BoardStore):
+                if self.path == '/api/maintenance':
+                    self.reply(200, self.server.maintenance.action(body))
+                    return
                 if self.path == '/api/workflow/settings':
                     require(self.server.workflow is not None, 'Workflow is unavailable.')
                     from worker_capacity import WorkerSettings
@@ -481,7 +498,8 @@ def main():
     finally:
         server.server_close()
         store.close()
+    return server.maintenance.exit_code
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -170,20 +170,7 @@ def main():
             argv=['open',str(repo)]
         os.chdir(repo);os.execvp(argv[0],argv)
     elif args.kind=='unfertig':
-        from deployment_preflight import assess
-        assess(repo, context)  # Must happen before stopping any writer.
-        run(['sh',str(context/'stop_tools.sh'),'--timeout','60'],context)
-        # Startup includes candidate tests and storage validation, not just the
-        # server launch. A client timeout leaves that work running in background.
-        start_managed(context, args.startup_timeout)
-        # The standard updater may retain old code if candidate validation fails.
-        runtime=context/'tools/unfertig'
-        expected=subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
-        actual=subprocess.check_output(['git','-C',str(runtime),'rev-parse','HEAD'],text=True).strip()
-        if actual!=expected:raise ValueError('Managed updater did not install this commit. Inspect startup migration/recovery diagnostics.')
-        run(['git','add','unfertig','tools/unfertig'],context)
-        dirty=subprocess.check_output(['git','diff','--cached','--name-only','--','unfertig','tools/unfertig'],cwd=context,text=True).strip()
-        if dirty:run(['git','commit','--only','-m','Update Unfertig runtime','--','unfertig','tools/unfertig'],context)
+        raise ValueError('Legacy in-transaction restart is disabled. Configure workflow.after_publish to request a cooperative host update; see DEPLOYMENT.md.')
     elif args.kind=='kermit':
         spawn_artifact([uv,'run','--locked','python',str(repo/'scripts/dashboard.py'),'--no-browser'],repo,
             context/'.local/unfertig-workflow/artifact.json','http://127.0.0.1:8766')

@@ -120,7 +120,7 @@ class DeploymentPreflightTests(unittest.TestCase):
         self.assertEqual(result['state'], 'migration_required')
         self.assertEqual(result['current_formats'], ['1.8.0', FORMAT_VERSION])
 
-    def test_normal_restart_runs_after_validated_migration(self):
+    def test_legacy_restart_refuses_even_with_supported_migration(self):
         import workflow_support
         argv = ['workflow_support.py', 'unfertig', 'restart', '--repository', str(self.candidate),
                 '--context', str(self.context)]
@@ -128,6 +128,7 @@ class DeploymentPreflightTests(unittest.TestCase):
         with patch('sys.argv', argv), patch.object(workflow_support, 'run') as run, \
                 patch.object(workflow_support, 'start_managed') as start, \
                 patch.object(workflow_support.subprocess, 'check_output', return_value='same-commit'):
-            workflow_support.main()
-        start.assert_called_once()
-        self.assertEqual(run.call_args_list[0].args[0][1],str(self.context/'stop_tools.sh'))
+            with self.assertRaisesRegex(ValueError,'Legacy in-transaction restart is disabled'):
+                workflow_support.main()
+        start.assert_not_called()
+        run.assert_not_called()
