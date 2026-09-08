@@ -311,3 +311,14 @@ Local-ahead startup uses the existing per-repository `base` and publication gran
 it adds no stored fields or format. Selection is saved before worktree creation,
 and retained worktrees keep their base. PR prose reports inherited history without
 introducing a durable publication manifest. Existing integration checks remain.
+
+## Instance settings API (unchanged storage 1.18)
+
+The additive owner-service `/api/settings` view and mutation edit only existing
+`project_name`, `workflow.max_workers`, `processing.idle_seconds` and
+`processing.closed_seconds`. They introduce no stored fields, formats, permission
+grants, receipts or config mirrors. No migration or version successor is needed.
+Existing sequential migrations, compatibility guards, defaults, extension
+preservation, configuration journal/history recovery and the host partial-override
+contract remain in force. Revisions and effective values are ephemeral. Browser
+session drafts are disposable UI state, not an alternative configuration source.
