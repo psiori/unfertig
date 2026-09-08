@@ -6,9 +6,9 @@ const aggregating = () => boardContext?.mode === 'aggregation';
 const qualified = (project, value) => JSON.stringify([project, value]);
 function sourceName(source) { return source.name || source.project_id; }
 function projectOptions(selected='') {
-  return '<option value="">Infer from text</option>' + (boardContext?.sources || []).map(config => {
+  return '<option value="">Infer from text</option>' + (aggregateSources.length ? aggregateSources : boardContext?.sources || []).map(config => {
     const source = aggregateSources.find(s => s.project_id === config.project_id) || config;
-    return `<option value="${escapeHTML(config.project_id)}" ${selected === config.project_id ? 'selected' : ''}>${escapeHTML(sourceName(source))}</option>`;
+    return `<option value="${escapeHTML(config.project_id)}" ${selected === config.project_id ? 'selected' : ''} ${source.status === 'removed' ? 'disabled' : ''}>${escapeHTML(sourceName(source))}${source.status === 'removed' ? ' (removed)' : ''}</option>`;
   }).join('');
 }
 function ownerLink(source, kind, id) {
@@ -25,7 +25,7 @@ async function refreshAggregate() {
     if (!response.ok) throw new Error(result.error || 'Could not refresh sources.');
     const signature = JSON.stringify(result.sources.map(s => [s.project_id,s.name,s.revision,s.status,s.error,s.transport,s.fallback_reason]));
     aggregateSources = result.sources;
-    $('#source-status').textContent = aggregateSources.map(s => `${sourceName(s)}: ${s.status}${s.transport ? ' · ' + s.transport : ''}${s.fallback_reason ? ' · HTTP unavailable; using filesystem' : ''}${['unavailable', 'stale'].includes(s.status) ? ' · retry every 20s' : ''}`).join(' | ') || 'No sources configured. Add explicit sources in configuration and restart.';
+    $('#source-status').textContent = aggregateSources.map(s => `${sourceName(s)}: ${s.status}${s.error ? ' · ' + s.error : ''}${s.transport ? ' · ' + s.transport : ''}${s.fallback_reason ? ' · HTTP unavailable; using filesystem' : ''}${['unavailable', 'stale'].includes(s.status) ? ' · retry every 20s' : ''}`).concat((result.discovery || []).filter(d => d.status !== 'matched').map(d => `${d.config || d.pattern || 'Discovery'}: ${d.status} · ${d.error}`)).join(' | ') || 'No sources configured. Add sources or search_paths in configuration and restart.';
     $('#source-status').hidden = false;
     if (signature !== aggregateSignature && !busy) { aggregateSignature = signature; updateChoices(); renderIdeas(); renderTodos(); }
     aggregateStats();
