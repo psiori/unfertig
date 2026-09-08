@@ -30,7 +30,7 @@ def settings(value, base, processing, mode):
     if not isinstance(value, dict):
         raise ValueError('workflow must be an object.')
     result = dict(enabled=False, automatic=False, automatic_since='', repository='', base_branch='main',
-                  test=[], preview=[], preview_url='', restart=[], timeout_seconds=3600, max_workers=2, automatic_merge=False, automatic_publish=False, automatic_deploy=False)
+                  test=[], preview=[], preview_url='', restart=[], timeout_seconds=3600, max_workers=4, automatic_merge=False, automatic_publish=False, automatic_deploy=False)
     result.update(value)
     for key in ('enabled', 'automatic', 'automatic_merge', 'automatic_publish', 'automatic_deploy'):
         if type(result[key]) is not bool:
@@ -49,8 +49,8 @@ def settings(value, base, processing, mode):
             raise ValueError(f'workflow.{key} must be an argv array, without a shell.')
     if type(result['timeout_seconds']) is not int or not 60 <= result['timeout_seconds'] <= 86400:
         raise ValueError('workflow.timeout_seconds must be 60–86400.')
-    if type(result['max_workers']) is not int or not 1 <= result['max_workers'] <= 8:
-        raise ValueError('workflow.max_workers must be 1–8.')
+    from worker_capacity import validate_limit
+    validate_limit(result['max_workers'])
     if result['preview_url']:
         url = urlsplit(result['preview_url'].replace('{port}', '12345'))
         if url.scheme != 'http' or url.hostname not in ('localhost', '127.0.0.1') or url.username or url.password:
@@ -149,9 +149,18 @@ class Workflow:
                 if todo['id'] not in self.previews or self.previews[todo['id']].poll() is not None:
                     run.pop('preview_url', None)
                 runs[todo['id']] = run
-            return dict(enabled=self.options['enabled'], automatic=self.options['automatic'], repository=self.options['repository'],
-                        web_preview=bool(self.options['preview_url']), configured=bool(self.options['test'] and self.options['preview'] and self.options['restart']),
-                        busy=bool(self.active_workers()), active_count=len(self.active_workers()),
+            from worker_capacity import WorkerSettings
+            count = len(self.active_workers())
+            uncertain = any(run.get('activity_block') and not run.get('active') and not run.get('foreign') for run in runs.values())
+            configured = bool(self.options['test'] and self.options['preview'] and self.options['restart'])
+            writable = not snapshot['compatibility']['read_only'] and snapshot['history']['enabled'] and not snapshot['history']['pending']
+            available = bool(resolve_executable(self.processing['executable']))
+            state = ('unknown' if uncertain else 'full' if count >= self.options['max_workers'] else
+                     'occupied' if count else 'inactive' if not self.options['enabled'] or self.stopping else
+                     'ready' if configured and writable and available and not self.draining() else 'unavailable')
+            return dict(capacity_state=state, worker_settings=WorkerSettings(self).view(), enabled=self.options['enabled'], automatic=self.options['automatic'], repository=self.options['repository'],
+                        web_preview=bool(self.options['preview_url']), configured=configured,
+                        busy=bool(count), active_count=count,
                         max_workers=self.options['max_workers'], draining=self.draining(), runs=runs,
                         queue_blocked_by=blocker['id'] if blocker else None,
                         integration_protocol=1)

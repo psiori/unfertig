@@ -242,3 +242,11 @@ The owning HTTP service alone performs `complete_external`; filesystem discovery
 never launches it or migrates a source. Aggregate details retain the raw protected
 history and link to the owner for reconciliation. Status-derived historical versus
 active presentation is an owner-service observation, not a filesystem liveness claim.
+
+Worker capacity (storage 1.16) uses the same common configuration defaults and
+version migration for HTTP and filesystem source resolution. Filesystem discovery
+requires the owner to upgrade first and never edits another owner's configuration.
+Live capacity and token-protected `/api/workflow/settings` are owner-service
+operations, like workflow actions; offline/aggregate snapshots do not assert
+readiness or dispatch workers. Transport switches preserve records, claims and
+queues unchanged. See README.md for host-local persistence and effective timing.
