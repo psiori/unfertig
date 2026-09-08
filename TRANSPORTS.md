@@ -227,3 +227,9 @@ provenance/claim preservation. The conformance matrix covers effort edits, confl
 recovery, reload and receipt retry after transport switching. Aggregate details and
 fresh owner-qualified AI/Human briefings display the owner's effort. The expanded
 owner editor saves effort through /api/changes; aggregate effort remains read-only.
+
+Integration recovery (storage 1.13) remains owner-local. Both adapters expose the
+same protected claim phases, queue decisions, ordering and diagnostics; ordinary
+mutations cannot forge them. Transport switching retains action identity and
+workflow evidence through BoardStore. Older writers are read-only. Queue controls
+use /api/workflow/action, never a filesystem shortcut around owner authorization.

@@ -104,15 +104,22 @@ Closed unmerged PRs and changed heads block. Check again before publication.
 A separate integration candidate combines current local/remote main and the
 original ticket without rebasing or rewriting its branch. Test the exact result.
 If main or PR state changes during checks, preserve the candidate and retry from
-fresh state. Conflicts remain visible with retained worktrees for explicit repair;
-there is no unbounded automatic conflict-resolution loop. Main is advanced only
+fresh state. All conflicts automatically enter integration-agent resolution in the retained
+candidate. The agent inspects both branches, resolves code/documentation/tests
+and competing migrations, and fixes combined checks before continuing. Only
+genuine blockers after feasible approaches are exhausted require user input;
+retain diagnostics and report attempts and the minimal missing decision/access.
+Detect lack of progress, not an arbitrary small retry limit. Original branches
+and failed candidates remain intact. Main is advanced only
 by fast-forward and published without force. Never delete worktrees to clear a
 failure. Respect branch protection failures; do not bypass GitHub rules.
 
 `workflow.automatic` remains kickoff-only. Unattended Merge & restart additionally
 requires all three explicit settings `automatic_merge`, `automatic_publish` and
 `automatic_deploy`, each defaulting false. Partial grants do not authorize the
-combined action. Failed stages require explicit retry. No existing installation
+combined action. Failed delivery pauses later integration entries durably. Recovery/retry or
+explicit Skip & continue releases the barrier; routine conflicts resolve
+automatically and successful verification continues existing authorization. No existing installation
 receives automatic publication or deployment permission through migration.
 
 Reopening a closed todo clears `closed_by`, `date_closed` and `completion_summary`; re-closing requires a fresh summary. Git retains committed history. There is no deletion workflow; retain original ideas and close superseded todos with an explanation and replacement ID.
