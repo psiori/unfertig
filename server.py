@@ -18,6 +18,7 @@ import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
+from application_version import application_build
 from efforts import DEFINITIONS as EFFORT_DEFINITIONS, saved_effort
 from categories import CATEGORIES, DEFINITIONS
 from storage import BoardStore, Conflict
@@ -26,6 +27,7 @@ from versions import inspect, migrate, parse, PROTOCOL_VERSION
 from configuration import resolve, configure_port, configure_mode, valid_port, board_context
 
 ROOT = Path(__file__).resolve().parent
+APPLICATION_BUILD = application_build(ROOT)
 MAX_BYTES = 5_000_000
 STATUSES = {"open", "started", "closed"}
 PRIORITIES = {"low", "normal", "high", "urgent"}
@@ -294,7 +296,10 @@ class Handler(BaseHTTPRequestHandler):
             elif path in ("/", "/index.html", "/app.js", "/priority.js", "/processing.js", "/workflow.js", "/worker-capacity.js", "/aggregation.js", "/style.css", "/favicon.svg"):
                 name = "index.html" if path == "/" else path[1:]
                 mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}[Path(name).suffix]
-                self.reply(200, (ROOT / name).read_bytes(), mime + "; charset=utf-8")
+                body = (ROOT / name).read_bytes()
+                if name == 'index.html':
+                    body = body.replace(b'__APPLICATION_BUILD__', APPLICATION_BUILD.encode('ascii'))
+                self.reply(200, body, mime + "; charset=utf-8")
             else:
                 self.reply(404, {"error": "Not found."})
         except (OSError, ValueError, TypeError, KeyError, Conflict) as error:
