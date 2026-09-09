@@ -524,10 +524,34 @@ medium; aggregator routing launches Astra medium. Processing suggests complexity
 hints and leaves profile selection Automatic unless the user requested an override.
 
 Protected `workflow.agent_runs` records each implementation/repair launch's model,
-reasoning effort, requested/effective profile, selection reason, start, duration,
-exit status and prompt byte count/hash. These are launch observations, not proof
-of task acceptance or provider-reported token usage. Verification and publication
-retain their separate evidence. Processing exposes its profile in runtime status.
+reasoning effort, requested/effective profile, reason, start, duration, exit status,
+prompt size/hash and source manifest (without source prose). A failed configured
+check or explicitly classified incomplete implementation marks a repair. The next
+authorized Automatic attempt moves up one preset, capped at Astra high. Manual
+overrides remain fixed. Unavailable models, execution/approval blocks and missing
+tools do not trigger substitution or launch another attempt.
+
+`workflow.check_runs` records coordinator test duration and failures, including
+integration and Preview. `accepted_result` records wall time from first launch
+through retries and waiting to the first verified implementation result, after
+report, current HEAD, checks and PR validation. A successful agent exit alone is
+not acceptance. These observations cannot reuse a Preview token or authorize work.
+Worker-internal test commands are included in agent time, not separately timed.
+
+Codex JSON events count reads made through the supplied `context_sources.py`
+helper. Hash-only checks are separate from repeated content reads. Other tools'
+reads are unobserved; these counts are explicitly partial. No token/cost or model
+speed claim is inferred. Historical missing measurements stay unavailable.
+Processing exposes its chosen profile in runtime status.
+
+For a small pilot, collect six accepted tasks: two bounded UI/local fixes, two
+ordinary multi-file changes, one architecture/persistence task and one repair.
+Keep scope and acceptance unchanged; compare like tasks or disposable paired
+replays with the same sources, commits and environment. Do not tune from launch
+duration alone. Export a supported snapshot and summarize it with
+`uv run --no-project --python 3.12 python agent_metrics.py SNAPSHOT.json`.
+Review accepted time, retries, failed checks, test time and read coverage together.
+Manual presets support controlled comparisons. No live experiment is auto-started.
 No persistent session, authority cache or cross-task transcript is introduced.
 
 ## Work completed outside its original attempt (format 1.15)

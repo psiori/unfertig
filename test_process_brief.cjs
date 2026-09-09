@@ -40,7 +40,7 @@ test('only the explicitly all-pending control copies a processing briefing', () 
   const html = fs.readFileSync(__dirname + '/index.html', 'utf8');
   const aggregation = fs.readFileSync(__dirname + '/aggregation.js', 'utf8');
   assert.match(html, /id="process"[^>]*>Copy all-pending briefing/);
-  assert.match(app, /showCopy\(processBrief\(\), 'All pending ideas/);
+  assert.match(app, /showCopy\(snapshot.context_packet .* processBrief\(\), 'All pending ideas/);
   assert.doesNotMatch(app + aggregation, /data-process=|dataset\.process/);
   assert.match(app, /data-make=.*Create manually/);
 });

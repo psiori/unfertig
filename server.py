@@ -329,7 +329,7 @@ class Handler(BaseHTTPRequestHandler):
     def put(self):
         if not self.local_request():
             return
-        if self.path not in ("/api/maintenance", "/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action', '/api/workflow/merge-batch', '/api/workflow/settings', '/api/settings'):
+        if self.path not in ("/api/briefing", "/api/maintenance", "/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action', '/api/workflow/merge-batch', '/api/workflow/settings', '/api/settings'):
             self.reply(404, {"error": "Not found."})
             return
         if not secrets.compare_digest(self.headers.get("X-Board-Token", ""), self.server.token):
@@ -345,6 +345,15 @@ class Handler(BaseHTTPRequestHandler):
                 protocol_state, _ = inspect(body, 'request', PROTOCOL_VERSION, 'protocol_version')
                 require(protocol_state != 'read_only', 'Newer minor request protocol: update Unfertig before writing.')
             if isinstance(self.server.store, BoardStore):
+                if self.path == '/api/briefing':
+                    from briefings import copied_context
+                    snapshot = self.server.store.snapshot()
+                    role = body.get('role', 'implementation')
+                    require(role in ('implementation', 'processing', 'aggregation'), 'Unsupported briefing role.')
+                    todo = next((t for t in snapshot['data']['todos'] if t['id'] == body.get('todo_id')), None)
+                    require(role != 'implementation' or todo is not None, 'The saved todo is unavailable.')
+                    self.reply(200, dict(snapshot, context_packet=copied_context(snapshot, todo, role)))
+                    return
                 if self.path == '/api/maintenance':
                     self.reply(200, self.server.maintenance.action(body))
                     return

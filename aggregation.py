@@ -203,7 +203,20 @@ class Aggregation:
         if todo is None:
             raise ValueError('Source todo is unavailable.')
         preflight = preflight_context(snapshot['context'])
-        return dict(project_id=source['project_id'], todo=todo, ideas=snapshot['data']['ideas'],
+        from briefings import copied_context
+        packet = ''
+        if body.get('briefing'):
+            if snapshot['transport'] == 'http':
+                # Only the owner may assemble its HTTP context. A matching path
+                # on the aggregator machine is not evidence of source identity.
+                current = exchange(source, '/api/briefing', dict(todo_id=todo['id']), snapshot['token'])
+                if current['context'] != snapshot['context'] or current['revisions']['todos'].get(todo['id']) != snapshot['revisions']['todos'][todo['id']]:
+                    raise Conflict('Source changed while preparing its briefing; refresh and retry.')
+                packet = current['context_packet']
+            else:
+                packet = copied_context(snapshot, todo)
+        return dict(context_packet=packet,
+                    project_id=source['project_id'], todo=todo, ideas=snapshot['data']['ideas'],
                     revision=snapshot['revisions']['todos'][todo['id']], context=snapshot['context'],
                     compatibility=snapshot['compatibility'], history=snapshot['history'], preflight=preflight,
                     transport=snapshot['transport'], fallback_reason=snapshot['fallback_reason'])

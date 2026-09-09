@@ -12,6 +12,7 @@ from pathlib import Path
 
 from storage import Conflict, atomic, encode, digest
 from versions import FORMAT_VERSION, inspect
+from agent_metrics import accepted, checked, repair_needed
 
 
 def result_path(run):
@@ -194,6 +195,8 @@ def finish(w, todo, run):
     blockers = report.get('blockers', [])
     if structured is not None:
         if structured != 'complete' or not isinstance(blockers,list) or any(v not in ('publication','publication_approval','execution_approval') for v in blockers):
+            if isinstance(blockers, list) and blockers and set(blockers) <= {'implementation', 'verification'}:
+                repair_needed(run)
             raise Conflict('Worker has genuine implementation blockers; publication cannot resolve them.')
         if report['status'] == 'needs_attention' and not blockers:
             raise Conflict('Worker needs attention without a classified blocker; review required.')
@@ -220,7 +223,7 @@ def finish(w, todo, run):
     run['approval'] = dict(status='confirmed' if review else 'not_requested')
     w.save(ident,run)
     try:
-        w.command(w.argv('test',run),run['worktree'],ident,purpose='verification')
+        checked(w, run, ident)
         if w.git('rev-parse','HEAD',cwd=run['worktree']) != commit or w.git('status','--porcelain',cwd=run['worktree']):
             raise Conflict('Verification changed the reviewed worktree.')
         current = next(t for t in w.snapshot()['data']['todos'] if t['id'] == ident)
@@ -238,4 +241,5 @@ def finish(w, todo, run):
     w.github('pr','edit',run['pr_url'],'--title','[unfertig] '+ident+': '+todo['name'],'--body-file',str(body))
     if state.get('isDraft'):
         w.github('pr','ready',run['pr_url'])
+    accepted(run)
     run.update(phase='ready',message='Implementation and remote PR HEAD verified; configured checks passed. Ready for review. Merge and deployment require separate authorization.')

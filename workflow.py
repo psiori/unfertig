@@ -21,6 +21,7 @@ from codex_runtime import resolve_executable
 from storage import Conflict, digest, OperationLock, atomic, encode
 from integration import GitFailure, StaleCandidate, migration_issues
 from versions import FORMAT_VERSION
+from agent_metrics import checked, observe, display_line
 
 ACTIVE = {'implementing', 'testing', 'merging'}
 DELIVERY_BLOCKS = {'merge_failed', 'push_failed', 'restart_failed', 'migration_required', 'resolution_blocked'}
@@ -622,7 +623,8 @@ class Workflow:
         lines = []
         try:
             for line in child.stdout:
-                lines.append(line.rstrip()); lines = lines[-35:]
+                observe(line)
+                lines.append(display_line(line)); lines = lines[-35:]
                 with self.lock:
                     self.live[ident] = dict(message='\n'.join(lines)[-6000:])
             child.wait()
@@ -680,7 +682,7 @@ class Workflow:
                 originals = [i for i in snap['data']['ideas'] if i['id'] in todo['source_ideas']]
                 prompt = f'''Execute this saved todo's category and acceptance conditions in the isolated branch at {run['worktree']}.
 Project context directory: {self.processing['working_directory']}.
-{context_guide(self.processing['working_directory'], self.processing['developer'], todo)}
+{context_guide(self.processing['working_directory'], self.processing['developer'], todo, sources=self.processing.get('context_sources'), process=snap['context']['process'])}
 Read applicable code repository instructions. Apply edits only in the isolated worktree. Do not change the original checkout or board files.
 Authoritative task file: {snap['context']['todos']}/{todo['id']}.json
 Original ideas file: {snap['context']['data']}
@@ -719,7 +721,7 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                 publisher.start()
                 try:
                     with agent_run(self, todo, run, 'implementation', prompt):
-                        self.command([executable, 'exec', *effort_args, '--approve-for-me', '-C', run['worktree'], '-o', str(final), '-'], run['worktree'], ident, prompt)
+                        self.command([executable, 'exec', '--json', *effort_args, '--approve-for-me', '-C', run['worktree'], '-o', str(final), '-'], run['worktree'], ident, prompt)
                 finally:
                     stopped.set(); publisher.join()
                 from managed_completion import finish
@@ -732,7 +734,7 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                 self.stop_preview(ident)
                 from preview_check import PreviewCheck
                 if not (type(verified_check) is PreviewCheck and verified_check.consume(self, run)):
-                    self.command(self.argv('test', run), run['worktree'], ident)
+                    checked(self, run, ident, stage='preview')
                 if self.git('rev-parse', 'HEAD', cwd=run['worktree']) != run['commit'] or self.git('status', '--porcelain', cwd=run['worktree']):
                     raise ValueError('Testing changed the branch. Review it before retrying.')
                 with socket.socket() as probe:
@@ -819,6 +821,7 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
         todo = next(t for t in self.snapshot()['data']['todos'] if t['id'] == ident)
         if scope_digest(todo) != run['scope']:
             raise Conflict('Task scope changed during resolution; review required.')
+        todo = dict(todo, workflow=run)
         files = self.git('diff', '--name-only', '--diff-filter=U', cwd=candidate).splitlines()
         run.update(phase='resolving_conflict', message='Agent resolving merge conflict: '+cause[-1500:],
                    conflicted_paths=files)
@@ -832,13 +835,13 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
         run.setdefault('resolution_reports', []).append(str(final))
         self.save(ident, run)
         advice = role_advice('integration')
-        if (candidate/'versions.py').is_file():
+        if any(Path(path).name in ('versions.py', 'VERSIONING.md') for path in files):
             advice += '\nFor competing persistence changes, preserve every migration and default in one sequential registry; published main owns existing version assignments. Read the candidate VERSIONING.md and test supported upgrades and recovery.'
         context = self.snapshot()['context']
         targets = [attempt['remote']] + ([] if attempt['pr_state'] == 'MERGED' else [run['commit']])
         prompt = f'''Resolve and verify this integration candidate at {candidate}.
 Read the candidate's applicable AGENTS.md instructions.
-{context_guide(self.processing['working_directory'], self.processing['developer'], todo)}
+{context_guide(self.processing['working_directory'], self.processing['developer'], todo, role='integration', sources=self.processing.get('context_sources'), process=context['process'])}
 {effort_briefing(todo, 'integration')}
 Authoritative process: {context['process']}
 Authoritative task: {context['todos']}/{ident}.json
@@ -857,7 +860,7 @@ Run and repair these combined checks: {json.dumps(self.argv('test', dict(run, wo
 Finish with JSON containing status (complete or needs_attention), commit (actual HEAD), summary, tests, attempts (array of concrete approaches), and blocker (minimal missing information/access, empty on success). No marker or markdown.
 '''
         with agent_run(self, todo, run, 'integration', prompt):
-            self.command([executable, 'exec', *launch_arguments(todo, 'integration'), '--approve-for-me', '-C', str(candidate), '-o', str(final), '-'], candidate, ident, prompt)
+            self.command([executable, 'exec', '--json', *launch_arguments(todo, 'integration'), '--approve-for-me', '-C', str(candidate), '-o', str(final), '-'], candidate, ident, prompt)
         report = json.loads(final.read_text()) if final.is_file() else {}
         if report.get('status') != 'complete':
             raise ValueError('Blocked — user input required: '+str(report.get('blocker') or 'Agent did not provide a verified resolution report.')+
@@ -975,7 +978,7 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
                 try:
                     if issues:
                         raise ValueError('; '.join(issues))
-                    self.command(self.argv('test', check_run), candidate, ident)
+                    checked(self, run, ident, cwd=candidate, stage='integration')
                     if self.git('rev-parse', 'HEAD', cwd=candidate) != commit or self.git('status', '--porcelain', cwd=candidate):
                         raise ValueError('Integration checks changed the candidate. Review the retained worktree.')
                     break

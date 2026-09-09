@@ -41,6 +41,16 @@ class Conformance:
     test_duplicate_provenance = fixtures.AggregationTests.test_duplicate_source_provenance_rejected_with_new_request_id
     test_inbox_history_recovery = fixtures.AggregationTests.test_local_history_failure_after_destination_save
 
+    def test_copied_source_packet_uses_current_owner_context_and_saved_record(self):
+        source=self.sources[0]
+        snapshot=self.router.inspect_source(source)
+        todo=snapshot['data']['todos'][0]
+        result=self.router.source_record(dict(project_id=source['project_id'], todo_id=todo['id'], briefing=True))
+        self.assertIn('Current source packet', result['context_packet'])
+        self.assertIn(snapshot['context']['process'], result['context_packet'])
+        self.assertEqual(result['revision'], snapshot['revisions']['todos'][todo['id']])
+        self.assertEqual(self.router.inspect_source(source)['revision'],snapshot['revision'])
+
     def test_worker_config_defaults_and_explicit_limits_share_transports(self):
         source = self.sources[0]
         config = self.boards[1].config
