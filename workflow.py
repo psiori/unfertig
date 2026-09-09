@@ -352,7 +352,7 @@ class Workflow:
     def inactive_history(self, todo):
         run = todo.get('workflow', {})
         historical = run.get('external_completions') or (todo['status'] == 'closed' and
-            run.get('phase') in ACTIVE | {'handoff_blocked', 'implementation_failed', 'test_failed', 'merge_failed',
+            run.get('phase') in ACTIVE | {'ready', 'tested', 'handoff_blocked', 'implementation_failed', 'test_failed', 'merge_failed',
                                          'push_failed', 'restart_failed', 'resolution_blocked'})
         return bool(historical and not self.retained_activity(todo))
 
