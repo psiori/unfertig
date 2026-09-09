@@ -291,24 +291,27 @@ main { padding-top:18px; }
 @media(max-width:600px){.masthead{flex-wrap:wrap}.header-right{width:100%;gap:12px}.identity input{width:75px}}
 
 /* Brand text and history share a column beside the mark at every width. */
-.brand-group{display:flex;align-items:flex-start;gap:11px;min-width:0;flex:1}
-.brand-group .brand-mark{margin:0}
-.brand-text{min-width:0;flex:1}
-.brand-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:3px 10px}
-.brand-heading .brand{display:block;min-width:0;overflow-wrap:anywhere}
+.brand-group{display:flex;align-items:flex-start;gap:11px;min-width:0;flex:1 1 480px}
+.brand-group .brand-mark{margin:3px 0 2px;align-self:flex-start;font-family:monospace}
+.brand-text{min-width:0;flex:1;display:grid;grid-template-columns:minmax(0,auto) auto;column-gap:10px;justify-content:start}
+.brand-heading{grid-column:1;display:flex;align-items:baseline;flex-wrap:wrap;gap:3px 10px}
+.brand-heading .brand{line-height:1.1;display:block;min-width:0;overflow-wrap:anywhere}
 .wordmark{white-space:nowrap}
-.masthead .brand-text .history-banner{padding:3px 0 0;margin:0;max-width:none;font-size:11px;line-height:1.5}
-.app-version{font-size:11px;line-height:1.5;color:#62695f;letter-spacing:0;white-space:nowrap}
+.masthead .brand-text .history-banner{grid-column:1;padding:0;margin:0;max-width:none;font-size:11px;line-height:1.2}
+.app-version{grid-column:2;grid-row:1/3;align-self:center;font-size:11px;line-height:1.5;color:#62695f;letter-spacing:0;white-space:nowrap}
 .masthead{flex-wrap:wrap}
 .header-right{flex-wrap:wrap;flex-shrink:0;max-width:100%}
-@media(max-width:600px){.brand-group{flex-basis:100%}}
+@media(max-width:600px){.brand-group{flex-basis:100%}.brand-text{grid-template-columns:minmax(0,1fr)}.app-version{grid-column:1;grid-row:3;margin-top:4px}}
 
 .instance-maintenance{margin:16px 0;padding:12px 16px;border:1px solid var(--line);border-radius:var(--radius);overflow-wrap:anywhere}
 .instance-maintenance summary{cursor:pointer;font-weight:600}
 .instance-maintenance p,.instance-maintenance ul{font-size:12px;color:var(--muted)}
 .instance-maintenance li{margin:8px 0}
 
-#open-settings{width:36px;height:36px;flex-shrink:0;font-size:23px;color:var(--green)}
+.pipeline-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pipeline-header h2{font-size:14px;letter-spacing:0;overflow-wrap:anywhere}
+#open-settings{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;flex-shrink:0;margin-left:auto;color:#72776e;background:transparent;border-radius:8px;font-weight:400}
+#open-settings:hover{color:#50564e;background:#eeeee6}
 #settings-dialog{width:min(650px,calc(100vw - 24px));overflow-y:auto}
 #settings-fields{margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:0 20px}
 #settings-fields label:first-child,#settings-fields label:nth-child(2){grid-column:1/-1}
@@ -321,3 +324,5 @@ main { padding-top:18px; }
 @media(max-width:560px){#settings-fields{grid-template-columns:1fr}#settings-dialog .dialog-actions{flex-wrap:wrap}#settings-dialog{padding:20px 16px}}
 
 #workflow-merge-all-state { white-space: pre-wrap; max-height: 22rem; overflow: auto; }
+/* At phone widths the two-line tagline balances a slightly larger mark. */
+@media(max-width:360px){.brand-group .brand-mark{width:42px;height:42px;font-size:34px}}
