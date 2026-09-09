@@ -556,8 +556,9 @@ No persistent session, authority cache or cross-task transcript is introduced.
 
 ## Work completed outside its original attempt (format 1.15)
 
-An inactive closed failed/interrupted attempt appears under **Historical / superseded**,
-with its original phase, branch, failure and receipts retained. Manual closure is
+An inactive closed failed/interrupted, ready or tested attempt appears under
+**Historical / superseded**, with its original phase, branch and receipts retained.
+It leaves the active pipeline even when completion happened outside the coordinator. Manual closure is
 not verification of integration or deployment and does not stop a worker. Live or
 uncertain retained workers remain visible and block reconciliation. Closed tasks
 cannot be retried; reopening an unreconciled task restores its original recovery

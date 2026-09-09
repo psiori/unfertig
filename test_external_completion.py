@@ -44,6 +44,29 @@ class ExternalCompletionTests(unittest.TestCase):
             self.workflow.start(dict(id=todo['id'], action='retry', revision=digest(todo)))
         self.assertEqual(self.store.snapshot()['data']['todos'][0], todo)
 
+    def test_closed_ready_and_tested_are_history_without_rewriting_attempts(self):
+        for phase in ('ready', 'tested'):
+            todo = self.historical(phase, closed=False)
+            self.assertEqual(self.workflow.status()['runs'][todo['id']]['phase'], phase)
+            original = copy.deepcopy(todo['workflow'])
+            self.store.mutate(dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=todo['id'], revision=digest(todo), record=dict(
+                    todo, status='closed', closed_by='SL', date_closed='2026-09-09T12:00:00Z',
+                    completion_summary='Verified external merge and publication'))]))
+            closed = self.store.snapshot()['data']['todos'][0]
+            self.assertEqual(closed['workflow'], original)
+            restarted = Workflow(self.store, self.workflow.url, self.options, self.processing)
+            for workflow in (self.workflow, restarted):
+                view = workflow.status()['runs'][todo['id']]
+                self.assertEqual(view['phase'], 'historical')
+                self.assertEqual(view['historical_phase'], phase)
+                self.assertFalse(view['active'])
+            self.assertEqual(self.store.snapshot()['data']['todos'][0], closed)
+            self.store.mutate(dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=todo['id'], revision=digest(closed), record=dict(
+                    closed, status='started', closed_by='', date_closed=''))]))
+            self.assertEqual(self.workflow.status()['runs'][todo['id']]['phase'], phase)
+
     def test_reopen_restores_unreconciled_retry_but_not_superseded_attempt(self):
         todo = self.historical()
         self.store.mutate(dict(actor='SL', request_id=uuid.uuid4().hex, changes=[dict(
@@ -80,7 +103,7 @@ class ExternalCompletionTests(unittest.TestCase):
         self.assertEqual(self.store.snapshot()['data']['todos'][0], current)
 
     def test_live_uncertain_and_foreign_workers_are_not_hidden_or_superseded(self):
-        for phase in ('implementation_failed', 'implementing'):
+        for phase in ('implementation_failed', 'implementing', 'ready', 'tested'):
             todo = self.historical(phase)
             receipt = self.workflow.process_receipt(todo['workflow'])
             receipt.parent.mkdir(parents=True, exist_ok=True)
