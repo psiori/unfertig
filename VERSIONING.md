@@ -365,6 +365,11 @@ Browser recovery is disposable sessionStorage under a versioned `merge-batch.v1`
 key; board receipts remain authoritative. HTTP and filesystem record writers
 continue to protect claims identically; aggregation cannot launch source work.
 
+Conditional maintenance visibility adds only an ephemeral owner-process
+`currency` response object. No stored format, defaults or migration steps change.
+Missing or expired observations render as unknown; historical hooks and host
+receipts retain their original values and recovery semantics.
+
 ## Storage 1.21.0 — explicit execution profiles
 
 Sequential 1.20→1.21 inserts todo `execution_profile: "auto"` only when absent.

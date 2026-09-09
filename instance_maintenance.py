@@ -11,6 +11,7 @@ import threading
 
 from storage import atomic, encode, Conflict
 from versions import FORMAT_VERSION
+from runtime_currency import RuntimeCurrency
 
 
 class Maintenance:
@@ -32,6 +33,9 @@ class Maintenance:
         self.blockers = []
         self.error = ''
         self.hooks = None
+        self.currency = RuntimeCurrency(Path(__file__).resolve().parent,
+            getattr(server.store, 'context', {}).get('runtime_commit', ''),
+            enabled=bool(getattr(server.store, 'git', False)))
 
     @property
     def supported(self):
@@ -62,7 +66,7 @@ class Maintenance:
             update = json.loads(self.update_path.read_text())
             if update.get('schema_version') != 1:
                 raise ValueError('Unsupported host update status schema.')
-        return dict(update=update, supported=self.supported, phase=self.phase, pending=self.pending,
+        return dict(currency=self.currency.view(), update=update, supported=self.supported, phase=self.phase, pending=self.pending,
                     blockers=list(self.blockers), error=self.error or (self.hooks.error if self.hooks else ''),
                     runtime_commit=getattr(self.server.store, 'context', {}).get('runtime_commit', ''), hooks=hooks)
 
@@ -82,6 +86,8 @@ class Maintenance:
         if workflow and self.hooks is None:
             self.hooks = Hooks(workflow)
         try:
+            if not self.pending:
+                self.currency.tick()
             if self.supported and self.request_path.exists():
                 request = json.loads(self.request_path.read_text())
                 if request.get('session') == self.session:
