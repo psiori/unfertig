@@ -583,11 +583,65 @@ medium; aggregator routing launches Astra medium. Processing suggests complexity
 hints and leaves profile selection Automatic unless the user requested an override.
 
 Protected `workflow.agent_runs` records each implementation/repair launch's model,
-reasoning effort, requested/effective profile, selection reason, start, duration,
-exit status and prompt byte count/hash. These are launch observations, not proof
-of task acceptance or provider-reported token usage. Verification and publication
-retain their separate evidence. Processing exposes its profile in runtime status.
+reasoning effort, requested/effective profile, reason, start, duration, exit status,
+prompt size/hash and source manifest (without source prose). A failed configured
+check or explicitly classified incomplete implementation marks a repair. The next
+authorized Automatic attempt moves up one preset, capped at Astra high. Manual
+overrides remain fixed. Unavailable models, execution/approval blocks and missing
+tools do not trigger substitution or launch another attempt.
+
+`workflow.check_runs` records coordinator test duration and failures, including
+integration and Preview. `accepted_result` records wall time from first launch
+through retries and waiting to the first verified implementation result, after
+report, current HEAD, checks and PR validation. A successful agent exit alone is
+not acceptance. These observations cannot reuse a Preview token or authorize work.
+Worker-internal test commands are included in agent time, not separately timed.
+
+Codex JSON events count reads made through the supplied `context_sources.py`
+helper. Hash-only checks are separate from repeated content reads. Other tools'
+reads are unobserved; these counts are explicitly partial. No token/cost or model
+speed claim is inferred. Historical missing measurements stay unavailable.
+Processing exposes its chosen profile in runtime status.
+
+For a small pilot, collect six accepted tasks: two bounded UI/local fixes, two
+ordinary multi-file changes, one architecture/persistence task and one repair.
+Keep scope and acceptance unchanged; compare like tasks or disposable paired
+replays with the same sources, commits and environment. Do not tune from launch
+duration alone. Export a supported snapshot and summarize it with
+`uv run --no-project --python 3.12 python agent_metrics.py SNAPSHOT.json`.
+Review accepted time, retries, failed checks, test time and read coverage together.
+Manual presets support controlled comparisons. No live experiment is auto-started.
 No persistent session, authority cache or cross-task transcript is introduced.
+
+### Focused context sources
+
+Every copied or launched briefing uses the same bounded context builder. It
+delivers exact complete UTF8 source text (32 KiB per file, 64 KiB total content)
+with canonical paths, hashes, developer, role and task fingerprint. Changed,
+missing, oversized and excess sources are listed for explicit original reads;
+partial text is never presented as complete. Mandatory references and nested
+repository instructions still apply. The packet is not a rules compiler or an
+authorization cache. Browser packets are generated on demand, never in polling
+snapshots. HTTP aggregate copies ask the owning server; filesystem copies use
+the same builder with the verified owner's context.
+
+Optional `processing.context_sources` maps `common`, `implementation`,
+`processing`, `aggregation` and `integration` to arrays of paths relative to
+`processing.working_directory` (absolute paths may explicitly name external
+policy). For example, `{"common":["policy/working.md"],"integration":["policy/review.md"]}`.
+Keep additions with their host; do not copy editable tool advice. An absent
+mapping means no extra sources. A configured missing file remains visible and
+blocks dependent work. The existing wrapper adapter also selects its node,
+project rules and selected developer compilation; standalone projects need none
+of that layout. Selection follows explicit task-linked design/evidence rather
+than scanning directories. Source hashes include uncommitted changes.
+
+`PUT /api/briefing` accepts `todo_id` for implementation or `role` processing/
+aggregation and returns a fresh snapshot plus `context_packet`. It requires the
+current board token, performs no record writes and never starts a worker.
+`/api/source-record` accepts `briefing:true` to request the owner's packet.
+Unavailable/newer sources fail explicitly; HTTP rejection never permits a
+filesystem bypass.
 
 ### Completed externally
 

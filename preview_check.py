@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from storage import digest
+from agent_metrics import checked
 
 
 def inputs(workflow, run):
@@ -60,8 +61,7 @@ class PreviewCheck:
     @classmethod
     def verify(cls, workflow, run, ident):
         before = inputs(workflow, run)
-        workflow.command(workflow.argv('test', run), run['worktree'], ident,
-                         purpose='verification')
+        checked(workflow, run, ident, stage='preview')
         if inputs(workflow, run) != before:
             raise ValueError('Verification inputs changed during the primary check.')
         return cls(before)

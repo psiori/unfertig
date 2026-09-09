@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from storage import Conflict, digest
+from agent_metrics import accepted, checked, repair_needed
 from project_manifest import projects, project_path
 from managed_completion import read_report
 
@@ -150,6 +151,7 @@ def guard(w, run):
 def facade(w, run, item, ident):
     """Reuse the exact-candidate integration engine without conflating run state."""
     proxy = copy.copy(w)
+    proxy.metrics_run = run
     proxy.options = {**w.options, 'test':[], 'preview':[], 'restart':[], 'base_branch':'main','preview_url':'',
                      **item['recipe'], 'repository':item['repository']}
     proxy.save = lambda _ident, _item, **fields: w.save(ident, run)
@@ -254,6 +256,8 @@ def finish(w, todo, run, *, preview=False):
     report,fingerprint=read_report(run)
     run['worker_report']=report;run['worker_report_digest']=fingerprint
     if report['status']!='complete':
+        if report.get('blockers') == ['implementation']:
+            repair_needed(run)
         raise Conflict('Worker reports incomplete context work: '+report['summary'])
     current=next(t for t in w.snapshot()['data']['todos'] if t['id']==todo['id'])
     if current['status']=='closed' or scope_digest(current)!=run['scope']:
@@ -281,7 +285,7 @@ def finish(w, todo, run, *, preview=False):
             from preview_check import PreviewCheck
             checks[item['id']] = PreviewCheck.verify(p, item, todo['id'])
         else:
-            p.command(p.argv('test',item),item['worktree'],todo['id'],purpose='verification')
+            checked(p, item, todo['id'])
         if p.git('rev-parse','HEAD',cwd=item['worktree'])!=item['commit'] or p.git('status','--porcelain',cwd=item['worktree']):
             raise Conflict('Verification modified '+item['id'])
         state=p.pr_state(item)
@@ -294,6 +298,7 @@ def finish(w, todo, run, *, preview=False):
         phase='ready',message='Context and repository results verified. Review repository PRs before integration.')
     run['pr_url']=next((r['pr_url'] for r in available if r.get('changed')), '')
     run['repository_heads']={r['id']:r['commit'] for r in available}
+    accepted(run)
     w.save(todo['id'],run,commit_hash=run['commit'],pr_url=run['pr_url'])
     return checks
 
@@ -315,7 +320,7 @@ def execute(w, todo, run, action):
         prompt=f'''Your task context is the UM repository at {context['worktree']}.
 {role_advice('context_managed')}
 Read-only original UM context: {run['context_repository']}. Resolve relative policy/developer references against that original context; use the isolated context for task edits.
-{context_guide(run['context_repository'], w.processing['developer'], todo)}
+{context_guide(run['context_repository'], w.processing['developer'], todo, sources=w.processing.get('context_sources'), process=snapshot['context']['process'])}
 Read each assigned repository's applicable instructions and {snapshot['context']['process']}.
 {effort_briefing(todo)}
 Authoritative task: {snapshot['context']['todos']}/{ident}.json. Original ideas: {snapshot['context']['data']}.
@@ -345,7 +350,7 @@ Return a JSON object with status complete or needs_attention, summary, tests and
             if not executable:raise ValueError('Codex executable unavailable.')
             extra=[a for item in run['repositories'] if item['available'] and item is not context for a in ('--add-dir',item['worktree'])]
             with agent_run(w, todo, run, 'implementation', prompt):
-                w.command([executable,'exec',*launch_arguments(todo),'--approve-for-me',*extra,'-C',context['worktree'],'-o',str(final),'-'],context['worktree'],ident,prompt)
+                w.command([executable,'exec','--json',*launch_arguments(todo),'--approve-for-me',*extra,'-C',context['worktree'],'-o',str(final),'-'],context['worktree'],ident,prompt)
         finally:stopped.set();publisher.join()
         finish(w,todo,run)
     elif action in ('test','verify_existing'):

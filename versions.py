@@ -195,6 +195,10 @@ def execution_profiles_format(value, kind):
     value = publication_hooks_format(value, kind)
     if kind == 'todo':
         value.setdefault('execution_profile', 'auto')
+    if kind == 'config':
+        processing = value.setdefault('processing', {})
+        if isinstance(processing, dict):
+            processing.setdefault('context_sources', {})
     value['format_version'] = '1.21.0'
     return value
 

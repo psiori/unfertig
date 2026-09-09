@@ -110,7 +110,7 @@ class VersionTests(unittest.TestCase):
             self.assertEqual(result['search_paths'], patterns or [])
             self.assertEqual(result['extension'], config['extension'])
             self.assertEqual(inspect(result, supported='1.10.0')[0], 'read_only')
-            self.assertEqual(migrate(result, 'config'), dict(result, format_version=FORMAT_VERSION, workflow={'max_workers':4,'after_publish':[]}))
+            self.assertEqual(migrate(result, 'config'), dict(result, format_version=FORMAT_VERSION, workflow={'max_workers':4,'after_publish':[]}, processing={'context_sources':{}}))
 
     def test_discovery_migration_interruption_retains_config_and_receipt(self):
         self.store.initialize()

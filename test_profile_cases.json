@@ -119,5 +119,137 @@
     },
     "integration",
     "astra-high"
+  ],
+  [
+    {
+      "effort": "low",
+      "workflow": {
+        "agent_runs": [
+          {
+            "profile": "terra-medium",
+            "role": "implementation",
+            "outcome": "repair_needed"
+          }
+        ]
+      }
+    },
+    "implementation",
+    "sol-medium"
+  ],
+  [
+    {
+      "effort": "low",
+      "execution_profile": "terra-medium",
+      "workflow": {
+        "agent_runs": [
+          {
+            "profile": "terra-medium",
+            "role": "implementation",
+            "outcome": "repair_needed"
+          }
+        ]
+      }
+    },
+    "implementation",
+    "terra-medium"
+  ],
+  [
+    {
+      "effort": "low",
+      "workflow": {
+        "agent_runs": [
+          {
+            "profile": "sol-medium",
+            "role": "implementation",
+            "outcome": "repair_needed"
+          }
+        ]
+      }
+    },
+    "implementation",
+    "astra-medium"
+  ],
+  [
+    {
+      "effort": "low",
+      "execution_profile": "terra-medium",
+      "workflow": {
+        "agent_runs": [
+          {
+            "profile": "sol-medium",
+            "role": "implementation",
+            "outcome": "repair_needed"
+          }
+        ]
+      }
+    },
+    "implementation",
+    "terra-medium"
+  ],
+  [
+    {
+      "effort": "low",
+      "workflow": {
+        "agent_runs": [
+          {
+            "profile": "astra-medium",
+            "role": "implementation",
+            "outcome": "repair_needed"
+          }
+        ]
+      }
+    },
+    "implementation",
+    "astra-high"
+  ],
+  [
+    {
+      "effort": "low",
+      "execution_profile": "terra-medium",
+      "workflow": {
+        "agent_runs": [
+          {
+            "profile": "astra-medium",
+            "role": "implementation",
+            "outcome": "repair_needed"
+          }
+        ]
+      }
+    },
+    "implementation",
+    "terra-medium"
+  ],
+  [
+    {
+      "effort": "low",
+      "workflow": {
+        "agent_runs": [
+          {
+            "profile": "astra-high",
+            "role": "implementation",
+            "outcome": "repair_needed"
+          }
+        ]
+      }
+    },
+    "implementation",
+    "astra-high"
+  ],
+  [
+    {
+      "effort": "low",
+      "execution_profile": "terra-medium",
+      "workflow": {
+        "agent_runs": [
+          {
+            "profile": "astra-high",
+            "role": "implementation",
+            "outcome": "repair_needed"
+          }
+        ]
+      }
+    },
+    "implementation",
+    "terra-medium"
   ]
 ]

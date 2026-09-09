@@ -11,6 +11,7 @@ function setup() {
     boardContext:{mode:'aggregation',sources:[{project_id:'a'},{project_id:'b'}]},
     data:{ideas:[],todos:[]},compatibility:{read_only:false},unique:values=>[...new Set(values)],date:v=>v,
     escapeHTML:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),boardLocations:()=> 'Read PROCESS.md'};
+  context.agentAdvice = JSON.parse(fs.readFileSync(__dirname+'/agent_advice.json','utf8'));
   context.effortDefinitions = JSON.parse(fs.readFileSync(__dirname+'/efforts.json','utf8'));
   vm.createContext(context);
   const app=fs.readFileSync(__dirname+'/app.js','utf8');

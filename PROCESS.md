@@ -20,13 +20,17 @@ for concrete dependencies. Do not read entire design/context directories by defa
 Use the role-specific advice supplied in a fresh briefing. `agent_advice.json`
 owns these instructions; the browser and worker builders use the same source.
 Recheck task/rules and authority before consequential actions. A copied snapshot
-or source hash is not a permission grant or a replacement for required sources.
+or source hash is not a permission grant. Complete text in a current source packet
+counts as a source read; unchanged prose needs no repeated loading in that
+session. Verify hashes and reload changed or missing text before dependent work.
+Oversized, missing or incomplete packet entries must be read from their originals;
+compaction, resume and model changes require reloading any required text lost.
 
-## Read only the reference sections your role needs
+## Use supplied role advice; open references for missing procedures
 
 | Work | Required reference |
 | --- | --- |
-| Implementing an assigned todo | [Task execution](PROCESS_REFERENCE.md#implementing-a-todo), supplied managed/manual advice and applicable project instructions |
+| Implementing an assigned todo | Supplied managed/manual advice and applicable project instructions; [task execution](PROCESS_REFERENCE.md#implementing-a-todo) for missing procedure details |
 | Manually changing board records | [Safe updates](PROCESS_REFERENCE.md#safe-updates) and relevant [record schema](PROCESS_REFERENCE.md#storage-layout-version-2-record-schema-version-1) |
 | Translating ideas into todos | [Processing](PROCESS_REFERENCE.md#processing-ideas-is-planning-only), safe updates, category and effort guidance |
 | Routing an aggregator inbox | [Aggregation routing](PROCESS_REFERENCE.md#aggregation-routing-format-12) and processing guidance |

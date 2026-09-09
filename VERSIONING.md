@@ -376,8 +376,12 @@ Sequential 1.20→1.21 inserts todo `execution_profile: "auto"` only when absent
 Preserve every explicit profile, old complexity hint, original, extension and
 receipt identity; invalid explicit values remain errors. New records default to
 Automatic. Older writers become read-only. Protected workflow `agent_runs` adds
-per-launch model/effort and timing observations without fabricating past runs or
-changing historical claims. Missing observations mean unavailable, not zero.
+per-launch model/effort, source fingerprints and partial instrumented-read observations.
+Protected `check_runs` and `accepted_result` capture configured test time and first
+verified-result wall time. Missing historical observations remain unavailable;
+no prior run is fabricated. Config `processing.context_sources` defaults to an
+empty object, preserving explicit role additions and extensions. Historical claims
+remain intact; missing measurements mean unavailable, not zero.
 HTTP/filesystem share validation, revision checks, journal/history recovery and
 omitted-field preservation. Startup migrates under the existing writer lock;
 interrupted migration resumes forward. No API-major change or authority cache.

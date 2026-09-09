@@ -30,7 +30,9 @@ class PreviewEvidenceTests(unittest.TestCase):
         token = PreviewCheck.verify(self.w, self.run, 'test')
         self.assertTrue(token.consume(self.w, self.run))
         self.assertFalse(token.consume(self.w, self.run))
-        self.assertEqual(self.run, dict(worktree=str(self.root)))
+        self.assertEqual(set(self.run), {'worktree','check_runs'})
+        self.assertEqual(self.run['check_runs'][0]['status'], 'passed')
+        self.assertNotIn('fingerprint',self.run['check_runs'][0])  # timing is not a reusable success token
         self.w.command.assert_called_once()
 
     def test_changed_revision_command_environment_interpreter_and_host_invalidate(self):

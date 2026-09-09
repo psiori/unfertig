@@ -35,6 +35,13 @@ def resolve(todo, role='implementation'):
                     or role in rule.get('roles', []) or (rule.get('pattern') and re.search(rule['pattern'], text, re.I))):
                 profile, reason = rule['profile'], rule['reason']
                 break
+        order = list(PROFILES)
+        prior = next((entry for entry in reversed(todo.get('workflow', {}).get('agent_runs', []))
+                      if entry.get('role') == role), None)
+        if prior and prior.get('outcome') == 'repair_needed' and prior.get('profile') in order:
+            rank = min(len(order)-1, order.index(prior['profile'])+1)
+            if rank > order.index(profile):
+                profile, reason = order[rank], 'Escalated after a failed verification or incomplete implementation; next authorized attempt only'
     return dict(requested=requested, profile=profile, **PROFILES[profile], reason=reason)
 
 
