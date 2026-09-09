@@ -169,6 +169,18 @@ class ApiTests(unittest.TestCase):
             self.assertNotIn(b'__APPLICATION_BUILD__', raw)
             self.assertEqual(headers['Cache-Control'], 'no-store')
 
+    def test_header_keeps_build_inline_and_tagline_separate(self):
+        _, raw, _ = self.request('/')
+        html = raw.decode()
+        heading = html.index('<div class="brand-heading">')
+        tagline = html.index('<div class="history-banner">')
+        build = html.index('class="app-version"')
+        self.assertLess(heading, build)
+        self.assertLess(build, tagline)
+        css = Path(__file__).with_name('style.css').read_text()
+        self.assertIn('.masthead .brand-text .history-banner{padding:0;margin:5px 0 0;', css)
+        self.assertNotIn('grid-column:2;grid-row:1/3', css)
+
     def test_category_definitions_are_served_before_app(self):
         from categories import DEFINITIONS
         status, raw, headers = self.request('/categories-data.js')
