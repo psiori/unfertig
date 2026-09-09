@@ -23,7 +23,7 @@ test('maintenance separates hook failure from task publication and sends an expl
   };
   vm.runInNewContext(fs.readFileSync(__dirname+'/maintenance.js','utf8'),{document:{body:main,querySelector:()=>main,createElement:tag=>new Element(tag)},fetch,AbortSignal,setInterval:f=>poll=f});
   await new Promise(setImmediate);
-  const panel=main.children[0];assert.match(panel.parts.summary.textContent,/hook failed/);
+  const panel=main.children[0];assert.match(panel.parts.summary.textContent,/needs attention/);
   const button=panel.parts.ul.children[0].children[0];assert.equal(button.textContent,'Retry hook');
   await button.handlers.click();await new Promise(setImmediate);
   assert.deepEqual(submitted,{body:{action:'retry_hook',todo:'T0001',event:'event'},token:'fresh-token'});
@@ -31,4 +31,34 @@ test('maintenance separates hook failure from task publication and sends an expl
   assert.match(panel.parts.p.textContent,/queued work is retained/);assert.match(panel.parts.p.textContent,/T0002/);
   assert.equal(panel.parts.ul.children[0].children.length,0);
   offline=true;await poll();assert.match(panel.parts.summary.textContent,/reconnecting/);
+});
+
+function fixture() {
+  const main = new Element('main'); let poll, offline = false, calls = 0;
+  let state = {phase:'idle', pending:false, blockers:[], error:'', runtime_commit:'a'.repeat(40), update:{}, hooks:[],
+    currency:{state:'current', target_commit:'a'.repeat(40), checked_at:'2026-09-09T00:00:00Z', message:'Current'}};
+  const fetch = async () => {calls++; if (offline) throw Error('Offline'); return {ok:true,json:async()=>structuredClone(state)};};
+  vm.runInNewContext(fs.readFileSync(__dirname+'/maintenance.js','utf8'), {document:{body:main,querySelector:()=>main,createElement:tag=>new Element(tag)},fetch,AbortSignal,setInterval:f=>poll=f});
+  return {panel:main.children[0],poll:()=>poll(),set:value=>state=value,get:()=>state,offline:value=>offline=value,calls:()=>calls};
+}
+test('healthy visibility transitions preserve polling and ignore successful history', async()=>{
+  const f=fixture(); assert.equal(f.panel.hidden,true); await new Promise(setImmediate);
+  assert.equal(f.panel.hidden,true); const healthy=structuredClone(f.get());
+  for(const phase of ['installed','current','complete','idle']) {
+    f.set({...healthy,update:{phase,message:'Historical success'},hooks:[{status:'complete'}]});await f.poll();assert.equal(f.panel.hidden,true);
+  }
+  for(const change of [
+    {currency:{state:'outdated'}}, {currency:{state:'unknown'}}, {currency:null},
+    {currency:{state:'current'}}, {currency:{...healthy.currency,target_commit:'b'.repeat(40)}},
+    {pending:true,phase:'draining'}, {phase:'ready'}, {phase:'failed'}, {blockers:['Pending writer']},
+    {error:'Failed status'}, {update:{phase:'failed'}}, {update:{phase:'updating'}},
+    {update:{phase:'installed',blockers:['Unresolved']}}, {hooks:[{status:'pending'}]}, {hooks:[{status:'failed'}]},
+    {hooks:null}
+  ]) {
+    f.set({...healthy,...change});await f.poll();assert.equal(f.panel.hidden,false,JSON.stringify(change));
+    f.set(healthy);await f.poll();assert.equal(f.panel.hidden,true);
+  }
+  const before=f.calls(); await f.poll(); assert.equal(f.calls(),before+1);assert.equal(f.panel.hidden,true);
+  f.offline(true);await f.poll();assert.equal(f.panel.hidden,false);assert.match(f.panel.parts.summary.textContent,/reconnecting/);
+  f.offline(false);await f.poll();assert.equal(f.panel.hidden,true,'identical healthy response after outage must restore hidden state');
 });

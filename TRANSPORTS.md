@@ -282,6 +282,13 @@ Owner-local bulk integration uses `/api/workflow/merge-review` and token-protect
 Both record adapters preserve the existing protected queue claims and action
 receipts. There is no filesystem batch writer or new stored record contract.
 
+`GET /api/maintenance` additionally returns ephemeral `currency` with `state`
+(current/outdated/unknown), `target_commit`, `checked_at` and `message`. It
+compares the running application with a recent origin/main observation. The
+read-only background check does not alter board transport semantics, Git refs
+or stored records. Filesystem board readers keep their existing contract; this
+is process-local maintenance presentation, not a stored board field.
+
 ## Execution profiles (format 1.21)
 
 Todo `execution_profile` defaults to `auto` on creation and migration; omitted
