@@ -23,13 +23,14 @@
 <body>
   <header class="masthead">
     <div class="brand-group">
-      <span class="brand-mark" aria-hidden="true">✳</span>
+      <span class="brand-mark" aria-hidden="true">✳&#xfe0e;</span>
       <div class="brand-text">
-        <div class="brand-heading"><a class="brand" href="/" aria-label="unfertig home"><span class="wordmark">unfertig<span class="brand-dot">.</span></span><span id="project-name"></span></a><span class="app-version" title="Running application build" aria-label="Application build __APPLICATION_BUILD__">build __APPLICATION_BUILD__</span></div>
+        <div class="brand-heading"><a class="brand" href="/" aria-label="unfertig home"><span class="wordmark">unfertig<span class="brand-dot">.</span></span><span id="project-name"></span></a></div>
         <div class="history-banner"><span id="history-state"></span> <button id="history-retry" class="button small" hidden>Retry Git commit</button></div>
+        <span class="app-version" title="Running application build" aria-label="Application build __APPLICATION_BUILD__">build __APPLICATION_BUILD__</span>
       </div>
     </div>
-    <div class="header-right"><span class="local-label"><span class="live-dot"></span> LOCAL & YOURS</span><form id="worker-capacity" class="local-label" aria-label="Worker capacity"><span class="live-dot" data-state="unknown" role="img" aria-label="Unknown"></span><label><span data-capacity-label>WORKERS ?/</span><input type="number" min="1" max="8" step="1" required aria-label="Maximum concurrent workers" aria-describedby="worker-capacity-message" disabled></label><button type="submit" class="button small" hidden>Save</button></form><label class="identity">Initials <input id="initials" aria-label="Your initials" title="Used for your new records and actions; existing attribution stays unchanged" placeholder="SL" maxlength="12" pattern="[A-Za-z][A-Za-z0-9]{0,11}"></label><button type="button" id="open-settings" class="icon-button" aria-label="Instance settings" title="Instance settings" aria-haspopup="dialog">⚙</button></div>
+    <div class="header-right"><span class="local-label"><span class="live-dot"></span> LOCAL & YOURS</span><form id="worker-capacity" class="local-label" aria-label="Worker capacity"><span class="live-dot" data-state="unknown" role="img" aria-label="Unknown"></span><label><span data-capacity-label>WORKERS ?/</span><input type="number" min="1" max="8" step="1" required aria-label="Maximum concurrent workers" aria-describedby="worker-capacity-message" disabled></label><button type="submit" class="button small" hidden>Save</button></form><label class="identity">Initials <input id="initials" aria-label="Your initials" title="Used for your new records and actions; existing attribution stays unchanged" placeholder="SL" maxlength="12" pattern="[A-Za-z][A-Za-z0-9]{0,11}"></label></div>
   </header>
   <p id="worker-capacity-message" class="capacity-message" role="status"></p>
   <main>
@@ -60,7 +61,10 @@
       <p id="source-status" class="notice" hidden></p><div class="filters"><label id="project-filter-label" hidden>Project<select id="project-filter"><option value="">All projects</option></select></label><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Find a todo…" aria-label="Search todos"></label><label>Status<select id="status-filter"><option value="active">Open + started</option><option value="all">All statuses</option><option value="open">Open</option><option value="started">Started</option><option value="closed">Closed</option></select></label><label>Group<select id="group-filter"><option value="">All groups</option></select></label><label>Tag<select id="tag-filter"><option value="">All tags</option></select></label><label>Sort<select id="sort"><option value="priority">Priority ↓</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name A–Z</option></select></label></div>
       <div class="view-options"><span id="result-count">0 todos</span><div><label class="check"><input type="checkbox" id="group-by"> Group by module</label><button class="text-button" id="fold-all">Collapse all</button><button class="text-button" id="unfold-all">Expand all</button></div></div>
       <div id="todos"></div>
-      <section class="integration-pipeline" data-integration-pipeline aria-label="Integration pipeline" hidden></section>
+      <section class="integration-pipeline" aria-label="Integration pipeline">
+        <div class="pipeline-header"><h2>Integration pipeline</h2><button type="button" id="open-settings" class="icon-button" aria-label="Instance settings" title="Instance settings" aria-haspopup="dialog"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 3-.6 2.4-2 .9-2.3-.7-2 3.4 1.7 1.8v2.4L2.1 15l2 3.4 2.3-.7 2 .9L9 21h4l.6-2.4 2-.9 2.3.7 2-3.4-1.7-1.8v-2.4L19.9 9l-2-3.4-2.3.7-2-.9L13 3Z"/><circle cx="11" cy="12" r="3"/></svg></button></div>
+        <div data-integration-pipeline hidden></div>
+      </section>
     </section>
     <footer><span><span class="live-dot"></span> <span id="board-location">Loading board location…</span> · local Git history</span><span>A small step is still a step. ✳</span></footer>
   </main>

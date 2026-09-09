@@ -165,7 +165,7 @@
         ['Done', ['done']],
         ['Needs attention', ['handoff_blocked','implementation_failed','test_failed','merge_failed','push_failed','restart_failed','resolution_blocked','interrupted','activity_unknown']]
       ];
-      const html = `<p class="pipeline-heading"><strong>Integration pipeline</strong>${latest.queue_blocked_by ? ` · Waiting for ${escapeHTML(latest.queue_blocked_by)}` : ''} · ${latest.active_count || 0}/${latest.max_workers || 1} workers${latest.draining ? ' · Waiting for active work before integration' : ''}</p><div class="pipeline-stages">` + stages.map(([label, phases]) => {
+      const html = `<p class="pipeline-heading">${latest.queue_blocked_by ? `Waiting for ${escapeHTML(latest.queue_blocked_by)} · ` : ''}${latest.active_count || 0}/${latest.max_workers || 1} workers${latest.draining ? ' · Waiting for active work before integration' : ''}</p><div class="pipeline-stages">` + stages.map(([label, phases]) => {
         const items = runs.filter(([,run]) => phases.includes(run.phase));
         return `<section class="pipeline-stage"><h3>${label} <span>${items.length}</span></h3><div class="pipeline-tickets">${items.map(([id,run]) => pipelineTicket(id, run)).join('') || '<span class="muted">—</span>'}</div></section>`;
       }).join('') + '</div>';
