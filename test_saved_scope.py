@@ -134,7 +134,23 @@ class SavedScopeTests(unittest.TestCase):
         run = copy.deepcopy(ready['workflow'])
         run['repositories'] = [dict(id='context', scope=run['scope'], commit='old', verification={'status':'passed'}),
                                dict(id='project', scope=run['scope'], commit='old', published_commit='published-old-scope', verification={'status':'passed'})]
+        retained = dict(integration_evidence={'scope':run['scope']},
+                        integration_publication={'status':'pending', 'commit':'a'*40},
+                        checkout_sync={'status':'deferred', 'commit':'a'*40},
+                        pin_update={'status':'pending', 'base':'b'*40, 'tree':'c'*40},
+                        integration_repairs=[{'stage':'publish'}],
+                        integration_retries=[{'outcome':'blocked'}],
+                        checkout_inspection=[{'path':'board'}],
+                        intervening_changes=[{'path':'runtime'}],
+                        pin_update_history=[{'status':'complete'}])
+        for item in [run, *run['repositories']]:
+            item.update(copy.deepcopy(retained))
         adopt(todo, run)
+        archived = run['scope_attempts'][0]
+        for current, previous in zip([run, *run['repositories']], [archived, *archived['repositories']]):
+            for key, value in retained.items():
+                self.assertNotIn(key, current)
+                self.assertEqual(previous[key], value)
         self.assertEqual([r['scope'] for r in run['repositories']], [scope_digest(todo)] * 2)
         self.assertTrue(all('verification' not in r and 'commit' not in r for r in run['repositories']))
         self.assertEqual(run['scope_attempts'][0]['repositories'][1]['commit'], 'old')

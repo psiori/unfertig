@@ -34,6 +34,8 @@ def settings(value, base, processing, mode):
     result = dict(enabled=False, automatic=False, automatic_since='', repository='', base_branch='main',
                   test=[], preview=[], preview_url='', restart=[], timeout_seconds=3600, max_workers=4, after_publish=[], automatic_merge=False, automatic_publish=False, automatic_deploy=False)
     result.update(value)
+    from relaxed_integration import settings as integration_settings
+    result['integration'] = integration_settings(result.get('integration', {}))
     for key in ('enabled', 'automatic', 'automatic_merge', 'automatic_publish', 'automatic_deploy'):
         if type(result[key]) is not bool:
             raise ValueError(f'workflow.{key} must be boolean.')
@@ -813,19 +815,7 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                     if action == 'recover':
                         self.recover_deployment(ident, run, integration_lock)
                     else:
-                        seen = set()
-                        while True:
-                            try:
-                                self.integrate_and_deploy(ident, run, integration_lock, migrate=action == 'migrate')
-                                break
-                            except StaleCandidate:
-                                state = (self.git('rev-parse', 'HEAD^{tree}'), self.git('rev-parse', 'origin/'+self.options['base_branch']+'^{tree}'),
-                                         json.dumps(self.pr_state(run), sort_keys=True))
-                                if state in seen or action == 'migrate':
-                                    raise
-                                seen.add(state)
-                                run.update(message='Main changed; retaining evidence and rebuilding against fresh main.')
-                                self.save(ident, run)
+                        self.integrate_with_retry(ident, run, integration_lock, migrate=action == 'migrate')
                 return
             fields = dict(commit_hash=run.get('commit', ''))
             if run['phase'] == 'done':
@@ -924,8 +914,38 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
         source = (candidate/'versions.py').read_text() if (candidate/'versions.py').is_file() else ''
         return migration_issues(source, parents)
 
+    def integrate_with_retry(self, ident, run, integration_lock, migrate=False):
+        from relaxed_integration import settings as integration_settings
+        policy = integration_settings(self.options.get('integration', {}))
+        seen = set()
+        for attempt in range(1, policy['max_attempts'] + 1):
+            try:
+                self.integrate_and_deploy(ident, run, integration_lock, migrate=migrate)
+                return
+            except StaleCandidate as error:
+                state = (self.git('rev-parse', self.options['base_branch']+'^{tree}'),
+                         self.git('rev-parse', 'origin/'+self.options['base_branch']+'^{tree}'),
+                         json.dumps(self.pr_state(run), sort_keys=True))
+                stopped = (state in seen or attempt == policy['max_attempts'] or migrate
+                           or (policy['mode'] == 'relaxed' and not policy['automatic_repair']))
+                run.setdefault('integration_retries', []).append(dict(attempt=attempt,
+                    state=list(state), message=str(error), outcome='blocked' if stopped else 'rebuilding'))
+                run['message'] = ('Integration retry stopped (limit, no progress, or automatic repair disabled). '
+                                  'Retained candidates and evidence; review and explicitly retry. ' if stopped else
+                                  'Main changed; retaining evidence and rebuilding against fresh main. ') + str(error)
+                with self.lock:
+                    if ident in self.live:
+                        self.live[ident]['message'] = run['message']
+                self.save(ident, run)
+                if stopped:
+                    raise Conflict(run['message']) from error
+                seen.add(state)
+
     def integrate_and_deploy(self, ident, run, integration_lock, migrate=False):
-        """Repository lock spans candidate validation, exact publication and launch."""
+        """Repository lock spans candidate validation and exact publication."""
+        if self.options.get('integration', {}).get('mode') == 'relaxed' and not migrate:
+            from relaxed_integration import integrate
+            return integrate(self, ident, run)
         if not run.get('pr_url'):
             todo = next(t for t in self.snapshot()['data']['todos'] if t['id'] == ident)
             self.ensure_pr(todo, run)
@@ -1077,7 +1097,10 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
         from post_publish import events
         self.stop_preview(ident)
         run.update(phase='done', completion_boundary='publication',
-                   message='All changed repositories merged, checked and pushed.')
+                   message='All changed repositories merged, checked and pushed.' +
+                   (' Shared-checkout synchronization deferred; inspect repository evidence.'
+                    if run.get('checkout_sync', {}).get('status') == 'deferred' or any(
+                        r.get('checkout_sync', {}).get('status') == 'deferred' for r in run.get('repositories', [])) else ''))
         run['post_publish'] = events(self, run)
         self.save(ident, run, status='closed', closed_by='Codex',
                   date_closed=datetime.now(timezone.utc).isoformat(),

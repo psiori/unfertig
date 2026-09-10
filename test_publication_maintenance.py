@@ -149,7 +149,8 @@ class PublicationMaintenanceTests(unittest.TestCase):
         self.assertEqual(result['workflow'],value['workflow'])
         self.assertEqual(migrate(result,'todo'),result)
         explicit=dict(format_version='1.19.0',workflow=dict(after_publish=[{'extension':'preserve'}],restart=['old'],max_workers=4))
-        self.assertEqual(migrate(explicit,'config')['workflow'],explicit['workflow'])
+        from relaxed_integration import DEFAULTS
+        self.assertEqual(migrate(explicit,'config')['workflow'],dict(explicit['workflow'], integration=DEFAULTS))
         self.assertEqual(inspect(result,supported='1.19.0')[0],'read_only')
 
     def test_github_lag_is_confirmed_without_duplicate_push(self):

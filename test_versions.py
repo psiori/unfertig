@@ -110,6 +110,55 @@ class VersionTests(unittest.TestCase):
         saved = self.files(); self.store.initialize(); self.assertEqual(self.files(),saved)
         self.assertEqual(self.store.mutate(request)['data']['todos'][0], before)
 
+    def test_published_scope_step_precedes_integration_policy_defaults(self):
+        from versions import MIGRATIONS, saved_scope_format, relaxed_integration_format
+        self.assertIs(MIGRATIONS['1.21.0'], saved_scope_format)
+        self.assertIs(MIGRATIONS['1.22.0'], relaxed_integration_format)
+        published = saved_scope_format({'format_version':'1.21.0'}, 'config')
+        self.assertEqual(published['format_version'], '1.22.0')
+        self.assertNotIn('integration', published['workflow'])
+        upgraded = migrate(published, 'config')
+        self.assertEqual(upgraded['workflow']['integration'], {
+            'mode':'strict', 'automatic_repair':False,
+            'max_attempts':3, 'reuse_board_metadata':False})
+        self.assertEqual(upgraded['workflow']['max_workers'], published['workflow']['max_workers'])
+        self.assertEqual(inspect(upgraded, supported='1.22.0')[0], 'read_only')
+        for kind in ('todo', 'receipt'):
+            original = dict(format_version='1.22.0', execution_profile='auto',
+                            scope_authorizations=[{'extension':'preserved'}],
+                            workflow={'scope_attempts':[{'old':'evidence'}]},
+                            request_id='retained', fingerprint='unchanged', extension=[1])
+            with self.subTest(kind=kind):
+                upgraded = migrate(original, kind)
+                self.assertEqual(semantic(upgraded), semantic(original))
+                self.assertEqual(migrate(upgraded, kind), upgraded)
+                self.assertEqual(original['format_version'], '1.22.0')
+
+    def test_relaxed_integration_config_recovery_preserves_explicit_values_and_receipts(self):
+        self.store.initialize()
+        old = json.loads(self.config.read_text())
+        old.update(format_version='1.22.0', workflow={'integration': {'mode':'relaxed', 'automatic_repair':True, 'extension':[1]}})
+        self.write(self.config, old)
+        receipt = dict(format_version='1.22.0', request_id='b'*16, fingerprint='unchanged', assigned=[])
+        receipt_path = self.store.receipts / ('b'*16+'.json')
+        self.write(receipt_path, receipt)
+        before_ideas = self.store.read()[0]['ideas']
+        atomic = storage.atomic
+        def interrupt(path, raw):
+            if path.resolve() == self.config.resolve():
+                raise OSError('Interrupted integration policy migration')
+            return atomic(path, raw)
+        with patch('storage.atomic', side_effect=interrupt), self.assertRaises(OSError):
+            self.store.initialize()
+        self.assertEqual(json.loads(self.config.read_text()), old)
+        self.assertTrue(self.store.journal.exists())
+        self.store.initialize()
+        self.assertEqual(json.loads(self.config.read_text())['workflow']['integration'],
+                         {'mode':'relaxed', 'automatic_repair':True, 'max_attempts':3, 'reuse_board_metadata':False, 'extension':[1]})
+        self.assertEqual(semantic(json.loads(receipt_path.read_text())), semantic(receipt))
+        self.assertEqual(self.store.read()[0]['ideas'], before_ideas)
+        before=self.files();self.store.initialize();self.assertEqual(self.files(),before)
+
     def test_sequential_legacy_migration_and_defaults(self):
         original = fixture()['todos'][0]
         partial = copy.deepcopy(original)
@@ -144,7 +193,7 @@ class VersionTests(unittest.TestCase):
             self.assertEqual(result['search_paths'], patterns or [])
             self.assertEqual(result['extension'], config['extension'])
             self.assertEqual(inspect(result, supported='1.10.0')[0], 'read_only')
-            self.assertEqual(migrate(result, 'config'), dict(result, format_version=FORMAT_VERSION, workflow={'max_workers':4,'after_publish':[]}, processing={'context_sources':{}}))
+            self.assertEqual(migrate(result, 'config'), dict(result, format_version=FORMAT_VERSION, workflow={'max_workers':4,'after_publish':[],'integration':{'mode':'strict','automatic_repair':False,'max_attempts':3,'reuse_board_metadata':False}}, processing={'context_sources':{}}))
 
     def test_discovery_migration_interruption_retains_config_and_receipt(self):
         self.store.initialize()
@@ -180,10 +229,10 @@ class VersionTests(unittest.TestCase):
 
     def test_mixed_supported_versions_and_future_build(self):
         data = json.loads(self.todo.read_text()); data['format_version']='1.0.0'; self.write(self.todo,data)
-        header = json.loads(self.path.read_text()); header['format_version']='1.22.9'; self.write(self.path,header)
+        header = json.loads(self.path.read_text()); header['format_version']='1.23.9'; self.write(self.path,header)
         self.store.initialize()
         self.assertEqual(json.loads(self.todo.read_text())['format_version'],FORMAT_VERSION)
-        self.assertEqual(json.loads(self.path.read_text())['format_version'],'1.22.9')
+        self.assertEqual(json.loads(self.path.read_text())['format_version'],'1.23.9')
         self.assertFalse(self.store.snapshot()['compatibility']['read_only'])
         self.assertTrue(self.store.snapshot()['compatibility']['warnings'])
 
@@ -203,7 +252,7 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.files(),originals)
 
     def test_future_minor_read_only_preserves_mixed_old_bytes(self):
-        data = json.loads(self.todo.read_text()); data['format_version']='1.23.0'; self.write(self.todo,data)
+        data = json.loads(self.todo.read_text()); data['format_version']='1.24.0'; self.write(self.todo,data)
         before = self.files(); self.store.initialize()
         snap = self.store.snapshot()
         self.assertTrue(snap['compatibility']['read_only'])
@@ -212,7 +261,7 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.files(),before)
 
     def test_future_build_edit_preserves_unknown_fields_and_version(self):
-        data = json.loads(self.todo.read_text()); data.update(format_version='1.22.42', extension={'nested':[1,2]})
+        data = json.loads(self.todo.read_text()); data.update(format_version='1.23.42', extension={'nested':[1,2]})
         self.write(self.todo,data); self.store.initialize()
         request = self.edit(name='Changed')
         request['changes'][0]['record'].pop('extension')
@@ -220,7 +269,7 @@ class VersionTests(unittest.TestCase):
         self.store.mutate(request)
         saved = json.loads(self.todo.read_text())
         self.assertEqual(saved['extension'],data['extension'])
-        self.assertEqual(saved['format_version'],'1.22.42')
+        self.assertEqual(saved['format_version'],'1.23.42')
         request = self.edit(format_version='1.1.0')
         with self.assertRaisesRegex(VersionError,'downgrade'): self.store.mutate(request)
 
@@ -231,7 +280,7 @@ class VersionTests(unittest.TestCase):
         result = self.store.mutate(dict(actor='Codex', request_id=uuid.uuid4().hex,
             changes=[dict(collection='todos', id=None, record=todo)]))
         self.assertEqual(result['data']['todos'][-1]['effort'], 'medium')
-        future = dict(result['data']['todos'][0], format_version='1.23.0', effort='future')
+        future = dict(result['data']['todos'][0], format_version='1.24.0', effort='future')
         self.write(self.todo, future)
         before = self.files(); self.store.initialize()
         snapshot = self.store.snapshot()

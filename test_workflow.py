@@ -323,7 +323,7 @@ class WorkflowTests(unittest.TestCase):
         for value in ('true', 1, None):
             with self.assertRaises(ValueError):settings({'enabled':value},self.root,self.processing,'embedded')
         migrated=migrate({'format_version':'1.5.0','workflow':{'automatic':True,'extension':42}},'config')
-        self.assertEqual(migrated['workflow'],{'enabled':False,'automatic':True,'extension':42,'max_workers':4,'automatic_merge':False,'automatic_publish':False,'automatic_deploy':False,'after_publish':[]})
+        self.assertEqual(migrated['workflow'],{'enabled':False,'automatic':True,'extension':42,'max_workers':4,'automatic_merge':False,'automatic_publish':False,'automatic_deploy':False,'after_publish':[],'integration':{'mode':'strict','automatic_repair':False,'max_attempts':3,'reuse_board_metadata':False}})
         self.assertEqual(migrate(migrated,'config'),migrated)
         self.assertFalse(settings(migrated['workflow'],self.root,self.processing,'embedded')['automatic'])
         self.assertFalse(settings({'enabled':True},self.root,self.processing,'aggregation')['enabled'])
@@ -772,7 +772,7 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
         path = self.await_receipt(todo['id'])
         valid = json.loads(path.read_text())
         for receipt, reason in [('interrupted JSON', 'pending'),
-                                (json.dumps(dict(valid, format_version='1.23.0')), 'too old'),
+                                (json.dumps(dict(valid, format_version='1.24.0')), 'too old'),
                                 (json.dumps(dict(valid, commit='0'*40)), 'different candidate'),
                                 (json.dumps(dict(valid, ok='true')), 'incomplete')]:
             path.write_text(receipt)

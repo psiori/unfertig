@@ -324,3 +324,11 @@ Repository preparation has a distinct busy diagnostic. Pre-launch lock contentio
 retains the queue and retries with 1–30 second exponential backoff; restart retains
 the queue and resets the in-memory delay. Each repository lock wait stays bounded
 at three seconds. Active workers still use independent worktrees and capacity slots.
+
+Storage 1.23 integration policy resolves through the common configuration path.
+Owner-local integration records exact push intent, test/equivalence evidence,
+retry history and separate checkout synchronization in protected workflow claims,
+including per-repository results. Both adapters preserve those claims through
+ordinary edits, receipt replay and transport switching; neither permits forging
+publication or repair. Filesystem discovery never executes repair, initializes a
+dependency or migrates a source. Existing writer/version/recovery guards apply.

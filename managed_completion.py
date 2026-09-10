@@ -38,6 +38,8 @@ def read_report(run):
 def validate(run):
     from context_workflow import validate as validate_context
     validate_context(run)
+    from relaxed_integration import validate as validate_integration
+    validate_integration(run)
     from post_publish import validate as validate_hooks
     if 'post_publish' in run:
         validate_hooks(run['post_publish'])

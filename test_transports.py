@@ -516,7 +516,12 @@ class Conformance:
                          message='Retained resolution evidence', conflicted_paths=['versions.py'],
                          queued_at='2026-09-08T00:00:00Z', action_requests={'original':'scope'},
                          git_diagnostics=dict(stdout='CONFLICT', stderr='Recorded preimage'),
-                         integration_attempt=dict(main='a'*40, remote='d'*40))
+                         integration_attempt=dict(main='a'*40, remote='d'*40),
+                         integration_evidence=dict(tested_commit='a'*40, final_commit='b'*40, implementation='e'*40,
+                             command='f'*64, scope='1'*64, metadata=[dict(path='todos/T0002.json',classification='board_metadata')]),
+                         integration_publication=dict(status='pending',commit='b'*40),
+                         checkout_sync=dict(status='deferred',commit='b'*40,message='Staged work retained'),
+                         integration_retries=[dict(attempt=1,outcome='blocked')])
             self.alpha.mutate(dict(actor='Codex', request_id=uuid.uuid4().hex, changes=[dict(
                 collection='todos', id=old['id'], revision=digest(old), record=dict(old, workflow=claim))]), workflow=True)
             current = self.router.inspect_source(source)
@@ -544,7 +549,12 @@ class Conformance:
                          message='Retained resolution evidence', conflicted_paths=['versions.py'],
                          queued_at='2026-09-08T00:00:00Z', action_requests={'original':'scope'},
                          git_diagnostics=dict(stdout='CONFLICT', stderr='Recorded preimage'),
-                         integration_attempt=dict(main='a'*40, remote='d'*40))
+                         integration_attempt=dict(main='a'*40, remote='d'*40),
+                         integration_evidence=dict(tested_commit='a'*40, final_commit='b'*40, implementation='e'*40,
+                             command='f'*64, scope='1'*64, metadata=[dict(path='todos/T0002.json',classification='board_metadata')]),
+                         integration_publication=dict(status='pending',commit='b'*40),
+                         checkout_sync=dict(status='deferred',commit='b'*40,message='Staged work retained'),
+                         integration_retries=[dict(attempt=1,outcome='blocked')])
             claim.update(implementation=dict(status='complete',commit='e'*40), publication=dict(status='blocked',commit='e'*40,message='Approval pending'), verification=dict(status='pending'), approval=dict(status='blocked',message='Owner review required'), worker_report={'status':'needs_attention'}, handoff_history=[{'message':'Original failure'}])
             claim['external_completions'] = [dict(actor='SL', reason='Replacement work', at='2026-09-08T12:00:00Z', outcome='superseded', evidence=dict(integration=dict(status='unverified', commit='', message='Missing PR'), deployment=dict(status='unverified', commit='', message='Missing deployment')))]
             self.alpha.mutate(dict(actor='Codex', request_id=uuid.uuid4().hex, changes=[dict(

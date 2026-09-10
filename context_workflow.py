@@ -11,6 +11,9 @@ from efforts import briefing as effort_briefing
 import json
 import re
 import threading
+import os
+import subprocess
+import tempfile
 from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
@@ -152,6 +155,7 @@ def facade(w, run, item, ident):
     """Reuse the exact-candidate integration engine without conflating run state."""
     proxy = copy.copy(w)
     proxy.metrics_run = run
+    proxy.context_owner = w
     proxy.options = {**w.options, 'test':[], 'preview':[], 'restart':[], 'base_branch':'main','preview_url':'',
                      **item['recipe'], 'repository':item['repository']}
     proxy.save = lambda _ident, _item, **fields: w.save(ident, run)
@@ -159,7 +163,7 @@ def facade(w, run, item, ident):
     proxy.complete_publication = lambda *args, **kwargs: None
     original_git = proxy.git
     def git(*args, cwd=None):
-        if item['role']=='context' and args and args[0]=='status':
+        if item['role']=='context' and args and args[0]=='status' and w.options.get('integration', {}).get('mode') != 'relaxed':
             args=(*args,'--ignore-submodules=all')
         return original_git(*args,cwd=cwd)
     proxy.git=git
@@ -381,19 +385,65 @@ Return a JSON object with status complete or needs_attention, summary, tests and
 def update_pins(w, todo, run):
     context=next(r for r in run['repositories'] if r['role']=='context')
     p=facade(w,run,context,todo['id'])
-    changed=False
+    cwd=context['worktree']
+    if p.git('branch','--show-current',cwd=cwd)!=context['branch']:
+        raise Conflict('Context worktree left its assigned branch; review before generating pins.')
+    # Generate only declared, confirmed child pins. A temporary index prevents
+    # unrelated staging (including concurrent staging) from entering this commit.
+    pins={}
     for child in run['repositories']:
         if child['role']!='project' or not child.get('published_commit') or child['declared_path']=='..':continue
-        tracked=p.git('ls-tree','HEAD','--',child['declared_path'],cwd=context['worktree'])
-        if tracked.startswith('160000 '):
-            old=tracked.split()[2]
-            if old!=child['published_commit']:
-                p.git('update-index','--cacheinfo','160000,'+child['published_commit']+','+child['declared_path'],cwd=context['worktree'])
-                changed=True
-    if changed:
-        p.git('commit','-m','Pin published task repositories for '+todo['id'],cwd=context['worktree'])
-        context.update(commit=p.git('rev-parse','HEAD',cwd=context['worktree']),changed=True)
-        w.save(todo['id'],run)  # Save the intended pin HEAD before any network operation.
+        name=child['declared_path']
+        tracked=p.git('ls-tree','HEAD','--',name,cwd=cwd)
+        if tracked.startswith('160000 ') and tracked.split()[2]!=child['published_commit']:
+            pins[name]=child['published_commit']
+    pending=context.get('pin_update', {})
+    if pending.get('status')=='pending':
+        # A crash after commit but before index synchronization must not leave
+        # old staged pins blocking every replay. Only the recorded exact tree
+        # and parent can satisfy this generated-commit intent.
+        head=p.git('rev-parse','HEAD',cwd=cwd)
+        if head!=pending['base']:
+            if (p.git('rev-parse','HEAD^{tree}',cwd=cwd)!=pending['tree'] or
+                    p.git('rev-list','--parents','-n','1','HEAD',cwd=cwd).split()!=[head,pending['base']]):
+                raise Conflict('Retained pin generation differs from its recorded tree/parent; review before retry.')
+            context.update(commit=head,changed=True)
+            synchronize_pin_index(p,context,pending)
+            w.save(todo['id'],run)
+            pins={}
+        else:
+            if pins!=pending['pins']:
+                raise Conflict('Published child pins changed during interrupted pin generation; review the retained intent.')
+    if pins:
+        if (p.git('diff','--cached','--name-only',cwd=cwd) or
+                p.git('diff','--name-only','--ignore-submodules=all',cwd=cwd) or
+                p.git('ls-files','--others','--exclude-standard',cwd=cwd)):
+            raise Conflict('Context worktree has edits; preserve them and review before generating published child pins.')
+        original={name:p.git('ls-files','--stage','--',name,cwd=cwd) for name in pins}
+        with tempfile.TemporaryDirectory(prefix='unfertig-pin-index-') as directory:
+            env=dict(os.environ, GIT_INDEX_FILE=str(Path(directory)/'index'))
+            def git(*args):
+                result=subprocess.run(['git','-C',cwd,*args],env=env,capture_output=True,text=True,timeout=120)
+                if result.returncode:
+                    from integration import GitFailure
+                    raise GitFailure(args,result)
+                return result.stdout.strip()
+            git('read-tree','HEAD')
+            for name,commit in pins.items():git('update-index','--cacheinfo','160000,'+commit+','+name)
+            plan=dict(status='pending',base=p.git('rev-parse','HEAD',cwd=cwd),tree=git('write-tree'),pins=pins,index=original)
+            if context.get('pin_update') and context['pin_update']!=plan:
+                context.setdefault('pin_update_history',[]).append(context['pin_update'])
+            context['pin_update']=plan
+            w.save(todo['id'],run)
+            generated=git('commit-tree',plan['tree'],'-p',plan['base'],'-m','Pin published task repositories for '+todo['id'])
+            # Compare-and-swap the assigned branch; never overwrite a concurrent
+            # commit or attach the generated tree to a different parent.
+            p.git('update-ref','refs/heads/'+context['branch'],generated,plan['base'],cwd=cwd)
+        context.update(commit=p.git('rev-parse','HEAD',cwd=cwd),changed=True)
+        if p.git('rev-parse','HEAD^{tree}',cwd=cwd)!=plan['tree']:
+            raise Conflict('Generated pin commit changed unexpectedly; retain the intent and inspect hooks before retry.')
+        synchronize_pin_index(p,context,plan)
+        w.save(todo['id'],run)
     if context.get('changed') and not context.get('published_commit'):
         # Resume publication even when a previous attempt already committed the pin.
         if context.get('pr_url'):p.publish_checkpoint(context)
@@ -401,9 +451,22 @@ def update_pins(w, todo, run):
         w.save(todo['id'],run)
 
 
+def synchronize_pin_index(p, context, plan):
+    if p.git('branch','--show-current',cwd=context['worktree'])!=context['branch']:
+        raise Conflict('Context branch changed during pin generation; index synchronization deferred.')
+    for name,commit in plan['pins'].items():
+        current=p.git('ls-files','--stage','--',name,cwd=context['worktree'])
+        desired='160000 '+commit+' 0\t'+name
+        if current==desired:
+            continue
+        if current!=plan['index'][name]:
+            raise Conflict('Context index changed during pin generation; generated commit retained, staged work preserved.')
+        p.git('update-index','--cacheinfo','160000,'+commit+','+name,cwd=context['worktree'])
+    plan['status']='complete'
+
+
 def integrate(w, todo, run, action):
     from workflow import scope_digest
-    from integration import StaleCandidate
     ident=todo['id'];guard(w,run)
     entries=[r for r in run['repositories'] if r['available']]
     primary=next(r for r in entries if r['repository']==run['repository'])
@@ -426,15 +489,7 @@ def integrate(w, todo, run, action):
             if scope_digest(current)!=run['scope']:raise Conflict('Task scope changed during multi-repository integration.')
             # The reusable engine handles current PR state (including squash
             # merges), retained conflict resolution, tests and stale main.
-            seen=set()
-            while True:
-                try:
-                    p.integrate_and_deploy(ident,item,locks[item['id']])
-                    break
-                except StaleCandidate:
-                    state=(p.git('rev-parse','HEAD'),p.git('rev-parse','origin/'+p.options['base_branch']))
-                    if state in seen:raise
-                    seen.add(state)
+            p.integrate_with_retry(ident,item,locks[item['id']])
             if not item.get('published_commit'):
                 raise Conflict('Repository publication remains incomplete: '+item['id'])
             w.save(ident,run)

@@ -937,3 +937,73 @@ an input to board migrations. Invalid or unsupported cache envelopes are reset;
 unknown cache fields are ignored. If browser storage is blocked/full, controls
 still work, but reload persistence is unavailable. No task status or stored record
 changes when selecting or restoring a view.
+
+### Host integration policy (storage 1.23)
+
+`workflow.integration` defaults to strict mode. To opt into isolated publication
+and bounded automatic repair, set this in the host's local configuration override
+(for UM, `state/local/unfertig/config/config.json`), then restart through the host:
+
+```json
+{
+  "workflow": {
+    "integration": {
+      "mode": "relaxed",
+      "automatic_repair": true,
+      "max_attempts": 3,
+      "reuse_board_metadata": false
+    }
+  }
+}
+```
+
+`mode` accepts `strict` or `relaxed`; strict retains the clean target/base-branch
+requirement. `automatic_repair` defaults to false. It enables fresh candidate
+rebuilds after main advances and an optional clean shared-checkout fast-forward.
+`max_attempts` is 1–10 (default 3), per authorized action and repository; repeated
+states stop earlier. An explicit retry starts a fresh bounded attempt and keeps
+previous evidence. These settings grant no implementation, merge or push authority.
+
+Relaxed mode inspects staged and unstaged changes, intermediate commits and the
+commits behind submodule pins. Only validated records from this instance's board
+can be classified as unrelated metadata; task scope, prerequisites and linked
+originals remain protected. Unknown content, documentation, configuration and
+runtime changes are relevant. Committed relevant changes require combined tests;
+uncommitted relevant or unclassified changes block with paths and instructions.
+No filename extension alone proves independence. New/deleted pins, unavailable
+objects, non-forward pin history and inspection limits remain conservative blockers
+when independence is needed. History inspection is bounded to 256 commits per
+comparison, 512 changed entries per inspection and four dependency levels.
+
+All tests run on an isolated candidate, with exact pinned dependencies in detached
+worktrees created from already initialized local repositories. Missing objects
+require the owner to prepare the dependency and retry; integration never initializes
+or fetches an undeclared repository. Relevant remote advances and non-fast-forward
+pushes rebuild and retest. A push with an uncertain acknowledgement is checked
+against the fetched destination before another push; authentication, protection,
+conflicts and lack of progress remain actionable blockers. Resolve and commit a
+substantive conflict in the retained candidate, then explicitly retry for fresh
+combined checks. There is no automatic semantic conflict resolver in relaxed mode.
+
+`reuse_board_metadata:true` is a separate host declaration that the configured
+checks do not depend on board bookkeeping or unrelated records. Enable it only
+with that test contract. It permits conflict-free metadata arriving after checks
+to join the candidate without repeating those checks. Task/dependency/original
+content and every resulting tree difference are still checked. Otherwise remote
+movement rebuilds and retests; later local metadata remains safely in its original
+checkout while the exact tested candidate publishes. The evidence always labels
+`integration_tested_commit`, final `integration_commit` and `published_commit`
+separately. No untested revision is presented as the tested revision.
+
+Publication uses ordinary pushes from the isolated candidate. Shared-checkout
+synchronization is a separate result (`checkout_sync`): only a clean checkout on
+the configured branch can fast-forward, without recursive runtime updates. Dirty,
+divergent or differently checked-out work stays in place; publication can finish
+with synchronization deferred. No stash, reset, force push or arbitrary user-edit
+commit is performed. The ticket message, repository rows and full evidence retain
+repair attempts, changed paths, diagnostics, tested/final revisions and blockers.
+Child repositories publish before context pins. Exact confirmed child revisions
+are recognized when synchronization leaves the parent gitlink dirty. Pin commits
+use a temporary index and a retained tree/parent intent, so unrelated staging is
+excluded and interrupted index synchronization can resume. Partial publication
+and interrupted push intents survive restart. Instance updates/restarts remain separate.

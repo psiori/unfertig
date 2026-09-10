@@ -127,3 +127,15 @@ suite_runner.py --javascript`. Host tests copy only reusable scripts into tempor
 repositories and exercise real supervisor drain/install/start, request coalescing,
 stale acknowledgements and crash recovery. Every format-changing release also
 maintains HTTP/filesystem conformance and supported migration/recovery tests.
+
+## Relaxed integration and deferred checkout synchronization
+
+Hosts may opt into `workflow.integration` as documented in README.md. Verified
+main publication is independent of shared-checkout synchronization: staged,
+unstaged and nested board history stay with their owner. A deferred sync is a
+maintenance observation, not a failed publication or a request to reset/stash.
+Detached candidate dependency worktrees never replace installed runtime files.
+Use the retained tested/final/published revisions and exact push intent for
+recovery. Only explicit metadata-equivalence configuration permits a tested and
+final revision to differ. Install/update/startup continues to trust published
+main and retains its existing backup, compatibility and migration guards.

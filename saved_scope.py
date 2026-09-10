@@ -70,7 +70,10 @@ def adopt(todo, run):
                     'merge_commit', 'integration_commit', 'integration_tested_commit',
                     'github_merge_commit', 'deployment_commit', 'post_publish',
                     'completion_boundary', 'integration_attempt', 'integration_worktree',
-                    'integration_branch'):
+                    'integration_branch', 'integration_evidence', 'integration_publication',
+                    'integration_repairs', 'integration_retries', 'checkout_sync',
+                    'checkout_inspection', 'intervening_changes', 'pin_update',
+                    'pin_update_history'):
             item.pop(key, None)
     run.update(phase='implementation_failed', message=MESSAGE)
     return True

@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.22.0`.
+`format_version` is a major.minor.build string. Current storage is `1.23.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -403,3 +403,30 @@ but cannot create, change or remove grants. Changed runs archive their previous
 scope and evidence in `workflow.scope_attempts`; all repository scope/check state
 changes together. Retained process receipts are copied before their next use.
 No repository declaration, publication or deployment grant is created by a save.
+
+## Storage 1.23.0 — host integration policy and repair evidence
+
+Sequential 1.22→1.23 preserves earlier useful defaults and adds missing config
+`workflow.integration` values: `mode:strict`, `automatic_repair:false`,
+`max_attempts:3`, `reuse_board_metadata:false`. Explicit values and extensions
+survive; invalid values remain validation errors. No authorization, successful
+check, repair, synchronization or publication is inferred for historical runs.
+
+Protected workflow evidence adds `integration_evidence` (actual tested revision,
+final revision, recipe identity, scope, implementation and classified changes),
+`integration_publication` (pending/confirmed exact push intent), `checkout_sync`
+(deferred/synchronized), inspections and append-only repair/retry observations.
+Per-repository results use the same fields. `pin_update` retains pending/complete
+generated-pin intent with an exact base, tree, pins and original index entries;
+replay reconciles only that intent and preserves other staging. Confirmation can recover an uncertain
+push without reexecuting it, after current authority, PR, task, recipe, ancestry
+and evidence checks. `integration_tested_commit` remains the revision actually
+executed by the checks even when explicit metadata equivalence permits a later
+final revision. Restart never silently restarts a worker or waives owner retry.
+
+Older minor writers become read-only; protocol remains 2.0.0. HTTP/filesystem
+validation and protected-claim preservation use the same backend. Automatic
+startup performs the deterministic migration under the existing writer lock,
+backup, compatibility, journal/history recovery and receipt-identity contract.
+Tests cover all supported starting versions, explicit/default/invalid settings,
+extensions, original records, interrupted configuration writes and idempotence.
