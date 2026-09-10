@@ -36,6 +36,12 @@
         const row = document.createElement('li');
         if (state.supported && state.update_action?.available && !request.state && !state.pending && !updateActive) {
           const update = document.createElement('button'); update.type = 'button'; update.textContent = 'Update & restart';
+          const consent = document.createElement('input'); consent.type = 'checkbox';
+          if (state.update_action.recovery_available) {
+            const label = document.createElement('label');
+            label.append(consent, document.createTextNode(' Allow one Codex repair attempt if the update fails'));
+            row.append(label);
+          }
           update.disabled = submitting;
           update.addEventListener('click', async () => {
             if (submitting) return;
@@ -46,7 +52,7 @@
               const board = await boardResponse.json();
               const result = await fetch('/api/maintenance', {method:'PUT', signal:AbortSignal.timeout(15000),
                 headers:{'Content-Type':'application/json','X-Board-Token':board.token},
-                body:JSON.stringify({action:'update_restart',target_commit:state.currency.target_commit})});
+                body:JSON.stringify({action:'update_restart',target_commit:state.currency.target_commit,allow_codex_recovery:consent.checked === true})});
               if (!result.ok) throw Error((await result.json()).error || 'Update request failed.');
               last = '';
               message.textContent = 'Update requested; waiting for the host to confirm installation and startup.';

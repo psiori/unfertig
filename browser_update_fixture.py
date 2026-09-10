@@ -13,14 +13,14 @@ def verify(output):
         html = Path(temporary) / 'index.html'
         fixture = r'''
 const state={phase:'idle',pending:false,supported:true,blockers:[],error:'',runtime_commit:'a'.repeat(40),hooks:[],update:{},
- currency:{state:'outdated',target_commit:'b'.repeat(40),message:'A new instance is available.'},update_action:{available:true,request:{}}};
+ currency:{state:'outdated',target_commit:'b'.repeat(40),message:'A new instance is available.'},update_action:{available:true,recovery_available:true,request:{}}};
 let poll, writes=0;
 window.setInterval=f=>poll=f;
 window.fetch=async(url,options)=>{
  if(url==='/api/state') return {ok:true,json:async()=>({token:'fixture'})};
  if(options?.method==='PUT') {
   const body=JSON.parse(options.body);
-  if(body.action!=='update_restart'||body.target_commit!==state.currency.target_commit||options.headers['X-Board-Token']!=='fixture')throw Error('Wrong action');
+  if(body.allow_codex_recovery!==true||body.action!=='update_restart'||body.target_commit!==state.currency.target_commit||options.headers['X-Board-Token']!=='fixture')throw Error('Wrong action');
   writes++;state.update_action.request={id:'fixture',state:'pending'};
  }
  return {ok:true,json:async()=>structuredClone(state)};
@@ -32,6 +32,7 @@ window.fetch=async(url,options)=>{
  await new Promise(resolve=>setTimeout(resolve,20));
  const panel=document.querySelector('.instance-maintenance');panel.open=true;
  const button=panel.querySelector('button');check(button?.textContent==='Update & restart','Missing action');
+ const consent=panel.querySelector('input[type=checkbox]');check(consent&&!consent.checked,'Consent must start unchecked');consent.checked=true;
  button.click();button.click();await new Promise(resolve=>setTimeout(resolve,20));await poll();
  check(writes===1,'Duplicate submission');check(panel.innerText.includes('not yet confirmed'),'Acceptance reported as installation');
  state.pending=true;state.phase='draining';state.blockers=['Task T2 is running'];await poll();

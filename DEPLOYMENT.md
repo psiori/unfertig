@@ -163,7 +163,25 @@ exit before installation. UI progress distinguishes request acceptance, drain,
 installation/startup failure and confirmed running currency. If the service stays
 stopped, the browser reports reconnecting; inspect host status/startup logs.
 
-Codex recovery is not implemented by this application-side action. Recovery that
-must survive a stopped app requires a host supervisor integration; the application
-cannot substitute a detached writer or bypass host installation guards. Ordinary
-successful updates remain independent of Codex.
+A supporting running host advertises recovery protocol 1. When Codex is available,
+the action offers an unchecked opt-in to one bounded repair attempt if the
+programmatic update fails. `allow_codex_recovery:true` records consent against that
+exact host event before enqueueing it. Missing/older host support hides the option;
+missing Codex or a failed capability probe never breaks ordinary updates.
+
+The supervisor launches the fallback only after a failed programmatic attempt and
+its own managed child has exited. It retains a schema-1 recovery receipt, agent log
+and final result in `.local/tools/update-recovery/<tool>/`. A successful agent
+report requests one retry of the same failed event through the existing request
+API; only the normal updater/startup checks can report installation success. A
+failed retry does not launch another agent. Missing Codex, launch failure, a
+600-second timeout or an invalid/incomplete result retains failure evidence.
+Retained launching/running receipts without their live supervisor handle are
+uncertain and block automatic recovery, never authorize duplicate launches.
+
+The repair prompt forbids process control, destructive Git operations, publication,
+identity changes, board/configuration edits and bypassing migration/recovery guards.
+If the repair needs those operations, it reports the blocker. Ordinary successful
+updates and routine sequential migrations do not require Codex. Host support must
+be activated in a new supervisor session; deploying the app alone does not enable
+fallback in an older running supervisor. Merge completion remains independent.

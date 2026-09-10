@@ -439,3 +439,12 @@ permission grant or host request field. Request identities and failure evidence
 use the existing host contract; no new format or migration step is needed.
 Existing automatic startup migration, old-writer guards and common transport
 recovery continue unchanged. Codex fallback is not part of this partial action.
+
+
+T0065 recovery consent is optional input to the owner-local maintenance action,
+not a board-record field or a new storage version. Host update requests remain
+schema 1. New separate host recovery receipts start at schema 1 with explicit
+consent, event fingerprint, attempt 0/1, state and outcome; absence means no
+consent. Atomic writes preserve extensions and unknown versions fail closed.
+Interrupted enqueue reuses the retained consent and event without duplication.
+Future host receipt changes require sequential migrations and recovery tests.

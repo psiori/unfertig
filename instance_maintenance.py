@@ -163,7 +163,7 @@ class Maintenance:
                     raise ValueError('Published revision changed or is unconfirmed. Refresh maintenance status.')
                 if self.pending:
                     return self.view()
-                self.updater.submit(target)
+                self.updater.submit(target, body.get("allow_codex_recovery", False))
                 return self.view()
         if body.get('action') != 'retry_hook' or not self.hooks:
             raise ValueError('Choose a failed post-publication hook to retry.')

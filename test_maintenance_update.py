@@ -96,7 +96,7 @@ class UpdateRequestTests(unittest.TestCase):
             maintenance.action(dict(action='update_restart', target_commit='b' * 40))
         maintenance.updater.submit.assert_not_called()
         value = maintenance.action(dict(action='update_restart', target_commit=self.target))
-        maintenance.updater.submit.assert_called_once_with(self.target)
+        maintenance.updater.submit.assert_called_once_with(self.target, False)
         self.assertEqual(value['phase'], 'idle')
         self.assertFalse(value['pending'])
         server.shutdown.assert_not_called()
@@ -111,3 +111,21 @@ class UpdateRequestTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RecoveryConsentTests(UpdateRequestTests):
+    def test_consent_is_explicit_and_running_host_must_support_it(self):
+        with self.assertRaisesRegex(ValueError, 'unavailable'):
+            self.updater.submit(self.target, True)
+        with self.assertRaisesRegex(ValueError, 'boolean'):
+            self.updater.submit(self.target, 'true')
+        with patch.object(self.updater, 'recovery_available', return_value=True), patch('maintenance_update.subprocess.run') as command:
+            command.side_effect=lambda *a,**k:(self.receipt(),SimpleNamespace(returncode=0))[1]
+            self.updater.submit(self.target, True)
+            self.assertIn('--allow-codex-recovery',command.call_args.args[0])
+
+    def test_capability_errors_do_not_break_ordinary_update(self):
+        self.updater.environment['UM_CODEX_RECOVERY_PROTOCOL']='1'
+        for outcome in (SimpleNamespace(returncode=1,stdout=''),SimpleNamespace(returncode=0,stdout='invalid')):
+            with patch('maintenance_update.subprocess.run',return_value=outcome):
+                self.assertFalse(self.updater.recovery_available())

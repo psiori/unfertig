@@ -340,3 +340,10 @@ adds `update_action` with `available`, `reason`, and the retained host `request`
 The existing owner token/local-request checks apply. Filesystem and aggregate
 readers do not launch updates. Board mutations, protected claims, queues and
 HTTP/filesystem receipt semantics remain unchanged.
+
+
+The owner-local update_restart maintenance action accepts optional boolean
+allow_codex_recovery (default false). Recovery support is advertised only by a
+supporting running supervisor and a successful local capability check. This is
+not a BoardStore mutation and is not exposed through filesystem aggregation;
+existing owner token/origin checks and cooperative drain remain required.

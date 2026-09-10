@@ -47,14 +47,29 @@ class UpdateRequest:
             raise ValueError('Invalid retained update request; inspect host evidence before retrying.')
         return value
 
+    def recovery_available(self):
+        if self.environment.get("UM_CODEX_RECOVERY_PROTOCOL") != "1" or not self.availability()[0]:
+            return False
+        try:
+            result = subprocess.run(["sh", str(self.root / "scripts/run_uv.sh"),
+                str(self.root / "scripts/request_tool_update.py"), "--tool", "unfertig", "--capabilities"],
+                cwd=self.root, env=self.environment, capture_output=True, text=True, timeout=5)
+            return result.returncode == 0 and json.loads(result.stdout).get("recovery_available") is True
+        except (OSError, ValueError, AttributeError, subprocess.TimeoutExpired):
+            return False
+
     def view(self, target):
         available, reason = self.availability()
-        result = dict(available=available, reason=reason, request={})
+        result = dict(available=available, reason=reason, request={}, recovery_available=self.recovery_available())
         if available and target:
             result['request'] = self.retained(target)
         return result
 
-    def submit(self, target):
+    def submit(self, target, allow_codex_recovery=False):
+        if type(allow_codex_recovery) is not bool:
+            raise ValueError("Recovery consent must be boolean.")
+        if allow_codex_recovery and not self.recovery_available():
+            raise ValueError("Codex recovery is unavailable on this running host. Update without recovery or activate the supporting supervisor.")
         available, reason = self.availability()
         if not available:
             raise ValueError(reason)
@@ -65,7 +80,8 @@ class UpdateRequest:
         try:
             result = subprocess.run(['sh', str(self.root / 'scripts/run_uv.sh'),
                                      str(self.root / 'scripts/request_tool_update.py'),
-                                     '--tool', 'unfertig', '--event', event],
+                                     '--tool', 'unfertig', '--event', event] +
+                                    (['--allow-codex-recovery'] if allow_codex_recovery else []),
                                     cwd=self.root, env=environment, capture_output=True, text=True, timeout=10)
         except subprocess.TimeoutExpired as error:
             raise ValueError('Update request outcome is uncertain. Retry the same action to inspect its retained request; do not submit a different update.') from error

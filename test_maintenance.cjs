@@ -83,7 +83,7 @@ test('update uses the owner API, prevents repeated clicks, and keeps acceptance 
   assert.equal(button.textContent,'Update & restart');
   const action=button.handlers.click(); await new Promise(setImmediate);
   await button.handlers.click(); assert.equal(writes,1); assert.equal(button.disabled,true);
-  assert.deepEqual(submitted,{body:{action:'update_restart',target_commit:'b'.repeat(40)},token:'owner'});
+  assert.deepEqual(submitted,{body:{action:'update_restart',target_commit:'b'.repeat(40),allow_codex_recovery:false},token:'owner'});
   finish();await action;await poll();
   assert.match(panel.parts.summary.textContent,/update requested/);
   assert.match(panel.parts.p.textContent,/not yet confirmed/);

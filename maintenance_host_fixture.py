@@ -19,7 +19,7 @@ from maintenance_update import UpdateRequest
 def verify(context):
     with tempfile.TemporaryDirectory(prefix='unfertig-host-request-') as temporary:
         root = Path(temporary)
-        for relative in ('scripts/run_uv.sh', 'scripts/request_tool_update.py', 'scripts/tool_restart.py',
+        for relative in ('scripts/run_uv.sh', 'scripts/request_tool_update.py', 'scripts/tool_restart.py', 'scripts/tool_recovery.py', 'scripts/codex_setup.py',
                          'pyproject.toml', 'uv.lock', '.python-version'):
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
