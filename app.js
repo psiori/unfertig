@@ -421,7 +421,7 @@ $('#todos').addEventListener('submit', async event => {
   if (oldStatus === 'closed' && todo.status !== 'closed') todo.completion_summary = '';
   if (todo.status === 'closed' && oldStatus !== 'closed' && !todo.completion_summary.trim()) { toast('Add a completion summary with outcome, verification and limitations.'); return; }
   if (todo.status !== 'closed') { todo.closed_by = ''; todo.date_closed = ''; }
-  if (await save(next)) { form.dataset.dirty = 'false'; draftRevisions.delete(form.dataset.id); renderPreservingDrafts(); toast(todo.status === 'closed' && oldStatus !== 'closed' ? 'One more little win. Nicely done.' : `${todo.id} saved.`); }
+  if (await save(next)) { form.dataset.dirty = 'false'; draftRevisions.delete(form.dataset.id); expanded.delete(todo.id); renderPreservingDrafts(); toast(todo.status === 'closed' && oldStatus !== 'closed' ? 'One more little win. Nicely done.' : `${todo.id} saved.`); }
 });
 // Preserve other inline drafts when one entry is saved or the view changes.
 function renderPreservingDrafts() {
