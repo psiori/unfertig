@@ -206,7 +206,7 @@ async function save(next) {
     const intended = JSON.stringify({changes, actor:actorName}, (key, value) => ['updated_at', 'date_entered', 'date_closed'].includes(key) ? undefined : value);
     if (pendingRequest && pendingRequest.intended !== intended) throw new Error('An earlier save has an uncertain result. Restore that draft and Save again to resolve it before making a different edit. Keep a copy of your new text.');
     if (!pendingRequest) pendingRequest = {intended, body:{protocol_version:'2.0.0', initials:actorName, changes, actor:actorName, request_id:crypto.randomUUID()}};
-    const response = await fetch('/api/changes', {method:'PUT',headers:{'Content-Type':'application/json','X-Board-Token':token},body:JSON.stringify(pendingRequest.body)});
+    const response = await fetch('/api/editor/changes', {method:'PUT',headers:{'Content-Type':'application/json','X-Board-Token':token},body:JSON.stringify(pendingRequest.body)});
     const result = await response.json();
     if (!response.ok) {
       if (response.status === 409) {

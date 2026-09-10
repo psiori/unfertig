@@ -20,7 +20,7 @@ def advice(*roles):
 def task_input(todo):
     # Preserve all task fields/extensions. Workflow receipts are coordinator
     # evidence, available on demand; they are not part of the requested task.
-    return json.dumps({k: v for k, v in todo.items() if k != 'workflow'})
+    return json.dumps({k: v for k, v in todo.items() if k not in ('workflow', 'scope_authorizations')})
 
 
 def context_guide(root, developer, todo=None, *, role='implementation', sources=None, process=None):

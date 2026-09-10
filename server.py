@@ -76,6 +76,8 @@ def validate(data, previous=None):
                     require(isinstance(item['captured_system'], str) and re.fullmatch(r'[a-f0-9]{64}', item['captured_system']), 'Invalid capturing system.')
                 continue
             inspect(item, f'todo {ident}')
+            from saved_scope import validate as validate_scope
+            validate_scope(item)
             if 'workflow' in item:
                 require(isinstance(item['workflow'], dict), 'workflow must be an object.')
                 for key in ('run_id', 'system', 'repository', 'worktree', 'branch', 'base', 'phase', 'message'):
@@ -329,7 +331,7 @@ class Handler(BaseHTTPRequestHandler):
     def put(self):
         if not self.local_request():
             return
-        if self.path not in ("/api/briefing", "/api/maintenance", "/api/state", "/api/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action', '/api/workflow/merge-batch', '/api/workflow/settings', '/api/settings'):
+        if self.path not in ("/api/briefing", "/api/maintenance", "/api/state", "/api/changes", "/api/editor/changes", "/api/history/retry", "/api/publication/refresh", "/api/publication/push", '/api/routes', '/api/source-record', '/api/source-priority', '/api/processing/start', '/api/processing/presence', '/api/workflow/action', '/api/workflow/merge-batch', '/api/workflow/settings', '/api/settings'):
             self.reply(404, {"error": "Not found."})
             return
         if not secrets.compare_digest(self.headers.get("X-Board-Token", ""), self.server.token):
@@ -411,7 +413,13 @@ class Handler(BaseHTTPRequestHandler):
                         self.server.store.commit_pending()
                         self.reply(200, dict(self.server.store.snapshot(), token=self.server.token))
                 else:
-                    self.reply(200, dict(self.server.store.mutate(body), token=self.server.token))
+                    owner_editor = self.path == '/api/editor/changes'
+                    if owner_editor:
+                        require(self.headers.get('Sec-Fetch-Site') == 'same-origin' and self.headers.get('Sec-Fetch-Mode') == 'cors', 'Owner editor saves require a same-origin browser request.')
+                    from contextlib import nullcontext
+                    with self.server.workflow.lock if owner_editor and self.server.workflow else nullcontext():
+                        result = self.server.store.mutate(body, owner_editor=owner_editor)
+                    self.reply(200, dict(result, token=self.server.token))
             else:
                 revision = self.server.store.save(body.get("data"), body.get("revision"))
                 self.reply(200, {"revision": revision})

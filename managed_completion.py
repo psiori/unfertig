@@ -181,7 +181,8 @@ def finish(w, todo, run):
         raise Conflict('Ticket lifecycle changed during implementation.')
     w.guard_process(run)
     if current['workflow']['scope'] != run['scope'] or scope_digest(current) != run['scope']:
-        raise Conflict('Task scope changed; review required.')
+        from saved_scope import MESSAGE
+        raise Conflict(MESSAGE)
     if w.git('branch','--show-current',cwd=run['worktree']) != run['branch'] or w.git('status','--porcelain',cwd=run['worktree']):
         raise Conflict('Implementation worktree changed or has uncommitted changes.')
     if commit == run.get('kickoff_commit',run['base']):

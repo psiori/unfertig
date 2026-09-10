@@ -772,7 +772,7 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text(json.dumps(dict(status
         path = self.await_receipt(todo['id'])
         valid = json.loads(path.read_text())
         for receipt, reason in [('interrupted JSON', 'pending'),
-                                (json.dumps(dict(valid, format_version='1.22.0')), 'too old'),
+                                (json.dumps(dict(valid, format_version='1.23.0')), 'too old'),
                                 (json.dumps(dict(valid, commit='0'*40)), 'different candidate'),
                                 (json.dumps(dict(valid, ok='true')), 'incomplete')]:
             path.write_text(receipt)

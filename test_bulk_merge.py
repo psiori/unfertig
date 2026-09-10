@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import threading
 import unittest
+import uuid
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
@@ -12,7 +13,7 @@ import test_workflow as fixtures
 import test_context_workflow as contexts
 from bulk_merge import review, enqueue
 from server import Server
-from storage import Conflict
+from storage import Conflict, digest
 
 
 class BulkMergeTests(unittest.TestCase):
@@ -91,7 +92,16 @@ class BulkMergeTests(unittest.TestCase):
         for changes, fields, reason in [({'system':'f'*64}, {}, 'another system'),
                                          ({'scope':'f'*64}, {}, 'scope changed'),
                                          ({}, {'status':'closed', 'closed_by':'Test', 'date_closed':'2026-09-08T12:00:00Z', 'completion_summary':'External work'}, 'Closed')]:
-            self.workflow.save('T0001', dict(run, **changes), **fields)
+            if 'scope' in changes:
+                with self.assertRaisesRegex(Conflict, 'scope changed'):
+                    self.workflow.save('T0001', dict(run, **changes))
+                # Seed historical inconsistent evidence through the fixture writer
+                # to retain the bulk-review regression independently of save guards.
+                todo = self.store.snapshot()['data']['todos'][0]
+                self.store.mutate(dict(actor='Test', request_id=uuid.uuid4().hex, changes=[dict(
+                    collection='todos', id=todo['id'], revision=digest(todo), record=dict(todo, workflow=dict(run, **changes)))]), workflow=True)
+            else:
+                self.workflow.save('T0001', dict(run, **changes), **fields)
             self.assertIn(reason, review(self.workflow)['excluded'][0]['reason'])
 
     def test_closed_draft_merged_or_unavailable_pr_is_excluded(self):

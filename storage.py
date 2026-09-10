@@ -19,10 +19,18 @@ class Conflict(Exception):
     pass
 
 
+class ResourceBusy(Conflict):
+    """A transient lock wait, distinct from a semantic revision conflict."""
+    def __init__(self, message, *, resource=None):
+        super().__init__(message)
+        self.resource = resource
+
+
 class OperationLock:
     """Reentrant thread/process lock; the lifetime lease excludes older writers."""
-    def __init__(self, root):
+    def __init__(self, root, *, resource="Board operation", timeout=3):
         self.root = root
+        self.resource, self.timeout = resource, timeout
         self.thread = threading.RLock()
         self.depth = 0
         self.file = None
@@ -33,7 +41,7 @@ class OperationLock:
             if self.depth == 0:
                 self.root.mkdir(parents=True, exist_ok=True)
                 self.file = (self.root / '.operation.lock').open('a+b')
-                deadline = time.monotonic() + 3
+                deadline = time.monotonic() + self.timeout
                 while True:
                     try:
                         if os.name == 'nt':
@@ -49,7 +57,7 @@ class OperationLock:
                         break
                     except BlockingIOError:
                         if time.monotonic() >= deadline:
-                            raise Conflict('Board operation busy; retain the request/draft and retry.')
+                            raise ResourceBusy(f'{self.resource} busy ({self.root}); retain the request/draft and retry.', resource=self.resource)
                         time.sleep(.02)
             self.depth += 1
             return self
@@ -398,7 +406,7 @@ class BoardStore:
             self.history_error = (getattr(error, 'stderr', '') or str(error)).strip()
             return False
 
-    def mutate(self, body, *, routing=False, workflow=False):
+    def mutate(self, body, *, routing=False, workflow=False, owner_editor=False):
         with self.lock:
             self.require_writable()
             if 'protocol_version' in body:
@@ -438,6 +446,9 @@ class BoardStore:
                 if not isinstance(record, dict):
                     raise ValueError('record must be an object.')
                 ident = change.get('id')
+                old_authorizations = next((r.get('scope_authorizations') for r in data[kind] if r['id'] == ident), None)
+                if record.get('scope_authorizations', old_authorizations) != old_authorizations:
+                    raise ValueError('Scope authorization is managed by the owner editor save.')
                 old_workflow = next((r.get('workflow') for r in data[kind] if r['id'] == ident), None)
                 if not workflow and record.get('workflow', old_workflow) != old_workflow:
                     raise ValueError('Workflow state is managed by /api/workflow/action.')
@@ -506,6 +517,9 @@ class BoardStore:
                             raise VersionError('Cannot write a newer minor data format.')
                     if kind == 'todos' and old['status'] == 'closed' and record['status'] != 'closed':
                         record['completion_summary'] = ''
+                    if kind == 'todos' and owner_editor:
+                        from saved_scope import record_save
+                        record_save(old, record, body)
                     # A Save that only refreshes bookkeeping is not a meaningful edit.
                     meaningful = lambda r: {k: v for k, v in r.items() if k != 'updated_at'}
                     if meaningful(record) == meaningful(old):

@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 from processing import Processor, system_id, child_environment
 from codex_runtime import resolve_executable
-from storage import Conflict, digest, OperationLock, atomic, encode
+from storage import Conflict, ResourceBusy, digest, OperationLock, atomic, encode
 from integration import GitFailure, StaleCandidate, migration_issues
 from versions import FORMAT_VERSION
 from agent_metrics import checked, observe, display_line
@@ -81,12 +81,8 @@ def local_sources(todo, snapshot):
 
 
 def scope_digest(todo):
-    fields = {k: todo.get(k) for k in ('name', 'description', 'source_ideas', 'source_refs')}
-    if todo.get('depends_on'):
-        fields['depends_on'] = todo['depends_on']
-    if todo.get('category'):
-        fields['category'] = todo['category']
-    return digest(fields)
+    from saved_scope import scope
+    return digest(scope(todo))
 
 
 class Workflow:
@@ -100,6 +96,7 @@ class Workflow:
         self.stopping = False
         self.restart_pending = False
         self.next_tick = 0
+        self.preparation_retry = {}
         self.next_dependency_fetch = 0
         # No implicit backlog sweep when an administrator first enables automation.
         self.since = options['automatic_since'] or datetime.now(timezone.utc).isoformat()
@@ -158,6 +155,9 @@ class Workflow:
                                     'test_failed', 'merge_failed', 'push_failed', 'restart_failed', 'resolution_blocked', 'ready', 'tested'})
                 if todo['id'] not in self.previews or self.previews[todo['id']].poll() is not None:
                     run.pop('preview_url', None)
+                if todo['status'] != 'closed' and not historical and not activity and scope_digest(todo) != todo['workflow']['scope']:
+                    from saved_scope import MESSAGE
+                    run.update(phase='implementation_failed', resume_action='retry', message=MESSAGE+'\nPrevious attempt: '+run['original_message'], can_verify_existing=False)
                 runs[todo['id']] = run
             from worker_capacity import WorkerSettings
             count = len(self.active_workers())
@@ -181,6 +181,9 @@ class Workflow:
         old = todo.get('workflow')
         if old and old.get('run_id') != run['run_id']:
             raise Conflict('Another workflow owns this todo.')
+        if (run.get('phase') in ('ready', 'tested', 'done') or fields.get('status') == 'closed') and scope_digest(todo) != run['scope']:
+            from saved_scope import MESSAGE
+            raise Conflict(MESSAGE)
         record = dict(todo, workflow=copy.deepcopy(run), **fields)
         self.store.mutate(dict(actor='Codex', request_id=uuid.uuid4().hex, changes=[dict(
             collection='todos', id=ident, revision=snap['revisions']['todos'][ident], record=record)]), workflow=True)
@@ -387,7 +390,7 @@ class Workflow:
 
     def repository_lock(self):
         common = Path(self.git('rev-parse', '--path-format=absolute', '--git-common-dir'))
-        return OperationLock(common / 'unfertig-workflow')
+        return OperationLock(common / 'unfertig-workflow', resource='Repository preparation/integration', timeout=3)
 
     def launch(self, todo, run, action):
         ident = todo['id']
@@ -437,15 +440,21 @@ class Workflow:
             for todo in queued:
                 if len(self.active_workers()) >= self.options['max_workers']:
                     break
+                if todo['id'] in self.active_workers() or time.monotonic() < self.preparation_retry.get(todo['id'], (0, 0))[0]:
+                    continue
                 if self.dependency_block(todo, snap):
                     continue
                 run = copy.deepcopy(todo['workflow'])
-                if run['scope'] != scope_digest(todo):
-                    run.update(phase='merge_failed' if run['queued_action'] == 'merge' else 'implementation_failed',
-                               message='Queued task scope changed. Review and reconcile before retrying.')
+                try:
+                    self.guard_process(run)
+                    if run['scope'] != scope_digest(todo):
+                        from saved_scope import adopt
+                        adopt(todo, run)
+                        run['queued_action'] = 'retry'
+                    self.launch(todo, run, run['queued_action'])
+                except Conflict as error:
+                    run.update(phase='implementation_failed', message=str(error))
                     self.save(todo['id'], run)
-                    continue
-                self.launch(todo, run, run['queued_action'])
 
     def start(self, body, automatic=False, *, dispatch=True):
         with self.lock:
@@ -470,6 +479,15 @@ class Workflow:
             if request_id in previous:
                 if previous[request_id] != fingerprint:
                     raise Conflict('Workflow request ID reused for different input.')
+                return self.status()
+            if action == 'retry' and todo['status'] != 'closed' and todo.get('workflow', {}).get('system') == system_id() and todo.get('workflow', {}).get('phase') == 'queued' and snap['revisions']['todos'][ident] == body.get('revision'):
+                self.guard_process(todo['workflow'])
+                run = copy.deepcopy(todo['workflow'])
+                if request_id:
+                    run.setdefault('action_requests', {})[request_id] = fingerprint
+                self.save(ident, run)
+                if dispatch:
+                    self.dispatch()
                 return self.status()
             if ident in self.active_workers() or todo.get('workflow', {}).get('phase') in ('queued', 'merge_queued') or (todo.get('workflow', {}).get('phase') in ('restarting', 'migrating', 'recovering') and action != 'recover'):
                 raise ValueError('This ticket already has an active or queued stage.')
@@ -533,13 +551,17 @@ class Workflow:
                 if not old:
                     raise ValueError('Implement this todo first.')
                 run = copy.deepcopy(old)
-                if run.get('scope') != scope_digest(todo):
-                    raise Conflict('Task scope changed since implementation. Review and reconcile the branch manually.')
                 common = Path(self.git('rev-parse', '--path-format=absolute', '--git-common-dir'))
                 expected = Path(self.options['repository']) / '.worktrees' / 'unfertig' / run['run_id']
                 if Path(run['worktree']).resolve() != expected or not run['branch'].startswith('codex/'):
                     raise ValueError('Run paths do not match this repository. Manual recovery required.')
                 self.guard_process(run)
+                if run.get('scope') != scope_digest(todo):
+                    if action != 'retry':
+                        from saved_scope import MESSAGE
+                        raise Conflict(MESSAGE)
+                    from saved_scope import adopt
+                    adopt(todo, run)
                 if run['repository'] != self.options['repository']:
                     raise ValueError('Repository configuration changed. Recover this run in its original repository.')
                 head = self.git('rev-parse', run['branch']) if action != 'retry' or Path(run['worktree']).exists() else run['base']
@@ -599,9 +621,15 @@ class Workflow:
         with self.lock:
             if self.stopping:
                 raise ValueError('Service is stopping.')
-            run = next(t['workflow'] for t in self.snapshot()['data']['todos'] if t['id'] == ident)
+            current = next(t for t in self.snapshot()['data']['todos'] if t['id'] == ident)
+            run = current['workflow']
+            if scope_digest(current) != run['scope']:
+                from saved_scope import MESSAGE
+                raise Conflict(MESSAGE)
             self.guard_process(run)
             receipt_path = self.process_receipt(run)
+            if receipt_path.exists():
+                atomic(receipt_path.with_name(receipt_path.name+'.previous-'+uuid.uuid4().hex), receipt_path.read_bytes())
             receipt = dict(format_version=FORMAT_VERSION, run_id=run['run_id'], state='launching', purpose=purpose)
             atomic(receipt_path, encode(receipt))
             try:
@@ -677,7 +705,14 @@ class Workflow:
                 snap = self.snapshot()
                 todo = next(t for t in snap['data']['todos'] if t['id'] == ident)
                 if scope_digest(todo) != run['scope']:
-                    raise Conflict('Task scope changed before agent launch; review the retained branch.')
+                    from saved_scope import adopt
+                    self.guard_process(run)
+                    adopt(todo, run)
+                    run['phase'] = 'implementing'
+                    self.save(ident, run)
+                dependency = self.dependency_block(todo, snap)
+                if dependency:
+                    raise ResourceBusy(dependency, resource='Repository preparation/integration')
                 effort_args = launch_arguments(todo)
                 originals = [i for i in snap['data']['ideas'] if i['id'] in todo['source_ideas']]
                 prompt = f'''Execute this saved todo's category and acceptance conditions in the isolated branch at {run['worktree']}.
@@ -798,6 +833,12 @@ Configured verification will subsequently run: {json.dumps(self.options['test'])
                               completion_summary=run.get('completion_summary', 'Legacy run: implementation report unavailable; review the PR for implementation findings and limitations.') + '\n\nDeployment verification: ' + run['message'])
             self.save(ident, run, **fields)
         except Exception as error:
+            if isinstance(error, ResourceBusy) and error.resource == 'Repository preparation/integration' and action in ('implement', 'retry'):
+                delay = min(30, max(1, self.preparation_retry.get(ident, (0, 0))[1] * 2))
+                self.preparation_retry[ident] = (time.monotonic() + delay, delay)
+                run.update(phase='queued', queued_action=action, message=f'{error} Preparation will retry in {delay}s.')
+                self.save(ident, run)
+                return
             if failed == 'handoff_blocked' and run.get('implementation', {}).get('status') == 'blocked':
                 failed = 'implementation_failed'
             if isinstance(error, GitFailure):
@@ -1005,6 +1046,10 @@ Finish with JSON containing status (complete or needs_attention), commit (actual
         if self.git('rev-parse', 'refs/remotes/origin/'+branch) != remote:
             raise StaleCandidate('Remote main advanced during integration. Rebuilding and retesting.')
         with self.store.lock:
+            current_todo = next(t for t in self.snapshot()['data']['todos'] if t['id'] == ident)
+            if scope_digest(current_todo) != run['scope']:
+                from saved_scope import MESSAGE
+                raise Conflict(MESSAGE)
             if self.git('rev-parse', 'HEAD') != head:
                 raise StaleCandidate('Main advanced during integration. Rebuilding and retesting.')
             if self.git('status', '--porcelain'):

@@ -261,7 +261,8 @@ def finish(w, todo, run, *, preview=False):
         raise Conflict('Worker reports incomplete context work: '+report['summary'])
     current=next(t for t in w.snapshot()['data']['todos'] if t['id']==todo['id'])
     if current['status']=='closed' or scope_digest(current)!=run['scope']:
-        raise Conflict('Task changed during implementation.')
+        from saved_scope import MESSAGE
+        raise Conflict(MESSAGE)
     results=report.get('repositories')
     if not isinstance(results,list) or any(not isinstance(x,dict) for x in results):
         raise Conflict('Report every available repository with id and actual commit.')
@@ -314,7 +315,15 @@ def execute(w, todo, run, action):
         todo=next(t for t in snapshot['data']['todos'] if t['id']==ident)
         from workflow import scope_digest
         if scope_digest(todo)!=run['scope']:
-            raise Conflict('Task scope changed before agent launch; review the retained branches.')
+            from saved_scope import adopt
+            w.guard_process(run)
+            adopt(todo,run)
+            run['phase']='implementing'
+            w.save(ident,run)
+        dependency=w.dependency_block(todo,snapshot)
+        if dependency:
+            from storage import ResourceBusy
+            raise ResourceBusy(dependency, resource='Repository preparation/integration')
         originals=[i for i in snapshot['data']['ideas'] if i['id'] in todo['source_ideas']]
         assignment=[{k:r[k] for k in ('id','role','repository','worktree','branch','available','recipe')} for r in run['repositories']]
         prompt=f'''Your task context is the UM repository at {context['worktree']}.

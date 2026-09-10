@@ -4,7 +4,7 @@ Read this contract when processing ideas and before changing persistence or the
 API. Every format change must include a deterministic migration, useful minimal
 defaults, compatibility handling, and regression tests in the same change.
 
-`format_version` is a major.minor.build string. Current storage is `1.21.0`.
+`format_version` is a major.minor.build string. Current storage is `1.22.0`.
 Major changes may break reading; minor changes remain readable but may introduce
 semantics an older writer cannot preserve; builds must remain safe to read and
 write. A newer major refuses startup before recovery or writes. A newer minor
@@ -386,3 +386,20 @@ HTTP/filesystem share validation, revision checks, journal/history recovery and
 omitted-field preservation. Startup migrates under the existing writer lock;
 interrupted migration resumes forward. No API-major change or authority cache.
 See [execution selection](PROCESS_REFERENCE.md#agent-effort-format-121).
+
+
+## Storage 1.22.0 — saved editor scope authorization
+
+Sequential 1.21→1.22 advances metadata only. Absent `scope_authorizations` means
+no recorded editor grant; migration never infers approval from old text or actor
+names. Preserve originals, explicit values, extensions, claims and request receipts.
+Older minor writers become read-only; protocol remains 2.0.0. Normal startup
+migrates before serving through the existing backup, journal and history guards.
+
+The protected todo list records each editor save's request ID, actor, timestamp,
+prior record revision, old/new scope digests and requirement snapshots. It shares
+the save transaction and receipt. Ordinary HTTP/filesystem writers preserve it
+but cannot create, change or remove grants. Changed runs archive their previous
+scope and evidence in `workflow.scope_attempts`; all repository scope/check state
+changes together. Retained process receipts are copied before their next use.
+No repository declaration, publication or deployment grant is created by a save.

@@ -205,6 +205,31 @@ class RecordTests(unittest.TestCase):
         self.store.mutate(self.edit(updated_at='2026-09-07T10:00:00Z'))
         self.assertEqual(stat, path.stat().st_mtime_ns)
 
+    def test_editor_route_requires_browser_context_and_replays_through_record_api(self):
+        server = Server(('127.0.0.1', 0), self.store)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval':0.01}, daemon=True); thread.start()
+        try:
+            url = f'http://127.0.0.1:{server.server_port}'
+            with urlopen(url+'/api/state') as response: state = json.load(response)
+            body = self.edit(category='concept')
+            def send(route, browser=False):
+                headers = {'X-Board-Token':state['token']}
+                if browser: headers.update({'Sec-Fetch-Site':'same-origin','Sec-Fetch-Mode':'cors'})
+                return urlopen(Request(url+route, data=json.dumps(body).encode(), headers=headers, method='PUT'))
+            with self.assertRaises(HTTPError) as failure: send('/api/editor/changes')
+            self.assertEqual(failure.exception.code, 400)
+            with send('/api/editor/changes', True) as response: saved = json.load(response)
+            with send('/api/changes') as response: replay = json.load(response)
+            self.assertEqual(saved['data'], replay['data'])
+            authorization = saved['data']['todos'][0]['scope_authorizations'][0]
+            self.assertEqual(authorization['request_id'], body['request_id'])
+            self.assertEqual(authorization['new']['category'], 'concept')
+            forged = self.edit(scope_authorizations=[])
+            with self.assertRaisesRegex(ValueError, 'managed by the owner editor'):
+                self.store.mutate(forged)
+        finally:
+            server.shutdown(); server.server_close(); thread.join()
+
     def test_api_new_protocol_and_old_client_rejection(self):
         server = Server(('127.0.0.1', 0), self.store)
         thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True); thread.start()

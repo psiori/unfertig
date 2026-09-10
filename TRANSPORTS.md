@@ -302,3 +302,25 @@ fresh briefings require supported values. Use the owning board's expanded editor
 to change the profile. Only owner services launch workers, re-reading the saved
 selection immediately before launch. Normal filesystem inspection never migrates
 a source or starts agents.
+
+
+## Owner editor scope saves (format 1.22)
+
+The owner editor uses token-protected `PUT /api/editor/changes`, with the same
+record-change body, revisions, journal and request receipts as `/api/changes`.
+The server requires same-origin browser Fetch Metadata and passes an internal
+editor flag to BoardStore. Body fields or actor names cannot select this flag.
+This records a deliberate editor save within the local trusted-client model;
+it is not cryptographic proof of a person's presence against a client that can
+impersonate the browser. Agents use ordinary `/api/changes`, never the editor route.
+
+Both ordinary transports preserve and protect `scope_authorizations`. A replay
+through either transport returns the original receipt without adding a grant.
+Filesystem clients cannot authorize edits or launch continuation. Stale editor
+saves fail before changes or authorization; the latest saved scope governs Retry.
+Foreign source originals remain immutable under the existing source_refs contract.
+
+Repository preparation has a distinct busy diagnostic. Pre-launch lock contention
+retains the queue and retries with 1–30 second exponential backoff; restart retains
+the queue and resets the in-memory delay. Each repository lock wait stays bounded
+at three seconds. Active workers still use independent worktrees and capacity slots.

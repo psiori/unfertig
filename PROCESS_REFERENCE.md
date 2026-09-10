@@ -445,7 +445,7 @@ refactoring to describe the task's primary intended deliverable. Leave it absent
 or empty (Unclassified) when undecided. Existing records are not classified.
 For mixed work, choose the primary type and explain secondary work in the task;
 split only independently useful deliverables. Change the selection manually as
-scope changes; no automatic transitions, status changes or approvals follow.
+scope changes; saving confirms those revised requirements without launching idle work.
 
 The canonical definitions in [categories.json](categories.json) specify each
 type's meaning, deliverable, completion criteria and instructions. The editor,
@@ -453,8 +453,9 @@ human/AI briefings and launched implementation prompts use this same vocabulary.
 Both audiences follow the same intent and approval boundaries, with their
 existing identity and tracking instructions. A category never grants permission
 to implement, publish, merge or deploy. Read the task's actual acceptance and
-approval conditions first. Changes to an assigned category invalidate the scope
-check for subsequent workflow actions; reconcile the branch explicitly.
+approval conditions first. Saving a changed category in the owner editor confirms
+the new requirements. Ordinary Retry continues the retained branch with that scope;
+old reports/checks cannot qualify the revised result as complete.
 
 Create or edit a todo to choose its category and read the guidance below the
 selector. Collapsed rows and aggregate details display it. Text search includes
@@ -611,3 +612,24 @@ Accepted entries stay queued; rejected or stale entries require fresh review.
 Delivery failures and already merged PRs use the existing individual recovery
 controls, and pause/skip semantics remain owned by the integration coordinator.
 No worker may use these endpoints without separate explicit merge authorization.
+
+
+## Continue after saving changed requirements (format 1.22)
+
+Save in the owner task editor to confirm changed category, title, description,
+source links or dependencies. The normal Retry action accepts the latest saved
+scope and keeps the same task, run and worktrees; there is no additional approval
+button. Queued implementation can consume the edit before dispatch. A saved edit
+alone never starts an idle task or grants merge/publication/deployment authority.
+
+During active work, retain the worker and its result. The coordinator rechecks
+requirements at launch, handoff, verification and completion. If they changed,
+Retry continues the retained work with the latest task; prior results are evidence
+for their old scope only. Live/uncertain process receipts block duplicate workers.
+Repository-lock contention before launch stays queued with resource and retry
+information; actual execution and access failures remain visible.
+
+Ordinary tool/API edits carry no editor authorization. Review and save intended
+requirements through the editor, then Retry. The server records the save's old/new
+requirements and receipt atomically; never repair fingerprints by hand. Existing
+source-original immutability, same-record revisions and repository scope remain.

@@ -86,6 +86,31 @@ class Conformance:
         history = subprocess.check_output(['git', 'show', 'HEAD:todos/'+old['id']+'.json'], cwd=self.boards[1].root, text=True)
         self.assertIn(closed['completion_summary'], history)
 
+    def test_editor_authorization_preserved_not_forged_and_receipt_switch(self):
+        source = self.sources[0]
+        snapshot = self.router.inspect_source(source)
+        old = snapshot['data']['todos'][0]
+        request = dict(actor='Owner', request_id=uuid.uuid4().hex, changes=[dict(
+            collection='todos', id=old['id'], revision=digest(old), record=dict(old, category='concept'))])
+        saved = self.boards[1].mutate(request, owner_editor=True)
+        expected = preflight_context(snapshot['context'])
+        replay = self.router.transfer(source, '/api/changes', request, snapshot.get('token'), expected)
+        switched = dict(source, transports=dict(http=False, filesystem=True))
+        again = self.router.transfer(switched, '/api/changes', request, None, expected)
+        self.assertEqual(saved['data'], replay['data']); self.assertEqual(replay['data'], again['data'])
+        record = again['data']['todos'][0]
+        for evidence in ([], [{'source':'owner_editor_save'}]):
+            forged = dict(actor='Owner', owner_editor=True, request_id=uuid.uuid4().hex, changes=[dict(
+                collection='todos', id=record['id'], revision=digest(record), record=dict(record, scope_authorizations=evidence))])
+            with self.assertRaises(ValueError):
+                self.router.transfer(source, '/api/changes', forged, snapshot.get('token'), expected)
+        edit = dict(actor='Owner', owner_editor=True, request_id=uuid.uuid4().hex, changes=[dict(
+            collection='todos', id=record['id'], revision=digest(record), record=dict(record, description='Agent edit'))])
+        latest = self.router.transfer(source, '/api/changes', edit, snapshot.get('token'), expected)['data']['todos'][0]
+        self.assertEqual(latest['scope_authorizations'], record['scope_authorizations'])
+        from saved_scope import authorized
+        self.assertFalse(authorized(latest))
+
     def discovered_router(self, omit_beta=False):
         for source, board in zip(self.sources, self.boards[1:]):
             config = json.loads(board.config.read_text())

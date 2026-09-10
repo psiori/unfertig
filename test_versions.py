@@ -76,6 +76,40 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.store.snapshot()['data']['todos'][0]['execution_profile'], 'terra-medium')
         before=self.files(); self.store.initialize(); self.assertEqual(self.files(),before)
 
+    def test_scope_successor_preserves_all_inputs_without_invented_grants(self):
+        from versions import MIGRATIONS
+        for version in MIGRATIONS:
+            old = dict(fixture()['todos'][0], format_version=version, execution_profile='auto',
+                       effort='medium', extension={'keep':True}, workflow_extension={'old':'evidence'})
+            new = migrate(old, 'todo')
+            self.assertEqual(semantic(new), semantic(old))
+            self.assertNotIn('scope_authorizations', new)
+            self.assertEqual(migrate(new, 'todo'), new)
+        old = dict(fixture()['todos'][0], format_version='1.21.0', scope_authorizations=[], extension='kept')
+        self.assertEqual(migrate(old, 'todo')['scope_authorizations'], [])
+        self.assertEqual(inspect(migrate(old,'todo'), supported='1.21.0')[0], 'read_only')
+
+    def test_scope_migration_interruption_preserves_receipt_and_resumes_idempotently(self):
+        self.store.initialize()
+        request = self.edit(category='concept')
+        self.store.mutate(request, owner_editor=True)
+        before = self.store.snapshot()['data']['todos'][0]
+        old = dict(before, format_version='1.21.0')
+        self.write(self.todo, old)
+        receipt = self.store.receipts/(request['request_id']+'.json')
+        original_receipt = json.loads(receipt.read_text())
+        real = storage.atomic
+        def interrupt(path, raw):
+            if path.resolve() == self.todo.resolve(): raise OSError('Interrupted scope migration')
+            return real(path,raw)
+        with patch('storage.atomic', side_effect=interrupt), self.assertRaises(OSError): self.store.initialize()
+        self.assertTrue(self.store.journal.exists())
+        self.store.initialize()
+        self.assertEqual(self.store.snapshot()['data']['todos'][0], before)
+        self.assertEqual(json.loads(receipt.read_text()), original_receipt)
+        saved = self.files(); self.store.initialize(); self.assertEqual(self.files(),saved)
+        self.assertEqual(self.store.mutate(request)['data']['todos'][0], before)
+
     def test_sequential_legacy_migration_and_defaults(self):
         original = fixture()['todos'][0]
         partial = copy.deepcopy(original)
@@ -146,10 +180,10 @@ class VersionTests(unittest.TestCase):
 
     def test_mixed_supported_versions_and_future_build(self):
         data = json.loads(self.todo.read_text()); data['format_version']='1.0.0'; self.write(self.todo,data)
-        header = json.loads(self.path.read_text()); header['format_version']='1.21.9'; self.write(self.path,header)
+        header = json.loads(self.path.read_text()); header['format_version']='1.22.9'; self.write(self.path,header)
         self.store.initialize()
         self.assertEqual(json.loads(self.todo.read_text())['format_version'],FORMAT_VERSION)
-        self.assertEqual(json.loads(self.path.read_text())['format_version'],'1.21.9')
+        self.assertEqual(json.loads(self.path.read_text())['format_version'],'1.22.9')
         self.assertFalse(self.store.snapshot()['compatibility']['read_only'])
         self.assertTrue(self.store.snapshot()['compatibility']['warnings'])
 
@@ -169,7 +203,7 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.files(),originals)
 
     def test_future_minor_read_only_preserves_mixed_old_bytes(self):
-        data = json.loads(self.todo.read_text()); data['format_version']='1.22.0'; self.write(self.todo,data)
+        data = json.loads(self.todo.read_text()); data['format_version']='1.23.0'; self.write(self.todo,data)
         before = self.files(); self.store.initialize()
         snap = self.store.snapshot()
         self.assertTrue(snap['compatibility']['read_only'])
@@ -178,7 +212,7 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(self.files(),before)
 
     def test_future_build_edit_preserves_unknown_fields_and_version(self):
-        data = json.loads(self.todo.read_text()); data.update(format_version='1.21.42', extension={'nested':[1,2]})
+        data = json.loads(self.todo.read_text()); data.update(format_version='1.22.42', extension={'nested':[1,2]})
         self.write(self.todo,data); self.store.initialize()
         request = self.edit(name='Changed')
         request['changes'][0]['record'].pop('extension')
@@ -186,7 +220,7 @@ class VersionTests(unittest.TestCase):
         self.store.mutate(request)
         saved = json.loads(self.todo.read_text())
         self.assertEqual(saved['extension'],data['extension'])
-        self.assertEqual(saved['format_version'],'1.21.42')
+        self.assertEqual(saved['format_version'],'1.22.42')
         request = self.edit(format_version='1.1.0')
         with self.assertRaisesRegex(VersionError,'downgrade'): self.store.mutate(request)
 
@@ -197,7 +231,7 @@ class VersionTests(unittest.TestCase):
         result = self.store.mutate(dict(actor='Codex', request_id=uuid.uuid4().hex,
             changes=[dict(collection='todos', id=None, record=todo)]))
         self.assertEqual(result['data']['todos'][-1]['effort'], 'medium')
-        future = dict(result['data']['todos'][0], format_version='1.22.0', effort='future')
+        future = dict(result['data']['todos'][0], format_version='1.23.0', effort='future')
         self.write(self.todo, future)
         before = self.files(); self.store.initialize()
         snapshot = self.store.snapshot()

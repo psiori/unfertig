@@ -118,6 +118,43 @@ class ContextWorkflowTests(unittest.TestCase):
             collection='todos', id=todo['id'], revision=digest(todo), record=record)]))
         return record
 
+    def test_saved_category_after_prepare_updates_all_scopes_and_prompt(self):
+        from storage import digest
+        import context_workflow
+        self.um(); self.changed={'context','project'}
+        original=context_workflow.prepare; prompts=[]
+        def prepare(*args):
+            original(*args)
+            todo=self.store.snapshot()['data']['todos'][0]
+            self.store.mutate(dict(actor='Owner',request_id=uuid.uuid4().hex,changes=[dict(
+                collection='todos',id=todo['id'],revision=digest(todo),record=dict(todo,category='concept'))]),owner_editor=True)
+        def agent(argv,cwd,ident,stdin=None,**kwargs):
+            if 'exec' in argv: prompts.append(stdin)
+            return self.agent(argv,cwd,ident,stdin,**kwargs)
+        with patch('context_workflow.prepare',side_effect=prepare), patch.object(self.workflow,'command',side_effect=agent):
+            todo=self.run_stage('implement')
+        self.assertEqual(todo['workflow']['phase'],'ready',todo['workflow']['message'])
+        self.assertIn('Work category: Concept',prompts[0])
+        self.assertTrue(all(r['scope']==todo['workflow']['scope'] for r in todo['workflow']['repositories']))
+        self.assertEqual(len(todo['workflow']['scope_attempts']),1)
+
+    def test_saved_scope_during_combined_checks_cannot_finish_old_result(self):
+        from storage import digest
+        import context_workflow
+        self.um(); self.changed={'context','project'}
+        original=context_workflow.checked
+        def checks(*args,**kwargs):
+            result=original(*args,**kwargs)
+            todo=self.store.snapshot()['data']['todos'][0]
+            self.store.mutate(dict(actor='Owner',request_id=uuid.uuid4().hex,changes=[dict(
+                collection='todos',id=todo['id'],revision=digest(todo),record=dict(todo,description='Revised result required'))]),owner_editor=True)
+            return result
+        with patch.object(self.workflow,'command',side_effect=self.agent), patch('context_workflow.checked',side_effect=checks):
+            todo=self.run_stage('implement')
+        self.assertNotEqual(todo['workflow']['phase'],'ready')
+        self.assertNotEqual(todo['status'],'closed')
+        self.assertIn('Retry implementation',todo['workflow']['message'])
+
     def test_um_profile_is_reloaded_after_prepare_and_frozen_on_launch(self):
         from storage import digest
         import context_workflow
