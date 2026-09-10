@@ -215,7 +215,7 @@ main { padding-top:18px; }
 .scratchpad.panel { padding:22px 24px 16px; }
 .scratchpad h2 { font-size:23px; margin:0; letter-spacing:-.7px; }
 .scratchpad .section-heading { margin-bottom:18px; }
-.scratchpad textarea { min-height:80px; font-size:14px; padding:14px 16px 6px; }
+.scratchpad textarea { min-height:calc(80px + 3.2em); font-size:14px; padding:14px 16px 6px; }
 .scratchpad .composer-footer { padding:8px 12px 12px; }
 .scratchpad .idea { flex-wrap:wrap; }
 .scratchpad .idea-actions { flex-direction:row; flex-wrap:wrap; padding-left:15px; gap:12px; }
@@ -234,7 +234,17 @@ main { padding-top:18px; }
 .welcome .progress-card { padding:22px; }
 .welcome .progress-card p { line-height:1.4; }
 .welcome { padding-bottom:20px; }
-.scratchpad .ideas { max-height:110px; }
+/* Add two 13px × 1.5 text lines to the saved-ideas viewport. */
+.scratchpad .ideas { max-height:calc(110px + 39px); }
+@media(max-width:700px) {
+  .scratchpad textarea { min-height:80px; }
+  .scratchpad .ideas { max-height:110px; }
+}
+@media(min-width:701px) and (max-height:700px) {
+  /* Preserve the compact desktop shelf when vertical room is constrained. */
+  .scratchpad textarea { min-height:80px; }
+  .scratchpad .ideas { max-height:80px; }
+}
 
 /* Enlarge the existing queue without replacing composer or list state. */
 .scratchpad .scratch-toolbar { flex-wrap:wrap; }
