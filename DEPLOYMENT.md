@@ -139,3 +139,31 @@ Use the retained tested/final/published revisions and exact push intent for
 recovery. Only explicit metadata-equivalence configuration permits a tested and
 final revision to differ. Install/update/startup continues to trust published
 main and retains its existing backup, compatibility and migration guards.
+
+## Manual Update & restart action
+
+A managed UM instance with a confirmed different `origin/main` revision offers
+**Update & restart** in Instance maintenance. Token-protected `PUT /api/maintenance`
+with `action:update_restart` and the observed `target_commit` invokes the host's
+existing `scripts/request_tool_update.py` CLI through its uv launcher. The host's
+shared configuration must opt into cooperative updates from main. Standalone
+instances and feature previews expose an unavailable reason.
+
+One deterministic manual event ID per target revision makes repeated clicks,
+uncertain responses and application restarts inspect the same durable schema-1
+host request. A ten-second submission timeout means unknown delivery, never failed
+installation. Repeating the action does not reexecute a failed or completed event.
+Failures retain their ID/message; after resolving the cause, use the existing
+host CLI's explicit `--retry --event EVENT_ID`. This app action does not retry
+failed events automatically. If a previously completed revision must be installed
+again after manual rollback, submit a new manual request through the host CLI.
+
+The host alone writes the restart request and waits for drain plus graceful child
+exit before installation. UI progress distinguishes request acceptance, drain,
+installation/startup failure and confirmed running currency. If the service stays
+stopped, the browser reports reconnecting; inspect host status/startup logs.
+
+Codex recovery is not implemented by this application-side action. Recovery that
+must survive a stopped app requires a host supervisor integration; the application
+cannot substitute a detached writer or bypass host installation guards. Ordinary
+successful updates remain independent of Codex.

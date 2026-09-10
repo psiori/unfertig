@@ -430,3 +430,12 @@ startup performs the deterministic migration under the existing writer lock,
 backup, compatibility, journal/history recovery and receipt-identity contract.
 Tests cover all supported starting versions, explicit/default/invalid settings,
 extensions, original records, interrupted configuration writes and idempotence.
+
+## Manual maintenance request (unchanged storage 1.23)
+
+The additive owner-service maintenance view/action delegates to the existing
+host schema-1 request CLI. It adds no board/config fields, stored app receipt,
+permission grant or host request field. Request identities and failure evidence
+use the existing host contract; no new format or migration step is needed.
+Existing automatic startup migration, old-writer guards and common transport
+recovery continue unchanged. Codex fallback is not part of this partial action.

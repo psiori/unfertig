@@ -12,6 +12,7 @@ import threading
 from storage import atomic, encode, Conflict
 from versions import FORMAT_VERSION
 from runtime_currency import RuntimeCurrency
+from maintenance_update import UpdateRequest
 
 
 class Maintenance:
@@ -33,6 +34,7 @@ class Maintenance:
         self.blockers = []
         self.error = ''
         self.hooks = None
+        self.updater = UpdateRequest(env)
         self.currency = RuntimeCurrency(Path(__file__).resolve().parent,
             getattr(server.store, 'context', {}).get('runtime_commit', ''),
             enabled=bool(getattr(server.store, 'git', False)))
@@ -66,7 +68,9 @@ class Maintenance:
             update = json.loads(self.update_path.read_text())
             if update.get('schema_version') != 1:
                 raise ValueError('Unsupported host update status schema.')
-        return dict(currency=self.currency.view(), update=update, supported=self.supported, phase=self.phase, pending=self.pending,
+        currency = self.currency.view()
+        return dict(currency=currency, update=update, update_action=self.updater.view(currency.get('target_commit')),
+                    supported=self.supported, phase=self.phase, pending=self.pending,
                     blockers=list(self.blockers), error=self.error or (self.hooks.error if self.hooks else ''),
                     runtime_commit=getattr(self.server.store, 'context', {}).get('runtime_commit', ''), hooks=hooks)
 
@@ -149,6 +153,18 @@ class Maintenance:
             self.phase = 'failed'
 
     def action(self, body):
+        if body.get('action') == 'update_restart':
+            with self.guard:
+                if not self.supported:
+                    raise ValueError('This instance has no cooperative restart host.')
+                currency = self.currency.view()
+                target = body.get('target_commit')
+                if currency.get('state') != 'outdated' or target != currency.get('target_commit'):
+                    raise ValueError('Published revision changed or is unconfirmed. Refresh maintenance status.')
+                if self.pending:
+                    return self.view()
+                self.updater.submit(target)
+                return self.view()
         if body.get('action') != 'retry_hook' or not self.hooks:
             raise ValueError('Choose a failed post-publication hook to retry.')
         if self.pending:

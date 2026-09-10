@@ -62,3 +62,46 @@ test('healthy visibility transitions preserve polling and ignore successful hist
   f.offline(true);await f.poll();assert.equal(f.panel.hidden,false);assert.match(f.panel.parts.summary.textContent,/reconnecting/);
   f.offline(false);await f.poll();assert.equal(f.panel.hidden,true,'identical healthy response after outage must restore hidden state');
 });
+
+test('update uses the owner API, prevents repeated clicks, and keeps acceptance distinct from installation', async()=>{
+  const main=new Element('main'); let poll, writes=0, submitted, finish, failure=false;
+  const state={phase:'idle',pending:false,supported:true,blockers:[],error:'',runtime_commit:'a'.repeat(40),hooks:[],update:{},
+    currency:{state:'outdated',target_commit:'b'.repeat(40),message:'Update available'},update_action:{available:true,request:{}}};
+  const fetch=async(url,options)=>{
+    if(url==='/api/state')return {ok:true,json:async()=>({token:'owner'})};
+    if(options?.method==='PUT') {
+      writes++;submitted={body:JSON.parse(options.body),token:options.headers['X-Board-Token']};
+      await new Promise(resolve=>finish=resolve);
+      if(failure)throw Error('Connection lost');
+      state.update_action.request={id:'retained',state:'pending'};
+    }
+    return {ok:true,json:async()=>structuredClone(state)};
+  };
+  vm.runInNewContext(fs.readFileSync(__dirname+'/maintenance.js','utf8'),{document:{body:main,querySelector:()=>main,createElement:tag=>new Element(tag)},fetch,AbortSignal,setInterval:f=>poll=f});
+  await new Promise(setImmediate);
+  const panel=main.children[0],button=panel.parts.ul.children[0].children[0];
+  assert.equal(button.textContent,'Update & restart');
+  const action=button.handlers.click(); await new Promise(setImmediate);
+  await button.handlers.click(); assert.equal(writes,1); assert.equal(button.disabled,true);
+  assert.deepEqual(submitted,{body:{action:'update_restart',target_commit:'b'.repeat(40)},token:'owner'});
+  finish();await action;await poll();
+  assert.match(panel.parts.summary.textContent,/update requested/);
+  assert.match(panel.parts.p.textContent,/not yet confirmed/);
+  assert.equal(panel.parts.ul.children[0].children.length,0);
+  state.pending=true;state.phase='draining';state.blockers=['Task T2 is running'];await poll();
+  assert.match(panel.parts.p.textContent,/T2/);assert.match(panel.parts.p.textContent,/queued work is retained/);
+  state.pending=false;state.phase='idle';state.blockers=[];
+  state.update_action.request={id:'retained',state:'failed',message:'Git conflict'};
+  state.update={phase:'failed',message:'Startup failed'};await poll();
+  assert.match(panel.parts.p.textContent,/Git conflict/);assert.match(panel.parts.p.textContent,/Startup failed/);
+  assert.match(panel.parts.ul.children[0].textContent,/retained/);
+  state.update={phase:'installed'};state.update_action.request={state:'complete'};
+  state.runtime_commit='b'.repeat(40);state.currency={state:'current',target_commit:'b'.repeat(40),checked_at:'2026-09-10T00:00:00Z'};
+  await poll();assert.equal(panel.hidden,true);
+  state.currency={state:'outdated',target_commit:'c'.repeat(40)};state.update_action.request={};
+  await poll();const retry=panel.parts.ul.children[0].children[0];
+  failure=true;const uncertain=retry.handlers.click();await new Promise(setImmediate);finish();await uncertain;
+  assert.equal(retry.disabled,false);assert.match(panel.parts.p.textContent,/unconfirmed.*same request/);
+  state.supported=false;await poll();assert.equal(panel.parts.ul.children[0].children.length,0);
+  assert.match(panel.parts.ul.children[0].textContent,/supported update action/);
+});

@@ -332,3 +332,11 @@ including per-repository results. Both adapters preserve those claims through
 ordinary edits, receipt replay and transport switching; neither permits forging
 publication or repair. Filesystem discovery never executes repair, initializes a
 dependency or migrates a source. Existing writer/version/recovery guards apply.
+
+The additive owner-local maintenance action `update_restart` takes the current
+`target_commit`. The service rechecks currency and supervised restart support,
+then delegates to the supported host update-request CLI. `GET /api/maintenance`
+adds `update_action` with `available`, `reason`, and the retained host `request`.
+The existing owner token/local-request checks apply. Filesystem and aggregate
+readers do not launch updates. Board mutations, protected claims, queues and
+HTTP/filesystem receipt semantics remain unchanged.
