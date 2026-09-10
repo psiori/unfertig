@@ -202,6 +202,79 @@ class ContextWorkflowTests(unittest.TestCase):
         self.um(pinned=True);self.changed={'context','project'};todo=self.implement();self.assertEqual(len(self.prs),2)
         with patch.object(self.workflow,'launch_deployment') as deploy:todo=self.run_stage('merge')
         self.assertFalse(deploy.called,todo['workflow']['message']);repos={x['id']:x for x in todo['workflow']['repositories']};self.assertTrue(repos['context'].get('published_commit'),todo['workflow']['message']);self.assertEqual(self.workflow.git('ls-tree','HEAD','code',cwd=self.context).split()[2],repos['project']['published_commit'])
+    def test_relaxed_child_publication_precedes_context_pin_with_deferred_sync(self):
+        self.um(pinned=True)
+        self.workflow.options['integration'] = dict(mode='relaxed', automatic_repair=False, max_attempts=3)
+        self.changed={'context','project'};self.implement()
+        context_before=self.workflow.git('rev-parse','HEAD',cwd=self.context)
+        todo=self.run_stage('merge');run=todo['workflow']
+        self.assertEqual(run['phase'],'done',run['message'])
+        repos={r['id']:r for r in run['repositories']}
+        pin=self.workflow.git('ls-tree',repos['context']['published_commit'],'code',cwd=self.context).split()[2]
+        self.assertEqual(pin,repos['project']['published_commit'])
+        self.assertEqual(self.workflow.git('rev-parse','HEAD',cwd=self.context),context_before)
+        self.assertTrue(all(r['checkout_sync']['status']=='deferred' for r in repos.values()))
+
+    def test_relaxed_child_sync_drift_is_recognized_as_the_published_dependency(self):
+        self.um(pinned=True)
+        self.workflow.options['integration'] = dict(mode='relaxed', automatic_repair=True, max_attempts=3)
+        self.changed={'context','project'};self.implement()
+        todo=self.run_stage('merge');run=todo['workflow']
+        self.assertEqual(run['phase'],'done',run['message'])
+        repos={r['id']:r for r in run['repositories']}
+        pin=self.workflow.git('ls-tree',repos['context']['published_commit'],'code',cwd=self.context).split()[2]
+        self.assertEqual(pin,repos['project']['published_commit'])
+        self.assertEqual(repos['context']['checkout_sync']['status'],'deferred')
+
+    def test_relaxed_pin_generation_preserves_unrelated_staged_worker_edits(self):
+        self.um(pinned=True)
+        self.workflow.options['integration'] = dict(mode='relaxed', automatic_repair=False, max_attempts=3)
+        self.changed={'context','project'};todo=self.implement()
+        context=next(r for r in todo['workflow']['repositories'] if r['role']=='context')
+        path=Path(context['worktree'])/'user-notes.txt';path.write_text('User staging')
+        self.workflow.git('add','user-notes.txt',cwd=context['worktree'])
+        before=self.workflow.git('diff','--cached',cwd=context['worktree'])
+        result=self.run_stage('merge');run=result['workflow']
+        self.assertEqual(run['phase'],'merge_failed')
+        self.assertIn('Context worktree has edits',run['message'])
+        self.assertEqual(self.workflow.git('diff','--cached',cwd=context['worktree']),before)
+        project=next(r for r in run['repositories'] if r['role']=='project')
+        self.assertTrue(project.get('published_commit'))
+        self.assertFalse(next(r for r in run['repositories'] if r['role']=='context').get('published_commit'))
+
+    def test_relaxed_pin_commit_interruption_recovers_index_without_republishing_child(self):
+        self.um(pinned=True)
+        self.workflow.options['integration'] = dict(mode='relaxed', automatic_repair=False, max_attempts=3)
+        self.changed={'context','project'};self.implement()
+        with patch('context_workflow.synchronize_pin_index',side_effect=OSError('Interrupted pin index synchronization')):
+            todo=self.run_stage('merge')
+        first={r['id']:r for r in todo['workflow']['repositories']}
+        self.assertEqual(todo['workflow']['phase'],'merge_failed')
+        self.assertEqual(first['context']['pin_update']['status'],'pending')
+        todo=self.run_stage('merge');run=todo['workflow']
+        self.assertEqual(run['phase'],'done',run['message'])
+        final={r['id']:r for r in run['repositories']}
+        self.assertEqual(final['project']['published_commit'],first['project']['published_commit'])
+        self.assertEqual(final['context']['pin_update']['status'],'complete')
+        self.assertEqual(self.workflow.git('log','--format=%s',cwd=final['context']['worktree']).splitlines().count('Pin published task repositories for T0001'),1)
+
+    def test_pin_commit_compare_and_swap_preserves_a_concurrent_worker_commit(self):
+        from workflow import Workflow
+        self.um(pinned=True)
+        self.workflow.options['integration'] = dict(mode='relaxed', automatic_repair=False, max_attempts=3)
+        self.changed={'context','project'};todo=self.implement()
+        context=next(r for r in todo['workflow']['repositories'] if r['role']=='context')
+        original=Workflow.git;advanced=[]
+        def git(w,*args,**kwargs):
+            if args[0]=='update-ref' and args[1]=='refs/heads/'+context['branch'] and not advanced:
+                advanced.append(True)
+                original(w,'commit','--allow-empty','-m','Concurrent user checkpoint',cwd=context['worktree'])
+            return original(w,*args,**kwargs)
+        with patch.object(Workflow,'git',new=git):result=self.run_stage('merge')
+        self.assertEqual(result['workflow']['phase'],'merge_failed')
+        self.assertEqual(self.workflow.git('log','-1','--format=%s',cwd=context['worktree']),'Concurrent user checkpoint')
+        self.assertFalse(next(r for r in result['workflow']['repositories'] if r['role']=='context').get('published_commit'))
+
     def test_secondary_code_requires_recipe(self):
         self.um(collection=True);self.changed={self.node['projects'][1]['id']}
         with patch.object(self.workflow,'command',side_effect=self.agent):todo=self.run_stage('implement')

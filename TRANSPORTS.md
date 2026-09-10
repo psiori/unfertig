@@ -302,3 +302,11 @@ fresh briefings require supported values. Use the owning board's expanded editor
 to change the profile. Only owner services launch workers, re-reading the saved
 selection immediately before launch. Normal filesystem inspection never migrates
 a source or starts agents.
+
+Storage 1.22 integration policy resolves through the common configuration path.
+Owner-local integration records exact push intent, test/equivalence evidence,
+retry history and separate checkout synchronization in protected workflow claims,
+including per-repository results. Both adapters preserve those claims through
+ordinary edits, receipt replay and transport switching; neither permits forging
+publication or repair. Filesystem discovery never executes repair, initializes a
+dependency or migrates a source. Existing writer/version/recovery guards apply.

@@ -27,7 +27,7 @@
   }
   function repositoryResults(run) {
     if (!run?.repositories) return '';
-    return `<ul class="workflow-repositories">${run.repositories.map(repo => `<li><strong>${escapeHTML(repo.role === 'context' ? 'UM context' : repo.id)}</strong> · ${escapeHTML(!repo.available ? 'Not checked out' : !repo.changed ? 'No changes' : repo.published_commit ? 'Integrated and published' : repo.verification?.status === 'passed' ? 'Verified, awaiting integration' : 'In progress')}${repo.pr_url ? ` · <a href="${escapeHTML(repo.pr_url)}" target="_blank" rel="noopener">PR ↗</a>` : ''}${repo.deployment?.status ? ` · Deployment: ${escapeHTML(repo.deployment.status)}` : ''}</li>`).join('')}</ul>`;
+    return `<ul class="workflow-repositories">${run.repositories.map(repo => `<li><strong>${escapeHTML(repo.role === 'context' ? 'UM context' : repo.id)}</strong> · ${escapeHTML(!repo.available ? 'Not checked out' : !repo.changed ? 'No changes' : repo.published_commit ? 'Integrated and published' : repo.verification?.status === 'passed' ? 'Verified, awaiting integration' : 'In progress')}${repo.pr_url ? ` · <a href="${escapeHTML(repo.pr_url)}" target="_blank" rel="noopener">PR ↗</a>` : ''}${repo.checkout_sync?.status ? ` · Checkout: ${escapeHTML(repo.checkout_sync.status)}` : ''}${repo.deployment?.status ? ` · Deployment: ${escapeHTML(repo.deployment.status)}` : ''}</li>`).join('')}</ul>`;
   }
   function externalLink(run) {
     const url = run?.external_completions?.at(-1)?.evidence?.pr_url;
