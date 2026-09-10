@@ -241,9 +241,9 @@ main { padding-top:18px; }
   .scratchpad .ideas { max-height:110px; }
 }
 @media(min-width:701px) and (max-height:700px) {
-  /* Preserve the compact desktop shelf when vertical room is constrained. */
+  /* Preserve the effective compact heights, including the later list override. */
   .scratchpad textarea { min-height:80px; }
-  .scratchpad .ideas { max-height:80px; }
+  .scratchpad .ideas { max-height:110px; }
 }
 
 /* Enlarge the existing queue without replacing composer or list state. */
